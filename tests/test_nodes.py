@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import patch
 
 
@@ -19,6 +20,8 @@ from lora_tester.nodes import (
     NODE_DISPLAY_NAME_MAPPINGS,
     LoraTesterSampler,
     LoraTesterStyleNode,
+    _common_ksampler,
+    _sampling_progress_value,
     compose_positive_prompt,
 )
 from lora_tester.styles import StyleConfig
@@ -118,6 +121,10 @@ class NodeTests(unittest.TestCase):
             negative,
             latent,
             denoise,
+            *,
+            progress,
+            completed_tasks,
+            total_tasks,
         ):
             events.append("sample")
             sampler_calls.append(
@@ -132,6 +139,9 @@ class NodeTests(unittest.TestCase):
                     "negative": negative,
                     "latent": latent,
                     "denoise": denoise,
+                    "progress": progress,
+                    "completed_tasks": completed_tasks,
+                    "total_tasks": total_tasks,
                 }
             )
             return {"samples": latent["samples"]}
@@ -180,6 +190,103 @@ class NodeTests(unittest.TestCase):
                 )
                 self.assertEqual(run["result"].shape[0], 1)
                 self.assertEqual(run["result"].shape[-1], 3)
+                self.assertTrue(
+                    all(
+                        call["completed_tasks"] == index
+                        and call["total_tasks"] == expected_count
+                        and call["progress"] is run["progress"]
+                        for index, call in enumerate(run["sampler_calls"])
+                    )
+                )
+
+    def test_sampling_progress_reserves_postprocess_boundary(self):
+        self.assertAlmostEqual(_sampling_progress_value(0, 0, 20), 1 / 21)
+        self.assertAlmostEqual(_sampling_progress_value(0, 19, 20), 20 / 21)
+        self.assertAlmostEqual(_sampling_progress_value(7, 19, 20), 7 + 20 / 21)
+        self.assertLess(_sampling_progress_value(68, 19, 20), 69)
+
+    def test_custom_sampler_reports_overall_progress_without_competing_node_progress(self):
+        samples = torch.zeros((1, 4, 2, 2), dtype=torch.float32)
+        sampled = torch.ones_like(samples)
+        captured = {}
+
+        fake_sample = ModuleType("comfy.sample")
+        fake_utils = ModuleType("comfy.utils")
+        fake_comfy = ModuleType("comfy")
+        fake_comfy.sample = fake_sample
+        fake_comfy.utils = fake_utils
+        fake_preview = ModuleType("latent_preview")
+
+        def fix_empty(_model, latent, _spatial, _temporal):
+            return latent
+
+        def prepare_noise(latent, seed, batch_indices):
+            captured["noise"] = (latent, seed, batch_indices)
+            return torch.zeros_like(latent)
+
+        def sample_impl(*args, **kwargs):
+            captured["sample_args"] = args
+            captured["sample_kwargs"] = kwargs
+            return sampled
+
+        fake_sample.fix_empty_latent_channels = fix_empty
+        fake_sample.prepare_noise = prepare_noise
+        fake_sample.sample = sample_impl
+        fake_utils.PROGRESS_BAR_ENABLED = True
+        fake_preview.get_previewer = lambda _device, _format: None
+
+        model = type(
+            "FakeModel",
+            (),
+            {
+                "load_device": "cpu",
+                "model": type("InnerModel", (), {"latent_format": object()})(),
+            },
+        )()
+        progress = FakeProgress()
+        latent = {
+            "samples": samples,
+            "batch_index": [3],
+            "noise_mask": "mask",
+            "downscale_ratio_spacial": 8,
+            "downscale_ratio_temporal": 4,
+        }
+
+        with patch.dict(
+            sys.modules,
+            {
+                "comfy": fake_comfy,
+                "comfy.sample": fake_sample,
+                "comfy.utils": fake_utils,
+                "latent_preview": fake_preview,
+            },
+        ):
+            result = _common_ksampler(
+                model,
+                123,
+                20,
+                7.0,
+                "sampler",
+                "scheduler",
+                "positive",
+                "negative",
+                latent,
+                0.8,
+                progress=progress,
+                completed_tasks=2,
+                total_tasks=5,
+            )
+
+        kwargs = captured["sample_kwargs"]
+        self.assertFalse(kwargs["disable_pbar"])
+        self.assertEqual(kwargs["noise_mask"], "mask")
+        self.assertEqual(kwargs["seed"], 123)
+        kwargs["callback"](19, torch.zeros_like(samples), samples, 20)
+        self.assertEqual(progress.updates[-1][1], 5)
+        self.assertAlmostEqual(progress.updates[-1][0], 2 + 20 / 21)
+        self.assertIs(result["samples"], sampled)
+        self.assertNotIn("downscale_ratio_spacial", result)
+        self.assertNotIn("downscale_ratio_temporal", result)
 
     def test_every_task_reuses_seed_latent_and_base_model(self):
         run = self._run_fake_sample(3)

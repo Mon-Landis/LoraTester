@@ -83,21 +83,105 @@ def _common_ksampler(
     negative: Any,
     latent: dict[str, Any],
     denoise: float,
+    *,
+    progress: Any = None,
+    completed_tasks: int = 0,
+    total_tasks: int | None = None,
 ) -> dict[str, Any]:
-    import nodes as comfy_nodes
+    if progress is None:
+        import nodes as comfy_nodes
 
-    return comfy_nodes.common_ksampler(
+        return comfy_nodes.common_ksampler(
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            latent,
+            denoise=denoise,
+        )[0]
+
+    if total_tasks is None or int(total_tasks) <= 0:
+        raise ValueError("total_tasks must be positive when reporting sampling progress")
+
+    # The stock wrapper creates a second per-sample ProgressBar; use the lower-level
+    # sampler here so the node can publish one monotonic overall progress stream.
+    import comfy.sample
+    import comfy.utils
+
+    latent_image = latent["samples"]
+    latent_image = comfy.sample.fix_empty_latent_channels(
         model,
-        seed,
+        latent_image,
+        latent.get("downscale_ratio_spacial"),
+        latent.get("downscale_ratio_temporal"),
+    )
+    batch_indices = latent.get("batch_index")
+    noise = comfy.sample.prepare_noise(latent_image, seed, batch_indices)
+    callback = _make_sampling_progress_callback(
+        model,
+        progress,
+        completed_tasks=int(completed_tasks),
+        total_tasks=int(total_tasks),
+    )
+    samples = comfy.sample.sample(
+        model,
+        noise,
         steps,
         cfg,
         sampler_name,
         scheduler,
         positive,
         negative,
-        latent,
+        latent_image,
         denoise=denoise,
-    )[0]
+        noise_mask=latent.get("noise_mask"),
+        callback=callback,
+        disable_pbar=not comfy.utils.PROGRESS_BAR_ENABLED,
+        seed=seed,
+    )
+    result = latent.copy()
+    result.pop("downscale_ratio_spacial", None)
+    result.pop("downscale_ratio_temporal", None)
+    result["samples"] = samples
+    return result
+
+
+def _sampling_progress_value(completed_tasks: int, step: int, total_steps: int) -> float:
+    step_count = max(1, int(total_steps))
+    completed_steps = min(step_count, max(0, int(step) + 1))
+    # Reserve one step-equivalent for VAE decoding and placement so 100% means finished.
+    return float(completed_tasks) + completed_steps / (step_count + 1)
+
+
+def _make_sampling_progress_callback(
+    model: Any,
+    progress: Any,
+    *,
+    completed_tasks: int,
+    total_tasks: int,
+) -> Any:
+    import latent_preview
+
+    previewer = latent_preview.get_previewer(
+        model.load_device,
+        model.model.latent_format,
+    )
+
+    def callback(step: int, x0: Any, _x: Any, total_steps: int) -> None:
+        preview = None
+        if previewer is not None:
+            preview = previewer.decode_latent_to_preview_image("JPEG", x0)
+        value = min(
+            float(total_tasks),
+            _sampling_progress_value(completed_tasks, step, total_steps),
+        )
+        progress.update_absolute(value, total_tasks, preview)
+
+    return callback
 
 
 def _throw_if_interrupted() -> None:
@@ -369,6 +453,9 @@ class LoraTesterSampler:
                 negative,
                 latent_image,
                 float(denoise),
+                progress=progress,
+                completed_tasks=index - 1,
+                total_tasks=plan.unique_task_count,
             )
             decoded = _decode_vae(vae, sampled)
             decoded_image = image_to_pil(decoded)
