@@ -1,0 +1,261 @@
+{
+  "LoraTesterSampler": {
+    "display_name": "LoRA Tester (KSampler)",
+    "description": "Tests one to three LoRAs with fixed sampling inputs, decodes every result, and assembles a labeled comparison sheet.",
+    "inputs": {
+      "model": {
+        "name": "Model",
+        "tooltip": "The base diffusion model. Every comparison cell starts from this model."
+      },
+      "clip": {
+        "name": "CLIP",
+        "tooltip": "The base CLIP model used to encode prompts inside this node."
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "Decodes each sampled latent before it is added to the comparison sheet."
+      },
+      "latent_image": {
+        "name": "Latent",
+        "tooltip": "The source latent reused for every test. Batch size must be 1."
+      },
+      "positive_prompt": {
+        "name": "Positive Prompt",
+        "tooltip": "Positive prompt encoded inside the node. Active LoRA trigger words are prepended in A/B/C order."
+      },
+      "negative_prompt": {
+        "name": "Negative Prompt",
+        "tooltip": "Negative prompt encoded inside the node for every LoRA combination."
+      },
+      "seed": {
+        "name": "Seed",
+        "tooltip": "The same seed is reused for every image in this comparison run."
+      },
+      "steps": {
+        "name": "Steps",
+        "tooltip": "Sampling steps used for every comparison image."
+      },
+      "cfg": {
+        "name": "CFG",
+        "tooltip": "Classifier-free guidance used for every comparison image."
+      },
+      "sampler_name": {
+        "name": "Sampler",
+        "tooltip": "KSampler algorithm used for the full comparison run."
+      },
+      "scheduler": {
+        "name": "Scheduler",
+        "tooltip": "Noise scheduler used for the full comparison run."
+      },
+      "denoise": {
+        "name": "Denoise",
+        "tooltip": "Denoising strength used for every comparison image."
+      },
+      "lora_count": {
+        "name": "LoRA Count",
+        "tooltip": "Uses the first one, two, or three LoRA groups. The unused groups are hidden automatically."
+      },
+      "lora_a_name": {
+        "name": "LoRA A File",
+        "tooltip": "LoRA file assigned to slot A."
+      },
+      "lora_a_trigger": {
+        "name": "LoRA A Trigger Words",
+        "tooltip": "Prepended to the positive prompt whenever LoRA A is active."
+      },
+      "lora_a_max_strength": {
+        "name": "LoRA A Max Strength",
+        "tooltip": "Maximum model and CLIP strength. The grid tests 25%, 50%, 75%, and 100% of this value."
+      },
+      "lora_b_name": {
+        "name": "LoRA B File",
+        "tooltip": "LoRA file assigned to slot B."
+      },
+      "lora_b_trigger": {
+        "name": "LoRA B Trigger Words",
+        "tooltip": "Prepended after A trigger words whenever LoRA B is active."
+      },
+      "lora_b_max_strength": {
+        "name": "LoRA B Max Strength",
+        "tooltip": "Maximum model and CLIP strength. The grid tests 25%, 50%, 75%, and 100% of this value."
+      },
+      "lora_c_name": {
+        "name": "LoRA C File",
+        "tooltip": "LoRA file assigned to slot C."
+      },
+      "lora_c_trigger": {
+        "name": "LoRA C Trigger Words",
+        "tooltip": "Prepended after A/B trigger words whenever LoRA C is active."
+      },
+      "lora_c_max_strength": {
+        "name": "LoRA C Max Strength",
+        "tooltip": "Maximum model and CLIP strength. The grid tests 25%, 50%, 75%, and 100% of this value."
+      },
+      "color_mode": {
+        "name": "Color Mode",
+        "tooltip": "Changes only the comparison sheet styling, not image generation.",
+        "values": {
+          "black": "Black background / white text",
+          "white": "White background / black text",
+          "custom": "Custom style"
+        }
+      },
+      "show_lora_details": {
+        "name": "Show LoRA Details Footer",
+        "tooltip": "Shows the original A/B/C LoRA names and configured maximum strengths below the sheet."
+      },
+      "max_canvas_megapixels": {
+        "name": "Maximum Canvas (MP)",
+        "tooltip": "Stops the run when the final RGB comparison sheet would exceed this pixel count."
+      },
+      "custom_style": {
+        "name": "Custom Style",
+        "tooltip": "Optional output from LoRA Tester Style. Used only when Color Mode is Custom."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Comparison Sheet",
+        "tooltip": "The decoded and labeled LoRA comparison sheet."
+      }
+    }
+  },
+  "LoraTesterStyle": {
+    "display_name": "LoRA Tester Style",
+    "description": "Builds an optional custom visual style for the LoRA Tester sampler.",
+    "inputs": {
+      "background_color": {
+        "name": "Background Color",
+        "tooltip": "Canvas background color as a hex value."
+      },
+      "panel_color": {
+        "name": "Panel Color",
+        "tooltip": "Footer and information panel color."
+      },
+      "placeholder_color": {
+        "name": "Placeholder Color",
+        "tooltip": "Color of image slots before they are filled."
+      },
+      "text_color": {
+        "name": "Text Color",
+        "tooltip": "Primary axis and footer text color."
+      },
+      "muted_text_color": {
+        "name": "Muted Text Color",
+        "tooltip": "Secondary information text color."
+      },
+      "frame_color": {
+        "name": "Frame Color",
+        "tooltip": "Structural and region frame color."
+      },
+      "lora_a_color": {
+        "name": "LoRA A Accent",
+        "tooltip": "Accent color for LoRA A."
+      },
+      "lora_b_color": {
+        "name": "LoRA B Accent",
+        "tooltip": "Accent color for LoRA B."
+      },
+      "lora_c_color": {
+        "name": "LoRA C Accent",
+        "tooltip": "Accent color for LoRA C."
+      },
+      "background_fit": {
+        "name": "Background Fit",
+        "tooltip": "How the optional background image fills the final canvas.",
+        "values": {
+          "cover": "Cover",
+          "contain": "Contain",
+          "stretch": "Stretch",
+          "tile": "Tile"
+        }
+      },
+      "background_opacity": {
+        "name": "Background Opacity",
+        "tooltip": "Opacity of the optional background image."
+      },
+      "decorator": {
+        "name": "Decorator",
+        "tooltip": "Optional visual treatment drawn around the comparison matrix.",
+        "values": {
+          "none": "None",
+          "technical": "Technical"
+        }
+      },
+      "outer_margin": {
+        "name": "Outer Margin",
+        "tooltip": "Padding around the full comparison sheet."
+      },
+      "cell_gap": {
+        "name": "Cell Gap",
+        "tooltip": "Gap between adjacent image cells in one region."
+      },
+      "region_gap": {
+        "name": "Region Gap",
+        "tooltip": "Larger separation between LoRA mixing regions."
+      },
+      "footer_gap": {
+        "name": "Footer Gap",
+        "tooltip": "Space above the LoRA details footer."
+      },
+      "footer_padding": {
+        "name": "Footer Padding",
+        "tooltip": "Inner padding of the LoRA details footer."
+      },
+      "frame_width": {
+        "name": "Region Frame Width",
+        "tooltip": "Width of structural and region frames."
+      },
+      "cell_frame_width": {
+        "name": "Image Frame Width",
+        "tooltip": "Width of each image cell frame."
+      },
+      "font_path": {
+        "name": "Font Path",
+        "tooltip": "Optional local TTF, TTC, or OTF path. Empty selects a system font automatically."
+      },
+      "font_size": {
+        "name": "Axis Title Size",
+        "tooltip": "0 dynamically selects a title size from the full sheet dimensions."
+      },
+      "small_font_size": {
+        "name": "Axis Value Size",
+        "tooltip": "0 dynamically selects a proportional axis value size."
+      },
+      "show_axis_labels": {
+        "name": "Show Axis Labels",
+        "tooltip": "Shows LoRA names and strength ticks beside each region."
+      },
+      "show_region_frames": {
+        "name": "Show Region Frames",
+        "tooltip": "Draws frames around the pairwise mixing regions."
+      },
+      "show_special_cell_labels": {
+        "name": "Show Triple-Mix Labels",
+        "tooltip": "Shows A/B/C weight labels below the eight triple-mix images."
+      },
+      "show_cell_captions": {
+        "name": "Show Every Cell Caption",
+        "tooltip": "Shows a weight caption above every occupied image cell."
+      },
+      "show_region_labels": {
+        "name": "Show Region Labels",
+        "tooltip": "Shows AB, AC, BC, and ABC labels for their regions."
+      },
+      "show_coordinates": {
+        "name": "Show Coordinates",
+        "tooltip": "Shows matrix coordinates for layout diagnostics."
+      },
+      "background_image": {
+        "name": "Background Image",
+        "tooltip": "Optional single IMAGE used behind the comparison matrix."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Style",
+        "tooltip": "Custom style configuration for LoRA Tester."
+      }
+    }
+  }
+}
