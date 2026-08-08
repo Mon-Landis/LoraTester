@@ -33,6 +33,54 @@
 
 主节点只接受 batch size 为 1 的 latent，并输出一张 `IMAGE`。`max_canvas_megapixels` 默认为 150，可在高级选项中调整；它只限制最终画布，不改变生成图。三 LoRA 输出张量很大，调整上限前应先确认系统内存足够。
 
+## 节点输入与权重规则
+
+每个 LoRA 槽位都有文件、触发词、最低权重和最高权重四项输入：
+
+| 输入 | 默认值 | 说明 |
+|---|---:|---|
+| `lora_count` | `1` | 使用 A、A+B 或 A+B+C；未使用的槽位只在界面隐藏，不会清除已保存的值。 |
+| `*_name` | 首个可用文件 | 从 ComfyUI 的 `models/loras` 列表选择文件。 |
+| `*_trigger` | 空字符串 | 实际权重非零时，按 A、B、C 顺序加到正面提示词开头。 |
+| `*_min_strength` | `0` | 强度梯度起点，必须严格小于最高权重。 |
+| `*_max_strength` | `1` | 强度梯度终点；模型和 CLIP 使用相同权重。 |
+
+四档梯度倍率固定为 `0.25 / 0.5 / 0.75 / 1.0`，每个位置的实际权重计算为：
+
+```text
+actual = min_strength + (max_strength - min_strength) * multiplier
+```
+
+因此最低权重非零时，中心位置也会应用各 LoRA 的最低权重并注入对应触发词；最低权重为零时，中心位置就是未应用 LoRA 的底模原图。输出侧轴和底栏显示实际权重范围，底栏开关由 `show_lora_details` 控制。
+
+| LoRA 数量 | 唯一采样任务 | 画布占位 | 结构 |
+|---:|---:|---:|---|
+| 1 | 5 | 5 | 原图加一条四档单 LoRA 横轴。 |
+| 2 | 25 | 25 | 两条单 LoRA 轴和一个 4×4 两两混合区域。 |
+| 3 | 69 | 73 | A/B、A/C、B/C 三个两两区域、两条 B 独立轴复用图，以及 8 个三 LoRA 混合位置。 |
+
+同一轮中的所有任务复用 seed、latent、采样器、调度器、步数、CFG 和 denoise；节点从基础 MODEL/CLIP 重新应用当前任务的 LoRA，不会把上一格的 LoRA 权重带入下一格。
+
+## 安装、更新与重启
+
+将插件放在 ComfyUI 的 `custom_nodes` 目录下。Windows 开发环境可以使用目录联接：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.ps1
+```
+
+脚本只在目标路径不存在时创建联接，不会覆盖已有插件目录。修改 Python 节点、`locales` 或 `web` 文件后，需要重启 ComfyUI 后端；随后在浏览器中刷新页面，才能加载新的输入定义和前端脚本。更新 Git 工作区后也应执行同样的重启流程。
+
+若从 GitHub 获取代码：
+
+```powershell
+Set-Location D:\ComfyUI
+git clone https://github.com/Mon-Landis/LoraTester.git
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\LoraTester\scripts\link_to_comfy.ps1
+```
+
+正式运行前，请确认 LoRA 文件位于 ComfyUI 配置的 `models/loras` 目录，并在节点下拉框中刷新到文件名。
+
 本机开发目录已经通过目录联接安装到：
 
 ```text
@@ -50,6 +98,8 @@ compositor = LoraComparisonCompositor.from_values(
     [0.8, 1.0, 2.0],
     image_width=1024,
     image_height=1024,
+    lora_min_weights=[0.2, 0.75, 0.5],
+    trigger_words=["alpha", "beta", "charlie"],
     show_lora_details=True,
     style=StyleConfig.black(),
 )
@@ -62,7 +112,7 @@ for task in session.pending_tasks:
 result_pil = session.finalize()
 ```
 
-任务对象还提供 `multipliers`、`active_slots`、实际 `weights`、触发词列表和全部贴图坐标。节点侧应以 `plan.tasks` 作为唯一采样队列，不应按 73 个位置生成图片。
+任务对象还提供 `multipliers`、`active_slots`、实际 `weights`、触发词列表和全部贴图坐标。节点侧应以 `plan.tasks` 作为唯一采样队列，不应按 73 个位置生成图片；重复占位会在 `CompositionSession.submit()` 阶段复用同一任务结果。
 
 如采样结果已经是 ComfyUI IMAGE 批次：
 
@@ -103,3 +153,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_environm
 ```
 
 生成的留白预览位于 [previews](previews)。其中 `3_lora_axes_640x800.png` 使用 `LoraX / 0.9`、`LoraY / 3`、`LoraZZZ / 2` 和单格 `640 × 800`，用于检查完整分辨率下的轴标签、特殊格标题与底栏。
+
+最低权重预览使用 `LoraX: 0.2–0.9`、`LoraY: 0.75–3`、`LoraZZZ: 0.5–2`，可用于确认中心位置、轴刻度、触发词对应的实际权重和底栏 `MIN / MAX` 描述。

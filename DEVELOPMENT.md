@@ -61,16 +61,42 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 
 稳定字段定义位于 `lora_tester/node_contract.py`。颜色模式字段为 `color_mode`，候选值固定为 `black / white / custom`。
 
-## 前端边界
+主节点的三个 LoRA 槽位都使用 `*_min_strength` 与 `*_max_strength` 成对输入。节点构造 `LoraSpec` 时会校验最低权重严格小于最高权重；不要只在前端限制范围，后端校验是工作流/API 调用的最终边界。
 
-当前功能可完全使用 Python `INPUT_TYPES` 实现。只有在需要以下能力时才补 Node.js LTS 和 Web 前端扩展：
+## 前端扩展
+
+`web/lora_tester.js` 当前已经提供以下行为：
 
 - 根据 `lora_count` 动态隐藏 B/C 输入；
+- 隐藏/恢复最小权重、最大权重、触发词和文件选择输入时保持节点尺寸稳定；
+- 对颜色模式、背景适配、装饰器和详情开关进行 English/简体中文显示翻译；
+- 加载已有工作流时按序列化的 `lora_count` 恢复可见分组。
+
+前端扩展只改变显示状态和标签，不改变序列化字段值。后续若增加以下能力，再评估引入 Node.js 构建链：
+
 - 展开式自定义样式编辑器；
 - 颜色选择器之外的背景图和区域框交互预览；
 - 执行中的 69 项任务进度矩阵。
 
-没有这些需求时，引入前端构建链只会增加安装和版本兼容成本。
+当前脚本为原生 ES 模块，无需 npm 构建步骤。
+
+## 测试与发布
+
+所有测试应使用 ComfyUI 便携版 Python，而不是系统 Python：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_tests.ps1
+```
+
+该脚本会调用 `D:\ComfyUI\ComfyUI_windows_portable\python_embeded\python.exe`。若直接执行测试，使用同一个解释器；系统 Python 可能没有 Torch。
+
+建议的本地发布顺序：
+
+1. 在独立 worktree 或备份分支修改并运行测试。
+2. 检查 `git diff --check` 和 `git status`，确认没有生成无关文件。
+3. 提交后快进合并到 `main`，确认 ComfyUI 的 `custom_nodes\LoraTester` 仍指向主体目录。
+4. 重启 ComfyUI，确认节点输入契约和前端动态分组正常。
+5. 推送 `main` 后再在生产实例中验证真实 LoRA 采样。
 
 ## ComfyUI 启动级检查
 
