@@ -1,5 +1,7 @@
 {
   "nodeCategories": {
-    "Lora Tester": "LoRA Tester"
+    "Lora Tester": "LoRA Tester",
+    "Stacks": "Stacks",
+    "Lora Tester/Stacks": "LoRA Tester/Stacks"
   }
 }

@@ -1,5 +1,7 @@
 {
   "nodeCategories": {
-    "Lora Tester": "LoRA 测试器"
+    "Lora Tester": "LoRA 测试器",
+    "Stacks": "组合工具",
+    "Lora Tester/Stacks": "LoRA 测试器/组合工具"
   }
 }

@@ -269,5 +269,78 @@
         "tooltip": "Custom style configuration for LoRA Tester."
       }
     }
+  },
+  "LoraStack": {
+    "display_name": "LoRA Stack",
+    "description": "Configures LoRA files, trigger words, and strengths that are applied together.",
+    "inputs": {
+      "lora_count": {
+        "name": "LoRA Count",
+        "tooltip": "Number of enabled LoRAs in this stack."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "LoRA Stack",
+        "tooltip": "LoRA files, trigger words, and strengths applied together."
+      }
+    }
+  },
+  "LoraStackSplitter": {
+    "display_name": "LoRA Stack Splitter",
+    "description": "Splits one LoRA stack into every non-empty combination.",
+    "inputs": {
+      "lora_stack": {
+        "name": "LoRA Stack",
+        "tooltip": "The LoRA stack to expand into every non-empty subset."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "LoRA Stack List",
+        "tooltip": "Single, pairwise, and complete LoRA combinations in order."
+      }
+    }
+  },
+  "LoraStackLister": {
+    "display_name": "LoRA Stack Lister",
+    "description": "Collects LoRA stacks in connection order and reveals the next input automatically.",
+    "outputs": {
+      "0": {
+        "name": "LoRA Stack List",
+        "tooltip": "LoRA stacks preserved in input connection order."
+      }
+    }
+  },
+  "MultiPromptSample": {
+    "display_name": "Multi Prompt LoRA Test",
+    "description": "Samples a prompt-by-LoRA matrix with one shared seed and builds an XY comparison sheet.",
+    "inputs": {
+      "model": { "name": "Base Model", "tooltip": "Every comparison cell reapplies LoRAs from this base model." },
+      "clip": { "name": "CLIP", "tooltip": "Encodes each prompt and LoRA trigger-word combination." },
+      "vae": { "name": "VAE", "tooltip": "Decodes every sampled result." },
+      "latent_image": { "name": "Latent", "tooltip": "Single latent reused by every comparison cell." },
+      "lorastacks": { "name": "LoRA Stack List", "tooltip": "LoRA combinations used as the X-axis test columns." },
+      "prompt_count": { "name": "Prompt Count", "tooltip": "Number of positive-prompt rows on the Y axis." },
+      "prompt_prefix": { "name": "Shared Prompt Prefix", "tooltip": "Common text prepended to every positive-prompt row." },
+      "negative_prompt": { "name": "Shared Negative Prompt", "tooltip": "Negative prompt shared by every comparison cell." },
+      "seed": { "name": "Seed", "tooltip": "One seed reused across the complete comparison run." },
+      "steps": { "name": "Steps", "tooltip": "Sampling steps shared by every comparison cell." },
+      "cfg": { "name": "CFG", "tooltip": "Guidance strength shared by every comparison cell." },
+      "sampler_name": { "name": "Sampler", "tooltip": "Sampling algorithm shared by every comparison cell." },
+      "scheduler": { "name": "Scheduler", "tooltip": "Noise scheduler shared by every comparison cell." },
+      "denoise": { "name": "Denoise", "tooltip": "Denoising strength shared by every comparison cell." },
+      "color_mode": { "name": "Color Mode", "tooltip": "Color preset for the final XY comparison sheet." },
+      "show_lora_details": { "name": "Show Original LoRAs", "tooltip": "Lists each original LoRA file and strength once in the footer." },
+      "control_gap": { "name": "BASE Control Gap", "tooltip": "Horizontal gap between BASE and the first LoRA test column; 0 uses the style region gap." },
+      "max_canvas_megapixels": { "name": "Maximum Canvas (MP)", "tooltip": "Stops when the final XY sheet would exceed this pixel count." },
+      "custom_style": { "name": "Custom Style", "tooltip": "LoRA Tester style used when Color Mode is Custom." }
+    },
+    "outputs": {
+      "0": {
+        "name": "XY Comparison Sheet",
+        "tooltip": "Final image arranged by prompt rows and LoRA-stack columns."
+      }
+    }
   }
 }

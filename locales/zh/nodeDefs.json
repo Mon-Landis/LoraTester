@@ -269,5 +269,78 @@
         "tooltip": "供 LoRA 混合测试器使用的自定义样式配置。"
       }
     }
+  },
+  "LoraStack": {
+    "display_name": "LoRA 组合配置",
+    "description": "配置一组同时应用的 LoRA 文件、触发词和强度。",
+    "inputs": {
+      "lora_count": {
+        "name": "LoRA 数量",
+        "tooltip": "当前组合中启用的 LoRA 数量。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "LoRA 组合",
+        "tooltip": "包含文件、触发词和强度的 LoRA 组合。"
+      }
+    }
+  },
+  "LoraStackSplitter": {
+    "display_name": "LoRA 组合拆分",
+    "description": "将一组 LoRA 拆分为所有非空组合。",
+    "inputs": {
+      "lora_stack": {
+        "name": "LoRA 组合",
+        "tooltip": "需要生成全部非空子组合的 LoRA 组合。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "LoRA 组合列表",
+        "tooltip": "按单项、两两组合到完整组合排列的列表。"
+      }
+    }
+  },
+  "LoraStackLister": {
+    "display_name": "LoRA 组合列表",
+    "description": "按连接顺序收集多个 LoRA 组合，并自动增加下一个输入口。",
+    "outputs": {
+      "0": {
+        "name": "LoRA 组合列表",
+        "tooltip": "按输入连接顺序保存的 LoRA 组合列表。"
+      }
+    }
+  },
+  "MultiPromptSample": {
+    "display_name": "多提示词 LoRA 测试",
+    "description": "使用相同种子采样提示词与 LoRA 组合矩阵，并生成 XY 对比图。",
+    "inputs": {
+      "model": { "name": "基础模型", "tooltip": "每个对比格都从该基础模型重新应用 LoRA。" },
+      "clip": { "name": "CLIP", "tooltip": "用于编码每个提示词和 LoRA 触发词组合。" },
+      "vae": { "name": "VAE", "tooltip": "逐张解码采样结果。" },
+      "latent_image": { "name": "潜空间图像", "tooltip": "所有对比格复用的单张 latent。" },
+      "lorastacks": { "name": "LoRA 组合列表", "tooltip": "作为 X 轴测试列的 LoRA 组合。" },
+      "prompt_count": { "name": "提示词数量", "tooltip": "作为 Y 轴使用的正面提示词行数。" },
+      "prompt_prefix": { "name": "通用正面提示词前缀", "tooltip": "添加到每一行正面提示词开头的通用内容。" },
+      "negative_prompt": { "name": "通用负面提示词", "tooltip": "所有对比格共同使用的负面提示词。" },
+      "seed": { "name": "随机种子", "tooltip": "本轮所有对比格复用同一个随机种子。" },
+      "steps": { "name": "采样步数", "tooltip": "所有对比格共同使用的采样步数。" },
+      "cfg": { "name": "CFG", "tooltip": "所有对比格共同使用的提示词引导强度。" },
+      "sampler_name": { "name": "采样器", "tooltip": "所有对比格共同使用的采样算法。" },
+      "scheduler": { "name": "调度器", "tooltip": "所有对比格共同使用的噪声调度器。" },
+      "denoise": { "name": "降噪强度", "tooltip": "所有对比格共同使用的降噪强度。" },
+      "color_mode": { "name": "颜色模式", "tooltip": "选择最终 XY 对比图的配色。" },
+      "show_lora_details": { "name": "显示原始 LoRA 底栏", "tooltip": "在底栏中各显示一次原始 LoRA 文件和强度。" },
+      "control_gap": { "name": "BASE 对照列间距", "tooltip": "BASE 对照列与第一列 LoRA 测试结果之间的水平间距；0 使用样式的区域间距。" },
+      "max_canvas_megapixels": { "name": "最大画布（百万像素）", "tooltip": "最终 XY 对比图超过该像素数量时中止。" },
+      "custom_style": { "name": "自定义样式", "tooltip": "颜色模式为自定义时使用的 LoRA 测试器样式。" }
+    },
+    "outputs": {
+      "0": {
+        "name": "XY 对比图",
+        "tooltip": "按提示词行与 LoRA 组合列拼合的最终图片。"
+      }
+    }
   }
 }

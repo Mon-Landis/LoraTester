@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 
 const TARGET_NODE = "LoraTesterSampler";
 const STACK_NODE = "LoraStack";
+const STACK_SPLITTER_NODE = "LoraStackSplitter";
 const STACK_LISTER_NODE = "LoraStackLister";
 const MULTI_PROMPT_NODE = "MultiPromptSample";
 const MAX_STACK_INPUTS = 16;
@@ -64,6 +65,51 @@ const TOGGLE_LABELS = {
         label_off: "隐藏 LoRA 名称和强度",
       },
     },
+  },
+};
+
+const INPUT_LABELS = {
+  LoraStack: {
+    lora_count: { en: "LoRA Count", zh: "LoRA 数量" },
+  },
+  LoraStackSplitter: {
+    lora_stack: { en: "LoRA Stack", zh: "LoRA 组合" },
+  },
+  MultiPromptSample: {
+    model: { en: "Base Model", zh: "基础模型" },
+    clip: { en: "CLIP", zh: "CLIP" },
+    vae: { en: "VAE", zh: "VAE" },
+    latent_image: { en: "Latent", zh: "潜空间图像" },
+    lorastacks: { en: "LoRA Stack List", zh: "LoRA 组合列表" },
+    prompt_count: { en: "Prompt Count", zh: "提示词数量" },
+    prompt_prefix: { en: "Shared Prompt Prefix", zh: "通用正面提示词前缀" },
+    negative_prompt: { en: "Shared Negative Prompt", zh: "通用负面提示词" },
+    seed: { en: "Seed", zh: "随机种子" },
+    steps: { en: "Steps", zh: "采样步数" },
+    cfg: { en: "CFG", zh: "CFG" },
+    sampler_name: { en: "Sampler", zh: "采样器" },
+    scheduler: { en: "Scheduler", zh: "调度器" },
+    denoise: { en: "Denoise", zh: "降噪强度" },
+    color_mode: { en: "Color Mode", zh: "颜色模式" },
+    show_lora_details: { en: "Show Original LoRAs", zh: "显示原始 LoRA 底栏" },
+    control_gap: { en: "BASE Control Gap", zh: "BASE 对照列间距" },
+    max_canvas_megapixels: { en: "Maximum Canvas (MP)", zh: "最大画布（百万像素）" },
+    custom_style: { en: "Custom Style", zh: "自定义样式" },
+  },
+};
+
+const OUTPUT_LABELS = {
+  LoraStack: {
+    lora_stack: { en: "LoRA Stack", zh: "LoRA 组合" },
+  },
+  LoraStackSplitter: {
+    lora_stack_list: { en: "LoRA Stack List", zh: "LoRA 组合列表" },
+  },
+  LoraStackLister: {
+    lora_stack_list: { en: "LoRA Stack List", zh: "LoRA 组合列表" },
+  },
+  MultiPromptSample: {
+    comparison_sheet: { en: "Comparison Sheet", zh: "XY 对比图" },
   },
 };
 
@@ -162,6 +208,50 @@ function installWidgetTranslations(node, nodeName) {
   for (const widget of node.widgets ?? []) {
     installOptionLabels(widget, optionLabels[widget.name]);
     installToggleLabels(widget, toggleLabels[widget.name]);
+  }
+}
+
+function localizedInputLabel(nodeName, inputName) {
+  const language = activeLanguage();
+  const fixed = INPUT_LABELS[nodeName]?.[inputName];
+  if (fixed) return fixed[language] ?? fixed.en;
+
+  let match;
+  if (nodeName === STACK_NODE) {
+    match = /^lora_(\d+)_(name|trigger|strength)$/.exec(inputName);
+    if (match) {
+      const fields = {
+        name: { en: "File", zh: "文件" },
+        trigger: { en: "Trigger Words", zh: "触发词" },
+        strength: { en: "Strength", zh: "强度" },
+      };
+      return `LoRA ${match[1]} ${fields[match[2]][language] ?? fields[match[2]].en}`;
+    }
+  }
+  if (nodeName === STACK_LISTER_NODE) {
+    match = /^stack_(\d+)$/.exec(inputName);
+    if (match) return language === "zh" ? `LoRA 组合 ${match[1]}` : `LoRA Stack ${match[1]}`;
+  }
+  if (nodeName === MULTI_PROMPT_NODE) {
+    match = /^positive_prompt_(\d+)$/.exec(inputName);
+    if (match) return language === "zh" ? `正面提示词 ${match[1]}` : `Positive Prompt ${match[1]}`;
+  }
+  return null;
+}
+
+function installNodeLabels(node, nodeName) {
+  for (const widget of node.widgets ?? []) {
+    const label = localizedInputLabel(nodeName, String(widget.name ?? ""));
+    if (label) widget.label = label;
+  }
+  for (const input of node.inputs ?? []) {
+    const label = localizedInputLabel(nodeName, String(input.name ?? ""));
+    if (label) input.label = label;
+  }
+  for (const output of node.outputs ?? []) {
+    const labels = OUTPUT_LABELS[nodeName]?.[String(output.name ?? "")];
+    const label = labels?.[activeLanguage()] ?? labels?.en;
+    if (label) output.label = label;
   }
 }
 
@@ -409,10 +499,16 @@ app.registerExtension({
     const hasDynamicPromptCount = nodeData.name === MULTI_PROMPT_NODE;
     const hasDynamicStackList = nodeData.name === STACK_LISTER_NODE;
     const hasWidgetTranslations = nodeData.name in OPTION_LABELS;
-    if (!hasDynamicLoraCount && !hasDynamicStackCount && !hasDynamicPromptCount && !hasDynamicStackList && !hasWidgetTranslations) return;
+    const hasNodeLabels =
+      nodeData.name in INPUT_LABELS ||
+      nodeData.name in OUTPUT_LABELS ||
+      nodeData.name === STACK_LISTER_NODE ||
+      nodeData.name === STACK_SPLITTER_NODE;
+    if (!hasDynamicLoraCount && !hasDynamicStackCount && !hasDynamicPromptCount && !hasDynamicStackList && !hasWidgetTranslations && !hasNodeLabels) return;
 
     const applyNodeUi = (node) => {
       installWidgetTranslations(node, nodeData.name);
+      installNodeLabels(node, nodeData.name);
       if (hasDynamicLoraCount) installDynamicLoraCount(node);
       if (hasDynamicStackCount) installDynamicCount(node, "lora_count", STACK_ITEM_GROUPS, 16);
       if (hasDynamicPromptCount) installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);

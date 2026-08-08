@@ -64,8 +64,12 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("options.label_off", source)
         self.assertIn("options.on", source)
         self.assertIn("options.off", source)
+        self.assertIn("installNodeLabels", source)
+        self.assertIn('zh: "BASE 对照列间距"', source)
+        self.assertIn("positive_prompt_", source)
+        self.assertIn("LoRA 组合", source)
 
-    def test_english_and_chinese_locales_cover_both_nodes(self) -> None:
+    def test_english_and_chinese_locales_cover_all_nodes(self) -> None:
         with (
             patch("lora_tester.nodes._get_lora_names", return_value=["A.safetensors"]),
             patch("lora_tester.nodes._get_sampler_names", return_value=("sampler",)),
@@ -86,7 +90,14 @@ class FrontendContractTests(unittest.TestCase):
                 self.assertIn("Lora Tester", main["nodeCategories"])
                 self.assertEqual(
                     set(node_defs),
-                    {"LoraTesterSampler", "LoraTesterStyle"},
+                    {
+                        "LoraTesterSampler",
+                        "LoraTesterStyle",
+                        "LoraStack",
+                        "LoraStackSplitter",
+                        "LoraStackLister",
+                        "MultiPromptSample",
+                    },
                 )
                 self.assertEqual(
                     set(node_defs["LoraTesterSampler"]["inputs"]),
@@ -98,6 +109,13 @@ class FrontendContractTests(unittest.TestCase):
                 )
                 self.assertTrue(node_defs["LoraTesterSampler"]["display_name"])
                 self.assertTrue(node_defs["LoraTesterStyle"]["display_name"])
+                for node_name in (
+                    "LoraStack",
+                    "LoraStackSplitter",
+                    "LoraStackLister",
+                    "MultiPromptSample",
+                ):
+                    self.assertTrue(node_defs[node_name]["display_name"])
                 self.assertEqual(
                     set(node_defs["LoraTesterSampler"]["inputs"]["color_mode"]["values"]),
                     set(sampler_inputs["required"]["color_mode"][0]),
