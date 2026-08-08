@@ -21,15 +21,22 @@
 - 节点进度条显示整轮任务进度；当前图片的采样步数会折算到 5/25/69 次总任务中，不会在每张图片开始时重新归零。
 - 每组 LoRA 提供文件、触发词、最低权重和最高权重；最低权重默认为 0 且必须低于最高权重。每档实际权重按最低值到最高值均分；触发词按 A/B/C 顺序，在实际权重非零时加到正面提示词开头。
 - 逐张解码并提交给合成器，不在内存中同时保留 69 张源图。
+- 可用 `LoRA Stack` 保存多组 LoRA 文件、触发词和强度，并用 `LoRA Stack Splitter` 生成全部非空组合。
+- 可用动态增长的 `LoRA Stack Lister` 合并多个独立 Stack；连接一个输入后自动显示下一个输入槽。
+- `Multi Prompt Sample` 以 Prompt 为 Y 轴、LoRA 组合为 X 轴生成比较矩阵；左侧固定显示 `Prompt 1 / Prompt 2 / ...`，顶部显示 `BASE / A / B / A+B / ...`，底栏只列原始 LoRA。
 
 ## ComfyUI 节点
 
-插件注册两个节点，均位于 `Lora Tester` 分类：
+插件注册六个节点，位于 `Lora Tester` 及其 `Stacks` 子分类：
 
 - `LoRA Tester (KSampler)`：主采样与拼图节点。`lora_count` 默认为 1，可选 1–3；分别执行 5、25、69 次采样。
 - `LoRA Tester Style`：可选样式节点。只有主节点的 `color_mode` 为 `custom` 时使用，可配置背景颜色或单张背景 `IMAGE`、文字与边框颜色、A/B/C 功能色、间距、字体和装饰器。
+- `LoRA Stack`：最多配置 16 组 LoRA 文件、触发词和强度，输出 `LORA_STACK`；所有启用项都必须选择文件。
+- `LoRA Stack Splitter`：将一个 Stack 拆成所有非空组合并输出 `LORA_STACK_LIST`。例如 ABC 会得到 A、B、C、AB、AC、BC、ABC。
+- `LoRA Stack Lister`：按连接顺序合并多个 `LORA_STACK`，动态显示最多 16 个输入槽。
+- `Multi Prompt Sample`：最多使用 16 行正面提示词，与 `LORA_STACK_LIST` 组成 XY 比较矩阵，并保留无 LoRA 的 BASE 对照列。
 
-主节点会根据 `lora_count` 自动调整 LoRA 配置区：1 只显示 A，2 显示 A/B，3 显示 A/B/C。隐藏只影响界面和节点高度，不会清空 B/C 已保存的文件、触发词或权重；加载已有工作流时也会恢复对应数量。插件通过 ComfyUI 原生 `locales` 机制提供 English 与简体中文节点名、输入名、说明和分类翻译；前端扩展另为颜色模式、背景适配、装饰器和详情开关提供本地化显示文本，但序列化值保持不变。切换 ComfyUI 语言后刷新页面即可生效。
+主节点会根据 `lora_count` 自动调整 LoRA 配置区：1 只显示 A，2 显示 A/B，3 显示 A/B/C。`LoRA Stack` 和 `Multi Prompt Sample` 也会按数量隐藏未启用的配置组；`LoRA Stack Lister` 会在连接后显示下一个输入槽。隐藏只影响界面和节点高度，不会清空已保存的值。插件通过 ComfyUI 原生 `locales` 机制为原有采样和样式节点提供 English 与简体中文翻译；前端扩展另为枚举值、详情开关和动态输入提供显示逻辑，但序列化值保持不变。
 
 主节点只接受 batch size 为 1 的 latent，并输出一张 `IMAGE`。`max_canvas_megapixels` 默认为 150，可在高级选项中调整；它只限制最终画布，不改变生成图。三 LoRA 输出张量很大，调整上限前应先确认系统内存足够。
 
@@ -152,6 +159,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\render_preview
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_environment.ps1
 ```
 
-生成的留白预览位于 [previews](previews)。其中 `3_lora_axes_640x800.png` 使用 `LoraX / 0.9`、`LoraY / 3`、`LoraZZZ / 2` 和单格 `640 × 800`，用于检查完整分辨率下的轴标签、特殊格标题与底栏。
+生成的留白预览位于 [previews](previews)。其中 `3_lora_axes_640x800.png` 使用 `LoraX / 0.9`、`LoraY / 3`、`LoraZZZ / 2` 和单格 `640 × 800`，用于检查完整分辨率下的轴标签、特殊格标题与底栏。`multi_prompt_stack_matrix.png` 使用三个原始 LoRA 的七种非空组合，检查 Prompt 竖轴、BASE 对照间隔、混合状态标题和原始 LoRA 底栏。
 
 最低权重预览使用 `LoraX: 0.2–0.9`、`LoraY: 0.75–3`、`LoraZZZ: 0.5–2`，可用于确认中心位置、轴刻度、触发词对应的实际权重和底栏 `MIN / MAX` 描述。

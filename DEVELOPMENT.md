@@ -46,7 +46,7 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
   -> D:\ComfyUI\LoraTester
 ```
 
-根 `__init__.py` 当前注册 `LoraTesterSampler` 与 `LoraTesterStyle` 两个节点。
+根 `__init__.py` 当前注册六个节点：`LoraTesterSampler`、`LoraTesterStyle`、`LoraStack`、`LoraStackSplitter`、`LoraStackLister` 与 `MultiPromptSample`。
 
 ## 稳定节点字段
 
@@ -68,6 +68,8 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 `web/lora_tester.js` 当前已经提供以下行为：
 
 - 根据 `lora_count` 动态隐藏 B/C 输入；
+- 根据 Stack 和 Prompt 数量动态隐藏未启用的配置组；
+- `LoraStackLister` 连接一个 Stack 后显示下一个输入槽；
 - 隐藏/恢复最小权重、最大权重、触发词和文件选择输入时保持节点尺寸稳定；
 - 对颜色模式、背景适配、装饰器和详情开关进行 English/简体中文显示翻译；
 - 加载已有工作流时按序列化的 `lora_count` 恢复可见分组。
@@ -107,4 +109,4 @@ Set-Location D:\ComfyUI\ComfyUI_windows_portable\ComfyUI
 ..\python_embeded\python.exe main.py --quick-test-for-ci --disable-all-custom-nodes --whitelist-custom-nodes LoraTester --database-url "sqlite:///:memory:"
 ```
 
-当前检查结果为插件导入 `0.0 seconds`、退出码 `0`，节点映射数量为 2；真实 `INPUT_TYPES` 调用也已通过。
+当前检查结果为插件导入 `0.0 seconds`、退出码 `0`，节点映射数量为 6；真实 `INPUT_TYPES` 调用也已通过。

@@ -11,10 +11,14 @@ from .comfy_adapter import pil_to_comfy_image
 from .compositor import LoraComparisonCompositor, image_to_pil
 from .layout import LoraSpec, RenderTask, build_layout
 from .node_contract import COLOR_MODE_INPUT, SHOW_LORA_DETAILS_INPUT
+from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
+from .stack_compositor import LoraStackMatrixCompositor
 from .styles import StyleConfig, available_style_decorators
 
 
 MAX_CACHED_LORAS = 3
+MAX_STACK_ITEMS = 16
+MAX_STACK_INPUTS = 16
 DEFAULT_MAX_CANVAS_MEGAPIXELS = 150.0
 
 
@@ -266,6 +270,8 @@ class _CachedLora:
 
 
 class LoraTesterSampler:
+    LORA_CACHE_LIMIT = MAX_CACHED_LORAS
+
     def __init__(self) -> None:
         self._lora_cache: OrderedDict[str, _CachedLora] = OrderedDict()
 
@@ -531,7 +537,7 @@ class LoraTesterSampler:
         state_dict, metadata = _load_lora_file(path)
         cached = _CachedLora(path=path, state_dict=state_dict, metadata=metadata)
         self._lora_cache[cache_key] = cached
-        while len(self._lora_cache) > MAX_CACHED_LORAS:
+        while len(self._lora_cache) > int(getattr(self, "LORA_CACHE_LIMIT", MAX_CACHED_LORAS)):
             self._lora_cache.popitem(last=False)
         return cached
 
@@ -718,20 +724,374 @@ class LoraTesterStyleNode:
         return (style,)
 
 
+def _stack_lora_name_input() -> tuple[Any, dict[str, Any]]:
+    return (
+        _get_lora_names(),
+        {
+            "tooltip": "Required LoRA file for this stack entry.",
+        },
+    )
+
+
+def _stack_inputs() -> dict[str, tuple[Any, dict[str, Any]]]:
+    inputs: dict[str, tuple[Any, dict[str, Any]]] = {
+        "lora_count": (
+            "INT",
+            {
+                "default": 1,
+                "min": 1,
+                "max": MAX_STACK_ITEMS,
+                "step": 1,
+                "tooltip": "Number of LoRA entries in this stack.",
+            },
+        ),
+    }
+    for index in range(1, MAX_STACK_ITEMS + 1):
+        inputs[f"lora_{index}_name"] = _stack_lora_name_input()
+        inputs[f"lora_{index}_trigger"] = (
+            "STRING",
+            {
+                "default": "",
+                "multiline": False,
+                "tooltip": f"Trigger words for LoRA entry {index}.",
+            },
+        )
+        inputs[f"lora_{index}_strength"] = (
+            "FLOAT",
+            {
+                "default": 1.0,
+                "min": -100.0,
+                "max": 100.0,
+                "step": 0.01,
+                "round": 0.001,
+                "tooltip": f"Model and CLIP strength for LoRA entry {index}.",
+            },
+        )
+    return inputs
+
+
+class LoraStackNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {"required": _stack_inputs()}
+
+    RETURN_TYPES = ("LORA_STACK",)
+    RETURN_NAMES = ("lora_stack",)
+    FUNCTION = "build_stack"
+    CATEGORY = "Lora Tester/Stacks"
+    DESCRIPTION = "Builds an ordered stack of LoRA files, trigger words, and strengths."
+
+    def build_stack(self, lora_count: int, **values: Any) -> tuple[LoraStack]:
+        count = int(lora_count)
+        if not 1 <= count <= MAX_STACK_ITEMS:
+            raise ValueError(f"lora_count must be between 1 and {MAX_STACK_ITEMS}")
+        items: list[LoraStackItem] = []
+        for index in range(1, count + 1):
+            name = str(values.get(f"lora_{index}_name", "")).strip()
+            if not name:
+                raise ValueError(f"LoRA file for stack entry {index} cannot be empty")
+            items.append(
+                LoraStackItem(
+                    name=name,
+                    trigger_word=str(values.get(f"lora_{index}_trigger", "")),
+                    strength=float(values.get(f"lora_{index}_strength", 1.0)),
+                )
+            )
+        return (LoraStack(tuple(items)),)
+
+
+class LoraStackSplitterNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {"required": {"lora_stack": ("LORA_STACK",)}}
+
+    RETURN_TYPES = ("LORA_STACK_LIST",)
+    RETURN_NAMES = ("lora_stack_list",)
+    FUNCTION = "split_stack"
+    CATEGORY = "Lora Tester/Stacks"
+    DESCRIPTION = "Splits one LoRA stack into every non-empty combination."
+
+    @staticmethod
+    def split_stack(lora_stack: LoraStack) -> tuple[LoraStackList]:
+        return (split_lora_stack(lora_stack),)
+
+
+class LoraStackListerNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        required = {"stack_1": ("LORA_STACK",)}
+        optional = {f"stack_{index}": ("LORA_STACK",) for index in range(2, MAX_STACK_INPUTS + 1)}
+        return {"required": required, "optional": optional}
+
+    RETURN_TYPES = ("LORA_STACK_LIST",)
+    RETURN_NAMES = ("lora_stack_list",)
+    FUNCTION = "list_stacks"
+    CATEGORY = "Lora Tester/Stacks"
+    DESCRIPTION = "Collects multiple LoRA stacks into one ordered stack list."
+
+    @staticmethod
+    def list_stacks(stack_1: LoraStack | None = None, **values: Any) -> tuple[LoraStackList]:
+        candidates = [stack_1]
+        candidates.extend(values.get(f"stack_{index}") for index in range(2, MAX_STACK_INPUTS + 1))
+        stacks = [value for value in candidates if value is not None]
+        if not stacks:
+            raise ValueError("Connect at least one LoRA stack")
+        return (LoraStackList.merge(stacks),)
+
+
+def _join_prompt_parts(*parts: str) -> str:
+    return ", ".join(str(part).strip() for part in parts if str(part).strip())
+
+
+STACK_SHOW_LORA_DETAILS_INPUT = (
+    "BOOLEAN",
+    {
+        "default": True,
+        "label_on": "show LoRA names and strengths",
+        "label_off": "hide LoRA names and strengths",
+        "tooltip": "Show each original LoRA file and its configured strength once in the footer.",
+    },
+)
+
+
+class MultiPromptSampleNode(LoraTesterSampler):
+    """Sample a prompt-by-stack matrix while reusing one seed per run."""
+
+    LORA_CACHE_LIMIT = 64
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        prompts: dict[str, tuple[str, dict[str, Any]]] = {
+            "prompt_count": (
+                "INT",
+                {
+                    "default": 1,
+                    "min": 1,
+                    "max": MAX_STACK_ITEMS,
+                    "step": 1,
+                    "tooltip": "Number of positive prompt rows.",
+                },
+            ),
+            "prompt_prefix": (
+                "STRING",
+                {
+                    "default": "",
+                    "multiline": True,
+                    "dynamicPrompts": True,
+                    "tooltip": "Shared positive prompt prefix used in every row.",
+                },
+            ),
+            "negative_prompt": (
+                "STRING",
+                {
+                    "default": "",
+                    "multiline": True,
+                    "dynamicPrompts": True,
+                    "tooltip": "Negative prompt used for every matrix cell.",
+                },
+            ),
+        }
+        for index in range(1, MAX_STACK_ITEMS + 1):
+            prompts[f"positive_prompt_{index}"] = (
+                "STRING",
+                {
+                    "default": "",
+                    "multiline": True,
+                    "dynamicPrompts": True,
+                    "tooltip": f"Positive prompt for matrix row {index}.",
+                },
+            )
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "clip": ("CLIP",),
+                "vae": ("VAE",),
+                "latent_image": ("LATENT",),
+                "lorastacks": ("LORA_STACK_LIST",),
+                **prompts,
+                "seed": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 0xFFFFFFFFFFFFFFFF,
+                        "control_after_generate": True,
+                    },
+                ),
+                "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
+                "cfg": ("FLOAT", {"default": 8.0, "min": 0.0, "max": 100.0, "step": 0.1, "round": 0.01}),
+                "sampler_name": (_get_sampler_names(),),
+                "scheduler": (_get_scheduler_names(),),
+                "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "color_mode": COLOR_MODE_INPUT,
+                "show_lora_details": STACK_SHOW_LORA_DETAILS_INPUT,
+                "control_gap": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 4096,
+                        "step": 1,
+                        "advanced": True,
+                        "tooltip": "Gap after the no-LoRA control column. Zero uses the style region gap.",
+                    },
+                ),
+                "max_canvas_megapixels": (
+                    "FLOAT",
+                    {
+                        "default": DEFAULT_MAX_CANVAS_MEGAPIXELS,
+                        "min": 1.0,
+                        "max": 1000.0,
+                        "step": 1.0,
+                        "advanced": True,
+                    },
+                ),
+            },
+            "optional": {
+                "custom_style": ("LORA_TESTER_STYLE", {"tooltip": "Used when color_mode is custom."}),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("comparison_sheet",)
+    FUNCTION = "sample"
+    CATEGORY = "Lora Tester"
+    DESCRIPTION = "Samples multiple positive prompt rows against LoRA stacks and builds an XY comparison sheet."
+
+    def sample(
+        self,
+        model: Any,
+        clip: Any,
+        vae: Any,
+        latent_image: dict[str, Any],
+        lorastacks: LoraStackList,
+        prompt_count: int,
+        prompt_prefix: str,
+        negative_prompt: str,
+        seed: int,
+        steps: int,
+        cfg: float,
+        sampler_name: str,
+        scheduler: str,
+        denoise: float,
+        color_mode: str,
+        show_lora_details: bool,
+        control_gap: int = 0,
+        max_canvas_megapixels: float = DEFAULT_MAX_CANVAS_MEGAPIXELS,
+        custom_style: StyleConfig | None = None,
+        unique_id: Any = None,
+        **values: Any,
+    ) -> tuple[Any]:
+        _validate_single_latent(latent_image)
+        if not isinstance(lorastacks, LoraStackList):
+            raise TypeError("lorastacks must be a LoRA Stack List")
+        count = int(prompt_count)
+        if not 1 <= count <= MAX_STACK_ITEMS:
+            raise ValueError(f"prompt_count must be between 1 and {MAX_STACK_ITEMS}")
+        prompts = []
+        for index in range(1, count + 1):
+            prompt = str(values.get(f"positive_prompt_{index}", "")).strip()
+            if not prompt:
+                raise ValueError(f"Positive prompt row {index} cannot be empty")
+            prompts.append(prompt)
+        style = _style_for_mode(color_mode, custom_style)
+        stacks = tuple(lorastacks.stacks)
+        loaded_by_name: dict[str, _CachedLora] = {}
+        for stack in stacks:
+            for item in stack.items:
+                if item.name not in loaded_by_name:
+                    loaded_by_name[item.name] = self._load_lora(item.name)
+        total_tasks = len(prompts) * (len(stacks) + 1)
+        progress = _make_progress_bar(total_tasks, node_id=unique_id)
+        compositor: LoraStackMatrixCompositor | None = None
+        session = None
+        task_index = 0
+        for row, prompt in enumerate(prompts):
+            for column, stack in enumerate((None, *stacks)):
+                _throw_if_interrupted()
+                task_model = model
+                task_clip = clip
+                trigger_words: tuple[str, ...] = ()
+                if stack is not None:
+                    trigger_words = stack.trigger_words
+                    for item in stack.items:
+                        loaded = loaded_by_name[item.name]
+                        task_model, task_clip = _apply_lora_to_models(
+                            task_model,
+                            task_clip,
+                            loaded.state_dict,
+                            float(item.strength),
+                            loaded.metadata,
+                        )
+                positive_text = _join_prompt_parts(prompt_prefix, *trigger_words, prompt)
+                positive = _encode_prompt(task_clip, positive_text)
+                negative = _encode_prompt(task_clip, negative_prompt)
+                sampled = _common_ksampler(
+                    task_model,
+                    int(seed),
+                    int(steps),
+                    float(cfg),
+                    sampler_name,
+                    scheduler,
+                    positive,
+                    negative,
+                    latent_image,
+                    float(denoise),
+                    progress=progress,
+                    completed_tasks=task_index,
+                    total_tasks=total_tasks,
+                )
+                decoded = _decode_vae(vae, sampled)
+                decoded_image = image_to_pil(decoded)
+                if compositor is None:
+                    compositor = LoraStackMatrixCompositor(
+                        stacks,
+                        prompts,
+                        decoded_image.width,
+                        decoded_image.height,
+                        style=style,
+                        show_stack_details=bool(show_lora_details),
+                        image_fit="strict",
+                        max_canvas_pixels=max(1, round(float(max_canvas_megapixels) * 1_000_000)),
+                        control_gap=int(control_gap) or None,
+                    )
+                    session = compositor.start()
+                session.submit(decoded_image, coordinate=(row, column))
+                task_index += 1
+                progress.update_absolute(task_index, total_tasks)
+                del task_model, task_clip, positive, negative, sampled, decoded, decoded_image
+        if session is None:
+            raise RuntimeError("Multi Prompt Sample generated no images")
+        return (pil_to_comfy_image(session.finalize(strict=True)),)
+
+
 NODE_CLASS_MAPPINGS = {
     "LoraTesterSampler": LoraTesterSampler,
     "LoraTesterStyle": LoraTesterStyleNode,
+    "LoraStack": LoraStackNode,
+    "LoraStackSplitter": LoraStackSplitterNode,
+    "LoraStackLister": LoraStackListerNode,
+    "MultiPromptSample": MultiPromptSampleNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "LoraTesterSampler": "LoRA Tester (KSampler)",
     "LoraTesterStyle": "LoRA Tester Style",
+    "LoraStack": "LoRA Stack",
+    "LoraStackSplitter": "LoRA Stack Splitter",
+    "LoraStackLister": "LoRA Stack Lister",
+    "MultiPromptSample": "Multi Prompt Sample",
 }
 
 
 __all__ = [
     "LoraTesterSampler",
     "LoraTesterStyleNode",
+    "LoraStackNode",
+    "LoraStackSplitterNode",
+    "LoraStackListerNode",
+    "MultiPromptSampleNode",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
     "compose_positive_prompt",

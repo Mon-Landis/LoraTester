@@ -1,13 +1,25 @@
 import { app } from "../../scripts/app.js";
 
 const TARGET_NODE = "LoraTesterSampler";
-const HIDDEN_WIDGET_TYPE = "lora-tester-hidden";
+const STACK_NODE = "LoraStack";
+const STACK_LISTER_NODE = "LoraStackLister";
+const MULTI_PROMPT_NODE = "MultiPromptSample";
+const MAX_STACK_INPUTS = 16;
+const HIDDEN_WIDGET_TYPE = "hidden";
 const WIDGET_STATE = Symbol("loraTesterWidgetState");
 const DOM_STATE = Symbol("loraTesterDomState");
 const LOCALIZED_OPTION = Symbol("loraTesterLocalizedOption");
+const STACK_INPUT_TEMPLATES = Symbol("loraTesterStackInputTemplates");
 
 const OPTION_LABELS = {
   LoraTesterSampler: {
+    color_mode: {
+      black: { en: "Black background / white text", zh: "黑底白字" },
+      white: { en: "White background / black text", zh: "白底黑字" },
+      custom: { en: "Custom style", zh: "自定义样式" },
+    },
+  },
+  MultiPromptSample: {
     color_mode: {
       black: { en: "Black background / white text", zh: "黑底白字" },
       white: { en: "White background / black text", zh: "白底黑字" },
@@ -41,6 +53,18 @@ const TOGGLE_LABELS = {
       },
     },
   },
+  MultiPromptSample: {
+    show_lora_details: {
+      en: {
+        label_on: "show LoRA names and strengths",
+        label_off: "hide LoRA names and strengths",
+      },
+      zh: {
+        label_on: "显示 LoRA 名称和强度",
+        label_off: "隐藏 LoRA 名称和强度",
+      },
+    },
+  },
 };
 
 const LORA_GROUPS = [
@@ -63,6 +87,20 @@ const LORA_GROUPS = [
     ],
   },
 ];
+
+const STACK_ITEM_GROUPS = Array.from({ length: 16 }, (_, index) => ({
+  minimumCount: index + 1,
+  widgets: [
+    `lora_${index + 1}_name`,
+    `lora_${index + 1}_trigger`,
+    `lora_${index + 1}_strength`,
+  ],
+}));
+
+const PROMPT_GROUPS = Array.from({ length: 16 }, (_, index) => ({
+  minimumCount: index + 1,
+  widgets: [`positive_prompt_${index + 1}`],
+}));
 
 function widgetElements(widget) {
   return [widget?.element, widget?.inputEl, widget?.el, widget?.container].filter(
@@ -136,28 +174,30 @@ function restoreHiddenOption(widget, state) {
 
 function setElementVisible(element, visible) {
   if (!element[DOM_STATE]) {
-    element[DOM_STATE] = {
-      display: element.style.display,
-      visibility: element.style.visibility,
-      height: element.style.height,
-      width: element.style.width,
-      position: element.style.position,
-      left: element.style.left,
-    };
+    element[DOM_STATE] = Object.fromEntries(
+      ["display", "visibility", "height", "width", "position", "left"].map((property) => [
+        property,
+        {
+          value: element.style.getPropertyValue(property),
+          priority: element.style.getPropertyPriority(property),
+        },
+      ]),
+    );
   }
   const original = element[DOM_STATE];
   if (visible) {
-    Object.assign(element.style, original);
+    for (const [property, state] of Object.entries(original)) {
+      if (state.value) element.style.setProperty(property, state.value, state.priority);
+      else element.style.removeProperty(property);
+    }
     return;
   }
-  Object.assign(element.style, {
-    display: "none",
-    visibility: "hidden",
-    height: "0px",
-    width: "0px",
-    position: "absolute",
-    left: "-100000px",
-  });
+  element.style.setProperty("display", "none", "important");
+  element.style.setProperty("visibility", "hidden", "important");
+  element.style.setProperty("height", "0px", "important");
+  element.style.setProperty("width", "0px", "important");
+  element.style.setProperty("position", "absolute", "important");
+  element.style.setProperty("left", "-100000px", "important");
 }
 
 function captureVisibleState(widget) {
@@ -169,6 +209,8 @@ function captureVisibleState(widget) {
     state.draw = widget.draw;
     state.hidden = widget.hidden;
     state.computedHeight = widget.computedHeight;
+    state.y = widget.y;
+    state.lastY = widget.last_y;
     const options = widget?._state?.options ?? widget.options ?? {};
     state.hasOptionHidden = Object.prototype.hasOwnProperty.call(options, "hidden");
     state.optionHidden = options.hidden;
@@ -191,6 +233,10 @@ function setWidgetVisible(widget, visible) {
     widget.hidden = state.hidden;
     if (state.computedHeight === undefined) delete widget.computedHeight;
     else widget.computedHeight = state.computedHeight;
+    if (state.y === undefined) delete widget.y;
+    else widget.y = state.y;
+    if (state.lastY === undefined) delete widget.last_y;
+    else widget.last_y = state.lastY;
     restoreHiddenOption(widget, state);
     widgetElements(widget).forEach((element) => setElementVisible(element, true));
     state.hiddenByLoraTester = false;
@@ -206,7 +252,15 @@ function setWidgetVisible(widget, visible) {
   widget.options ??= {};
   for (const options of widgetOptionTargets(widget)) options.hidden = true;
   widget.computedHeight = 0;
+  widget.y = -100000;
+  widget.last_y = -100000;
   widgetElements(widget).forEach((element) => setElementVisible(element, false));
+}
+
+function refreshReactiveCollection(node, property) {
+  const collection = node[property];
+  if (!Array.isArray(collection)) return;
+  node[property] = [...collection];
 }
 
 function resizeNodeToWidgets(node) {
@@ -241,13 +295,51 @@ function updateLoraGroups(node, value) {
       setWidgetVisible(node.widgets?.find((widget) => widget.name === name), visible);
     }
   }
+  refreshReactiveCollection(node, "widgets");
   node.graph?.incrementVersion?.();
   resizeNodeToWidgets(node);
 }
 
+function updateWidgetGroups(node, value, groups, maximum) {
+  const count = Math.min(maximum, Math.max(1, Number.parseInt(value, 10) || 1));
+  for (const group of groups) {
+    const visible = count >= group.minimumCount;
+    for (const name of group.widgets) {
+      setWidgetVisible(node.widgets?.find((widget) => widget.name === name), visible);
+    }
+  }
+  refreshReactiveCollection(node, "widgets");
+  node.graph?.incrementVersion?.();
+  resizeNodeToWidgets(node);
+}
+
+function installDynamicCount(node, widgetName, groups, maximum) {
+  const countWidget = node.widgets?.find((widget) => widget.name === widgetName);
+  if (!countWidget) return;
+  if (countWidget.__loraTesterInstalled) {
+    updateWidgetGroups(node, countWidget.value, groups, maximum);
+    return;
+  }
+  countWidget.__loraTesterInstalled = true;
+  const originalCallback = countWidget.callback;
+  countWidget.callback = function (value, ...args) {
+    countWidget.value = value;
+    if (this && this !== countWidget) this.value = value;
+    const result = originalCallback?.apply(this, [value, ...args]);
+    updateWidgetGroups(node, value, groups, maximum);
+    refreshWidgetViews(node);
+    return result;
+  };
+  updateWidgetGroups(node, countWidget.value, groups, maximum);
+}
+
 function installDynamicLoraCount(node) {
   const countWidget = node.widgets?.find((widget) => widget.name === "lora_count");
-  if (!countWidget || countWidget.__loraTesterInstalled) return;
+  if (!countWidget) return;
+  if (countWidget.__loraTesterInstalled) {
+    updateLoraGroups(node, countWidget.value);
+    return;
+  }
   countWidget.__loraTesterInstalled = true;
 
   const originalCallback = countWidget.callback;
@@ -263,34 +355,91 @@ function installDynamicLoraCount(node) {
   updateLoraGroups(node, countWidget.value);
 }
 
+function inputIsConnected(input) {
+  return input?.link != null || (Array.isArray(input?.linkIds) && input.linkIds.length > 0);
+}
+
+function updateStackListInputs(node) {
+  const currentInputs = [...(node.inputs ?? [])];
+  const templates = node[STACK_INPUT_TEMPLATES] ?? new Map();
+  for (const input of currentInputs) {
+    const match = /^stack_(\d+)$/.exec(String(input?.name ?? ""));
+    if (match) templates.set(Number(match[1]), input);
+  }
+  node[STACK_INPUT_TEMPLATES] = templates;
+  if (!templates.size) return;
+
+  let lastConnected = 0;
+  for (const [index, input] of templates) {
+    if (inputIsConnected(input)) lastConnected = Math.max(lastConnected, index);
+  }
+  const visibleThrough = Math.min(MAX_STACK_INPUTS, Math.max(1, lastConnected + 1));
+  const stackInputs = [...templates.entries()]
+    .filter(([index]) => index <= visibleThrough)
+    .sort(([a], [b]) => a - b)
+    .map(([, input]) => input);
+  const otherInputs = currentInputs.filter(
+    (input) => !/^stack_(\d+)$/.test(String(input?.name ?? "")),
+  );
+  node.inputs = [...stackInputs, ...otherInputs];
+  resizeNodeToWidgets(node);
+  node.setDirtyCanvas?.(true, true);
+}
+
+function installDynamicStackList(node) {
+  if (node.__loraTesterStackListInstalled) {
+    updateStackListInputs(node);
+    return;
+  }
+  node.__loraTesterStackListInstalled = true;
+  const originalConnectionsChange = node.onConnectionsChange;
+  node.onConnectionsChange = function (...args) {
+    const result = originalConnectionsChange?.apply(this, args);
+    updateStackListInputs(this);
+    return result;
+  };
+  updateStackListInputs(node);
+}
+
 app.registerExtension({
   name: "LoraTester.NodeUi",
   beforeRegisterNodeDef(nodeType, nodeData) {
     const hasDynamicLoraCount = nodeData.name === TARGET_NODE;
+    const hasDynamicStackCount = nodeData.name === STACK_NODE;
+    const hasDynamicPromptCount = nodeData.name === MULTI_PROMPT_NODE;
+    const hasDynamicStackList = nodeData.name === STACK_LISTER_NODE;
     const hasWidgetTranslations = nodeData.name in OPTION_LABELS;
-    if (!hasDynamicLoraCount && !hasWidgetTranslations) return;
+    if (!hasDynamicLoraCount && !hasDynamicStackCount && !hasDynamicPromptCount && !hasDynamicStackList && !hasWidgetTranslations) return;
+
+    const applyNodeUi = (node) => {
+      installWidgetTranslations(node, nodeData.name);
+      if (hasDynamicLoraCount) installDynamicLoraCount(node);
+      if (hasDynamicStackCount) installDynamicCount(node, "lora_count", STACK_ITEM_GROUPS, 16);
+      if (hasDynamicPromptCount) installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
+      if (hasDynamicStackList) installDynamicStackList(node);
+    };
+
+    const scheduleNodeUi = (node) => {
+      queueMicrotask(() => {
+        applyNodeUi(node);
+        requestAnimationFrame(() => {
+          applyNodeUi(node);
+          requestAnimationFrame(() => applyNodeUi(node));
+        });
+      });
+    };
 
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function (...args) {
       const result = originalOnNodeCreated?.apply(this, args);
-      queueMicrotask(() => {
-        installWidgetTranslations(this, nodeData.name);
-        if (hasDynamicLoraCount) installDynamicLoraCount(this);
-      });
+      scheduleNodeUi(this);
       return result;
     };
 
     const originalOnConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function (...args) {
       const result = originalOnConfigure?.apply(this, args);
-      queueMicrotask(() => {
-        installWidgetTranslations(this, nodeData.name);
-        if (hasDynamicLoraCount) {
-          installDynamicLoraCount(this);
-          const countWidget = this.widgets?.find((widget) => widget.name === "lora_count");
-          updateLoraGroups(this, countWidget?.value);
-        }
-      });
+      scheduleNodeUi(this);
       return result;
     };
   },

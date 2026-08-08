@@ -12,7 +12,16 @@ from .compositor import (
     image_to_pil,
 )
 from .layout import AxisSpec, LayoutPlan, LoraSpec, RenderTask, build_layout
-from .nodes import LoraTesterSampler, LoraTesterStyleNode
+from .nodes import (
+    LoraStackListerNode,
+    LoraStackNode,
+    LoraStackSplitterNode,
+    LoraTesterSampler,
+    LoraTesterStyleNode,
+    MultiPromptSampleNode,
+)
+from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
+from .stack_compositor import LoraStackMatrixCompositor, LoraStackMatrixSession
 from .styles import (
     StyleConfig,
     available_style_decorators,
@@ -30,6 +39,15 @@ __all__ = [
     "LoraSpec",
     "LoraTesterSampler",
     "LoraTesterStyleNode",
+    "LoraStack",
+    "LoraStackItem",
+    "LoraStackList",
+    "LoraStackNode",
+    "LoraStackSplitterNode",
+    "LoraStackListerNode",
+    "LoraStackMatrixCompositor",
+    "LoraStackMatrixSession",
+    "MultiPromptSampleNode",
     "RenderTask",
     "StyleConfig",
     "available_style_decorators",
@@ -39,5 +57,6 @@ __all__ = [
     "iter_comfy_image_batch",
     "pil_to_comfy_image",
     "register_style_decorator",
+    "split_lora_stack",
     "submit_comfy_batch",
 ]

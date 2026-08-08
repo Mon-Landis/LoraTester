@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 import sys
 from pathlib import Path
@@ -10,7 +11,13 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from lora_tester import LoraComparisonCompositor, StyleConfig
+from lora_tester import (
+    LoraComparisonCompositor,
+    LoraStack,
+    LoraStackItem,
+    LoraStackMatrixCompositor,
+    StyleConfig,
+)
 
 
 def background_tile() -> Image.Image:
@@ -40,6 +47,50 @@ def write_manifest(compositor: LoraComparisonCompositor, path: Path) -> None:
         ],
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def render_stack_matrix_preview(path: Path) -> None:
+    items = (
+        LoraStackItem("Lora_A.safetensors", "lora_a", 0.8),
+        LoraStackItem("Lora_B.safetensors", "lora_b", 1.0),
+        LoraStackItem("Lora_C.safetensors", "lora_c", 0.6),
+    )
+    stacks = tuple(
+        LoraStack(tuple(items[index] for index in indexes))
+        for size in range(1, len(items) + 1)
+        for indexes in itertools.combinations(range(len(items)), size)
+    )
+    compositor = LoraStackMatrixCompositor(
+        stacks,
+        ("portrait, studio light", "landscape, sunset"),
+        150,
+        100,
+        style=StyleConfig.black(decorator="technical", region_gap=42, cell_gap=6),
+        max_canvas_pixels=None,
+    )
+    base_colors = ((74, 80, 88), (80, 120, 170))
+    accent_colors = ((215, 145, 70), (70, 170, 145), (160, 110, 205))
+    session = compositor.start()
+    for row in range(compositor.row_count):
+        for column in range(compositor.column_count):
+            if column == 0:
+                color = base_colors[row]
+            else:
+                mix = tuple(items.index(item) for item in stacks[column - 1].items)
+                color = tuple(
+                    min(
+                        255,
+                        round(
+                            base_colors[row][channel] * 0.35
+                            + sum(accent_colors[index][channel] for index in mix)
+                            / len(mix)
+                            * 0.65
+                        ),
+                    )
+                    for channel in range(3)
+                )
+            session.submit(Image.new("RGB", (150, 100), color), coordinate=(row, column))
+    session.finalize(strict=True).save(path)
 
 
 def main() -> None:
@@ -133,6 +184,7 @@ def main() -> None:
         max_canvas_pixels=None,
     )
     custom.render_template().save(output / "3_lora_custom.png")
+    render_stack_matrix_preview(output / "multi_prompt_stack_matrix.png")
 
 
 if __name__ == "__main__":
