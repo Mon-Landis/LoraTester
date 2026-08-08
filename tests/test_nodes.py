@@ -76,12 +76,15 @@ class NodeTests(unittest.TestCase):
             "lora_count": count,
             "lora_a_name": "A.safetensors",
             "lora_a_trigger": "alpha",
+            "lora_a_min_strength": 0.0,
             "lora_a_max_strength": 0.8,
             "lora_b_name": "B.safetensors",
             "lora_b_trigger": "beta",
+            "lora_b_min_strength": 0.0,
             "lora_b_max_strength": 1.0,
             "lora_c_name": "C.safetensors",
             "lora_c_trigger": "charlie",
+            "lora_c_min_strength": 0.0,
             "lora_c_max_strength": 2.0,
             "color_mode": "black",
             "show_lora_details": True,
@@ -330,6 +333,76 @@ class NodeTests(unittest.TestCase):
         )
         self.assertTrue(all(call["negative"]["text"] == "blur" for call in calls.values()))
 
+    def test_min_strengths_reach_tasks_and_activate_center_triggers(self):
+        arguments = self._sample_arguments(3)
+        arguments.update(
+            lora_a_min_strength=0.2,
+            lora_b_min_strength=0.3,
+            lora_c_min_strength=0.4,
+        )
+        events = []
+        sampler_calls = []
+        progress = FakeProgress()
+        arguments["vae"] = FakeVAE(events)
+
+        def apply(model, clip, state_dict, weight, metadata):
+            patch_value = (state_dict, weight)
+            return model + (patch_value,), FakeClip(clip.stack + (patch_value,))
+
+        def sample(
+            model,
+            seed,
+            steps,
+            cfg,
+            sampler_name,
+            scheduler,
+            positive,
+            negative,
+            latent,
+            denoise,
+            *,
+            progress,
+            completed_tasks,
+            total_tasks,
+        ):
+            sampler_calls.append({"model": model, "positive": positive})
+            return {"samples": latent["samples"]}
+
+        with (
+            patch("lora_tester.nodes._resolve_lora_path", side_effect=lambda name: str(ROOT / name)),
+            patch("lora_tester.nodes._load_lora_file", side_effect=lambda path: (f"state:{Path(path).name}", None)),
+            patch("lora_tester.nodes._apply_lora_to_models", side_effect=apply),
+            patch("lora_tester.nodes._common_ksampler", side_effect=sample),
+            patch("lora_tester.nodes._throw_if_interrupted"),
+            patch("lora_tester.nodes._make_progress_bar", return_value=progress),
+        ):
+            LoraTesterSampler().sample(**arguments)
+
+        specs = (
+            LoraSpec("A.safetensors", 0.8, "alpha", 0.2),
+            LoraSpec("B.safetensors", 1.0, "beta", 0.3),
+            LoraSpec("C.safetensors", 2.0, "charlie", 0.4),
+        )
+        plan = build_layout(specs)
+        base_call = sampler_calls[0]
+        self.assertEqual(
+            base_call["model"],
+            (
+                ("state:A.safetensors", 0.2),
+                ("state:B.safetensors", 0.3),
+                ("state:C.safetensors", 0.4),
+            ),
+        )
+        self.assertEqual(base_call["positive"]["text"], "alpha, beta, charlie, portrait")
+        a025_call = sampler_calls[next(i for i, task in enumerate(plan.tasks) if task.task_id == "A025")]
+        self.assertEqual(len(a025_call["model"]), 3)
+        self.assertAlmostEqual(a025_call["model"][0][1], 0.35)
+        self.assertEqual(a025_call["model"][1:], (("state:B.safetensors", 0.3), ("state:C.safetensors", 0.4)))
+
+    def test_min_strength_must_be_lower_than_maximum(self):
+        with self.assertRaisesRegex(ValueError, "min_weight must be lower"):
+            LoraTesterSampler._make_specs(1, (("A.safetensors", 0.2, "", 0.2),))
+
     def test_prompt_join_omits_empty_values(self):
         self.assertEqual(compose_positive_prompt(" base ", ("alpha", "", " charlie ")), "alpha, charlie, base")
         self.assertEqual(compose_positive_prompt("", ()), "")
@@ -371,6 +444,8 @@ class NodeTests(unittest.TestCase):
         self.assertIn("show_lora_details", inputs["required"])
         self.assertTrue(inputs["required"]["show_lora_details"][1]["default"])
         self.assertEqual(inputs["required"]["lora_count"][1]["default"], 1)
+        for field in ("lora_a_min_strength", "lora_b_min_strength", "lora_c_min_strength"):
+            self.assertEqual(inputs["required"][field][1]["default"], 0.0)
         self.assertEqual(inputs["required"]["color_mode"][0], ["black", "white", "custom"])
         self.assertEqual(inputs["optional"]["custom_style"][0], "LORA_TESTER_STYLE")
 

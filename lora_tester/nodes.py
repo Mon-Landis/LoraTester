@@ -297,6 +297,17 @@ class LoraTesterSampler:
                 "tooltip": "Maximum model and CLIP strength. Tests use 25%, 50%, 75%, and 100%.",
             },
         )
+        min_strength_input = (
+            "FLOAT",
+            {
+                "default": 0.0,
+                "min": -100.0,
+                "max": 100.0,
+                "step": 0.01,
+                "round": 0.001,
+                "tooltip": "Minimum model and CLIP strength. Must be lower than the maximum.",
+            },
+        )
         return {
             "required": {
                 "model": ("MODEL",),
@@ -343,12 +354,15 @@ class LoraTesterSampler:
                 ),
                 "lora_a_name": lora_name_input,
                 "lora_a_trigger": trigger_input,
+                "lora_a_min_strength": min_strength_input,
                 "lora_a_max_strength": strength_input,
                 "lora_b_name": lora_name_input,
                 "lora_b_trigger": trigger_input,
+                "lora_b_min_strength": min_strength_input,
                 "lora_b_max_strength": strength_input,
                 "lora_c_name": lora_name_input,
                 "lora_c_trigger": trigger_input,
+                "lora_c_min_strength": min_strength_input,
                 "lora_c_max_strength": strength_input,
                 "color_mode": COLOR_MODE_INPUT,
                 "show_lora_details": SHOW_LORA_DETAILS_INPUT,
@@ -400,12 +414,15 @@ class LoraTesterSampler:
         lora_count: int,
         lora_a_name: str,
         lora_a_trigger: str,
+        lora_a_min_strength: float,
         lora_a_max_strength: float,
         lora_b_name: str,
         lora_b_trigger: str,
+        lora_b_min_strength: float,
         lora_b_max_strength: float,
         lora_c_name: str,
         lora_c_trigger: str,
+        lora_c_min_strength: float,
         lora_c_max_strength: float,
         color_mode: str,
         show_lora_details: bool,
@@ -417,9 +434,9 @@ class LoraTesterSampler:
         specs = self._make_specs(
             lora_count,
             (
-                (lora_a_name, lora_a_max_strength, lora_a_trigger),
-                (lora_b_name, lora_b_max_strength, lora_b_trigger),
-                (lora_c_name, lora_c_max_strength, lora_c_trigger),
+                (lora_a_name, lora_a_max_strength, lora_a_trigger, lora_a_min_strength),
+                (lora_b_name, lora_b_max_strength, lora_b_trigger, lora_b_min_strength),
+                (lora_c_name, lora_c_max_strength, lora_c_trigger, lora_c_min_strength),
             ),
         )
         plan = build_layout(specs)
@@ -483,14 +500,19 @@ class LoraTesterSampler:
     @staticmethod
     def _make_specs(
         lora_count: int,
-        values: Sequence[tuple[str, float, str]],
+        values: Sequence[tuple[str, float, str, float]],
     ) -> tuple[LoraSpec, ...]:
         count = int(lora_count)
         if count < 1 or count > 3:
             raise ValueError(f"lora_count must be between 1 and 3; received {lora_count!r}")
         return tuple(
-            LoraSpec(name=name, max_weight=float(strength), trigger_word=trigger)
-            for name, strength, trigger in values[:count]
+            LoraSpec(
+                name=name,
+                max_weight=float(max_strength),
+                trigger_word=trigger,
+                min_weight=float(min_strength),
+            )
+            for name, max_strength, trigger, min_strength in values[:count]
         )
 
     def _load_lora(self, name: str) -> _CachedLora:

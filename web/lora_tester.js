@@ -32,12 +32,12 @@ const TOGGLE_LABELS = {
   LoraTesterSampler: {
     show_lora_details: {
       en: {
-        label_on: "show names and max weights",
-        label_off: "hide names and max weights",
+        label_on: "show names and min/max weights",
+        label_off: "hide names and min/max weights",
       },
       zh: {
-        label_on: "显示名称和最高权重",
-        label_off: "隐藏名称和最高权重",
+        label_on: "显示名称和最低/最高权重",
+        label_off: "隐藏名称和最低/最高权重",
       },
     },
   },
@@ -46,11 +46,21 @@ const TOGGLE_LABELS = {
 const LORA_GROUPS = [
   {
     minimumCount: 2,
-    widgets: ["lora_b_name", "lora_b_trigger", "lora_b_max_strength"],
+    widgets: [
+      "lora_b_name",
+      "lora_b_trigger",
+      "lora_b_min_strength",
+      "lora_b_max_strength",
+    ],
   },
   {
     minimumCount: 3,
-    widgets: ["lora_c_name", "lora_c_trigger", "lora_c_max_strength"],
+    widgets: [
+      "lora_c_name",
+      "lora_c_trigger",
+      "lora_c_min_strength",
+      "lora_c_max_strength",
+    ],
   },
 ];
 

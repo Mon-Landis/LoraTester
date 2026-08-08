@@ -27,7 +27,7 @@
 - `vae.decode(samples["samples"])`：节点内解码；五维输出需按标准 `VAEDecode` 逻辑压平成 IMAGE 批次。
 - 本合成器的 `plan.tasks` 和 `CompositionSession.submit()`：流式拼图并复用 B 轴图。
 
-LoRA 原始权重范围在 ComfyUI 标准加载器中允许负值。本项目的梯度倍率保持 `0.25 / 0.5 / 0.75 / 1.0`，因此负的最高权重会形成对应的负梯度。主节点已经使用与标准加载器一致的 `-100 .. 100` 输入范围。
+LoRA 原始权重范围在 ComfyUI 标准加载器中允许负值。本项目的梯度倍率保持 `0.25 / 0.5 / 0.75 / 1.0`，因此负的最高权重会形成对应的负梯度。主节点已经使用与标准加载器一致的 `-100 .. 100` 输入范围。每组还提供 `min_strength`，默认 `0`，运行时要求 `min_strength < max_strength`；实际权重为 `min + (max - min) * multiplier`，所以中心格也会应用非零下限及其触发词。
 
 ## 开发联接
 

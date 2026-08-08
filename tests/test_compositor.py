@@ -74,6 +74,42 @@ class CompositorTests(unittest.TestCase):
                 (640, 800),
             )
 
+    def test_min_weights_are_reflected_in_axis_labels_and_specs(self) -> None:
+        compositor = LoraComparisonCompositor.from_values(
+            ["A", "B", "C"],
+            [0.9, 3.0, 2.0],
+            64,
+            80,
+            lora_min_weights=[0.2, 0.75, 0.5],
+            style=StyleConfig.black(decorator="none"),
+            max_canvas_pixels=None,
+        )
+        self.assertEqual(tuple(lora.min_weight for lora in compositor.plan.loras), (0.2, 0.75, 0.5))
+        axes = {axis.key: axis for axis in compositor.plan.axes}
+        self.assertEqual(
+            compositor._axis_value_labels(axes["A_LEFT"]),
+            ("0.9", "0.725", "0.55", "0.375"),
+        )
+        self.assertEqual(
+            compositor._axis_value_labels(axes["B_TOP"]),
+            ("3", "2.4375", "1.875", "1.3125"),
+        )
+        self.assertEqual(
+            compositor._axis_value_labels(axes["C_BOTTOM"]),
+            ("0.875", "1.25", "1.625", "2"),
+        )
+
+    def test_from_values_rejects_min_weight_length_mismatch(self) -> None:
+        with self.assertRaisesRegex(ValueError, "lora_min_weights"):
+            LoraComparisonCompositor.from_values(
+                ["A", "B"],
+                [1.0, 1.0],
+                16,
+                16,
+                lora_min_weights=[0.1],
+                max_canvas_pixels=None,
+            )
+
     def test_type_scale_tracks_the_full_matrix_size(self) -> None:
         small = LoraComparisonCompositor.from_values(
             ["A", "B", "C"],

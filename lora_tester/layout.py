@@ -30,12 +30,17 @@ class LoraSpec:
     name: str
     max_weight: float = 1.0
     trigger_word: str = ""
+    min_weight: float = 0.0
 
     def __post_init__(self) -> None:
         if not str(self.name).strip():
             raise ValueError("LoRA name cannot be empty")
         if not math.isfinite(float(self.max_weight)):
             raise ValueError("LoRA max_weight must be finite")
+        if not math.isfinite(float(self.min_weight)):
+            raise ValueError("LoRA min_weight must be finite")
+        if float(self.min_weight) >= float(self.max_weight):
+            raise ValueError("LoRA min_weight must be lower than max_weight")
 
     @property
     def display_name(self) -> str:
@@ -206,27 +211,37 @@ def build_layout(loras: Sequence[LoraSpec]) -> LayoutPlan:
 def _make_task(
     loras: tuple[LoraSpec, ...], multipliers: tuple[float, ...], sequence_index: int
 ) -> RenderTask:
-    weights = tuple(lora.max_weight * multiplier for lora, multiplier in zip(loras, multipliers))
-    active_indexes = tuple(index for index, value in enumerate(multipliers) if value > 0.0)
+    weights = tuple(
+        lora.min_weight + (lora.max_weight - lora.min_weight) * multiplier
+        for lora, multiplier in zip(loras, multipliers)
+    )
+    nominal_indexes = tuple(index for index, value in enumerate(multipliers) if value > 0.0)
+    active_indexes = tuple(
+        index for index, weight in enumerate(weights) if not math.isclose(weight, 0.0, abs_tol=1e-12)
+    )
     active_slots = tuple(SLOTS[index] for index in active_indexes)
     prompt_additions = tuple(
         loras[index].trigger_word.strip()
         for index in active_indexes
         if loras[index].trigger_word.strip()
     )
-    if not active_indexes:
+    if not nominal_indexes:
         task_id = "base"
         caption = "BASE"
+        if active_indexes:
+            caption += " / " + " + ".join(
+                f"{SLOTS[index]} {_format_weight(weights[index])}" for index in active_indexes
+            )
         kind = "base"
     else:
         task_id = "+".join(
             f"{SLOTS[index]}{int(round(multipliers[index] * 100)):03d}"
-            for index in active_indexes
+            for index in nominal_indexes
         )
         caption = " + ".join(
             f"{SLOTS[index]} {_format_weight(weights[index])}" for index in active_indexes
         )
-        kind = {1: "single", 2: "pair", 3: "triple"}[len(active_indexes)]
+        kind = {1: "single", 2: "pair", 3: "triple"}[len(nominal_indexes)]
     return RenderTask(
         task_id=task_id,
         sequence_index=sequence_index,

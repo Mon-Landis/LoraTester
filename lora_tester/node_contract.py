@@ -8,9 +8,9 @@ SHOW_LORA_DETAILS_INPUT = (
     "BOOLEAN",
     {
         "default": True,
-        "label_on": "show names and max weights",
-        "label_off": "hide names and max weights",
-        "tooltip": "Show the original A/B/C LoRA names and configured maximum weights in the footer.",
+        "label_on": "show names and min/max weights",
+        "label_off": "hide names and min/max weights",
+        "tooltip": "Show the original A/B/C LoRA names and configured minimum/maximum weights in the footer.",
     },
 )
 

@@ -63,6 +63,10 @@
         "name": "LoRA A 触发词",
         "tooltip": "LoRA A 生效时添加到正面提示词开头。"
       },
+      "lora_a_min_strength": {
+        "name": "LoRA A 最低权重",
+        "tooltip": "模型与 CLIP 使用的最低权重，必须低于最高权重。"
+      },
       "lora_a_max_strength": {
         "name": "LoRA A 最高权重",
         "tooltip": "同时用于模型与 CLIP；网格会测试该值的 25%、50%、75% 和 100%。"
@@ -75,6 +79,10 @@
         "name": "LoRA B 触发词",
         "tooltip": "LoRA B 生效时排在 A 触发词之后添加。"
       },
+      "lora_b_min_strength": {
+        "name": "LoRA B 最低权重",
+        "tooltip": "模型与 CLIP 使用的最低权重，必须低于最高权重。"
+      },
       "lora_b_max_strength": {
         "name": "LoRA B 最高权重",
         "tooltip": "同时用于模型与 CLIP；网格会测试该值的 25%、50%、75% 和 100%。"
@@ -86,6 +94,10 @@
       "lora_c_trigger": {
         "name": "LoRA C 触发词",
         "tooltip": "LoRA C 生效时排在 A/B 触发词之后添加。"
+      },
+      "lora_c_min_strength": {
+        "name": "LoRA C 最低权重",
+        "tooltip": "模型与 CLIP 使用的最低权重，必须低于最高权重。"
       },
       "lora_c_max_strength": {
         "name": "LoRA C 最高权重",
@@ -102,7 +114,7 @@
       },
       "show_lora_details": {
         "name": "显示 LoRA 详情底栏",
-        "tooltip": "在对比图底部显示 A/B/C 的原始文件名与配置的最高权重。"
+        "tooltip": "在对比图底部显示 A/B/C 的原始文件名与配置的最低、最高权重。"
       },
       "max_canvas_megapixels": {
         "name": "最大画布（百万像素）",

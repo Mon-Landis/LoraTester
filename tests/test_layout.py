@@ -84,6 +84,30 @@ class LayoutPlanTests(unittest.TestCase):
         self.assertEqual(task.active_slots, ("A", "C"))
         self.assertEqual(task.prompt_additions, ("alpha", "charlie"))
 
+    def test_min_weights_apply_at_the_center_and_to_prompt_additions(self) -> None:
+        plan = build_layout(
+            (
+                LoraSpec("A", 0.9, "alpha", 0.2),
+                LoraSpec("B", 3.0, "beta", 0.75),
+                LoraSpec("C", 2.0, "charlie", 0.5),
+            )
+        )
+        base = plan.task("base")
+        self.assertEqual(base.weights, (0.2, 0.75, 0.5))
+        self.assertEqual(base.active_slots, ("A", "B", "C"))
+        self.assertEqual(base.prompt_additions, ("alpha", "beta", "charlie"))
+        self.assertEqual(base.caption, "BASE / A 0.2 + B 0.75 + C 0.5")
+
+        a_quarter = plan.task("A025")
+        self.assertAlmostEqual(a_quarter.weights[0], 0.375)
+        self.assertEqual(a_quarter.weights[1:], (0.75, 0.5))
+
+    def test_min_weight_must_be_lower_than_max_weight(self) -> None:
+        with self.assertRaisesRegex(ValueError, "lower than max_weight"):
+            LoraSpec("A", 0.2, min_weight=0.2)
+        with self.assertRaisesRegex(ValueError, "lower than max_weight"):
+            LoraSpec("A", 0.2, min_weight=0.3)
+
     def test_rejects_invalid_lora_count_and_values(self) -> None:
         with self.assertRaisesRegex(ValueError, "between one and three"):
             build_layout(())

@@ -94,6 +94,20 @@ def main() -> None:
     )
     requested.render_template().save(output / "3_lora_axes_640x800.png")
 
+    min_bound = LoraComparisonCompositor.from_values(
+        ["LoraX", "LoraY", "LoraZZZ"],
+        [0.9, 3.0, 2.0],
+        640,
+        800,
+        lora_min_weights=[0.2, 0.75, 0.5],
+        style=StyleConfig.black(
+            outer_margin=36,
+            cell_gap=6,
+            region_gap=72,
+        ),
+    )
+    min_bound.render_template().save(output / "3_lora_min_bound_640x800.png")
+
     custom_style = StyleConfig.custom(
         background_color="#101715",
         background_image=background_tile(),

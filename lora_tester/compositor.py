@@ -200,6 +200,7 @@ class LoraComparisonCompositor:
         image_width: int,
         image_height: int,
         *,
+        lora_min_weights: Sequence[float] | None = None,
         trigger_words: Sequence[str] | None = None,
         show_lora_details: bool = True,
         style: StyleConfig | None = None,
@@ -208,14 +209,26 @@ class LoraComparisonCompositor:
     ) -> "LoraComparisonCompositor":
         names = tuple(lora_names)
         weights = tuple(lora_weights)
+        min_weights = (
+            (0.0,) * len(names)
+            if lora_min_weights is None
+            else tuple(lora_min_weights)
+        )
         triggers = tuple(trigger_words or ("",) * len(names))
         if len(names) != len(weights):
             raise ValueError("lora_names and lora_weights must have the same length")
+        if len(min_weights) != len(names):
+            raise ValueError("lora_min_weights must have the same length as lora_names")
         if len(triggers) != len(names):
             raise ValueError("trigger_words must have the same length as lora_names")
         specs = tuple(
-            LoraSpec(name=name, max_weight=weight, trigger_word=trigger)
-            for name, weight, trigger in zip(names, weights, triggers)
+            LoraSpec(
+                name=name,
+                max_weight=weight,
+                trigger_word=trigger,
+                min_weight=min_weight,
+            )
+            for name, weight, min_weight, trigger in zip(names, weights, min_weights, triggers)
         )
         return cls(
             specs,
@@ -494,7 +507,10 @@ class LoraComparisonCompositor:
 
     def _axis_value_labels(self, axis: AxisSpec) -> tuple[str, ...]:
         lora = self.plan.loras[SLOTS.index(axis.slot)]
-        return tuple(_format_weight(lora.max_weight * value) for value in axis.multipliers)
+        return tuple(
+            _format_weight(lora.min_weight + (lora.max_weight - lora.min_weight) * value)
+            for value in axis.multipliers
+        )
 
 
 class CompositionSession:
@@ -854,7 +870,10 @@ class CompositionSession:
             if index:
                 self._draw.line((left, rect[1], left, rect[3] - 1), fill=self.style.frame_color, width=1)
             padding = self.geometry.footer_padding
-            title = f"{SLOTS[index]} / MAX {_format_weight(lora.max_weight)}"
+            title = (
+                f"{SLOTS[index]} / MIN {_format_weight(lora.min_weight)}"
+                f" / MAX {_format_weight(lora.max_weight)}"
+            )
             title_y = rect[1] + padding
             self._draw.text((left + padding, title_y), title, fill=self.style.accent_colors[index], font=font)
             name_y = title_y + _font_line_height(font) + self.geometry.footer_title_gap

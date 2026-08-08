@@ -63,6 +63,10 @@
         "name": "LoRA A Trigger Words",
         "tooltip": "Prepended to the positive prompt whenever LoRA A is active."
       },
+      "lora_a_min_strength": {
+        "name": "LoRA A Min Strength",
+        "tooltip": "Minimum model and CLIP strength. Must be lower than the maximum."
+      },
       "lora_a_max_strength": {
         "name": "LoRA A Max Strength",
         "tooltip": "Maximum model and CLIP strength. The grid tests 25%, 50%, 75%, and 100% of this value."
@@ -75,6 +79,10 @@
         "name": "LoRA B Trigger Words",
         "tooltip": "Prepended after A trigger words whenever LoRA B is active."
       },
+      "lora_b_min_strength": {
+        "name": "LoRA B Min Strength",
+        "tooltip": "Minimum model and CLIP strength. Must be lower than the maximum."
+      },
       "lora_b_max_strength": {
         "name": "LoRA B Max Strength",
         "tooltip": "Maximum model and CLIP strength. The grid tests 25%, 50%, 75%, and 100% of this value."
@@ -86,6 +94,10 @@
       "lora_c_trigger": {
         "name": "LoRA C Trigger Words",
         "tooltip": "Prepended after A/B trigger words whenever LoRA C is active."
+      },
+      "lora_c_min_strength": {
+        "name": "LoRA C Min Strength",
+        "tooltip": "Minimum model and CLIP strength. Must be lower than the maximum."
       },
       "lora_c_max_strength": {
         "name": "LoRA C Max Strength",
@@ -102,7 +114,7 @@
       },
       "show_lora_details": {
         "name": "Show LoRA Details Footer",
-        "tooltip": "Shows the original A/B/C LoRA names and configured maximum strengths below the sheet."
+        "tooltip": "Shows the original A/B/C LoRA names and configured minimum/maximum strengths below the sheet."
       },
       "max_canvas_megapixels": {
         "name": "Maximum Canvas (MP)",
