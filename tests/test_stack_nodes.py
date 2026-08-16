@@ -136,6 +136,65 @@ class StackNodeTests(unittest.TestCase):
         self.assertGreater(result.shape[1], 16)
         self.assertGreater(result.shape[2], 30)
 
+    def test_multi_prompt_sample_keeps_same_file_at_different_strengths(self):
+        stacks = LoraStackList(
+            (
+                LoraStack((LoraStackItem("Shared.safetensors", "low", 0.5),)),
+                LoraStack((LoraStackItem("Shared.safetensors", "high", 1.0),)),
+            )
+        )
+        apply_calls = []
+        sample_calls = []
+
+        def apply(model, clip, state, weight, metadata):
+            apply_calls.append((state, weight))
+            return model, _Clip(clip.stack + ((state, weight),))
+
+        def sample(model, seed, steps, cfg, sampler, scheduler, positive, negative, latent, denoise, **kwargs):
+            sample_calls.append(positive)
+            return latent
+
+        with (
+            patch("lora_tester.nodes._resolve_lora_path", return_value=str(ROOT / "Shared.safetensors")),
+            patch("lora_tester.nodes._load_lora_file", return_value=("state:shared", None)) as load,
+            patch("lora_tester.nodes._apply_lora_to_models", side_effect=apply),
+            patch("lora_tester.nodes._common_ksampler", side_effect=sample),
+            patch("lora_tester.nodes._decode_vae", return_value=torch.zeros((1, 8, 10, 3))),
+            patch("lora_tester.nodes._make_progress_bar", return_value=_Progress()),
+            patch("lora_tester.nodes._throw_if_interrupted"),
+        ):
+            MultiPromptSampleNode().sample(
+                model=(),
+                clip=_Clip(),
+                vae=_Vae(),
+                latent_image={"samples": torch.zeros((1, 4, 2, 2))},
+                lorastacks=stacks,
+                prompt_count=1,
+                prompt_prefix="",
+                negative_prompt="",
+                seed=1,
+                steps=1,
+                cfg=1.0,
+                sampler_name="sampler",
+                scheduler="scheduler",
+                denoise=1.0,
+                color_mode="black",
+                show_lora_details=True,
+                max_canvas_megapixels=10.0,
+                positive_prompt_1="portrait",
+            )
+
+        load.assert_called_once()
+        self.assertEqual(apply_calls, [("state:shared", 0.5), ("state:shared", 1.0)])
+        self.assertEqual(
+            [(call["text"], call["stack"]) for call in sample_calls],
+            [
+                ("portrait", ()),
+                ("low, portrait", (("state:shared", 0.5),)),
+                ("high, portrait", (("state:shared", 1.0),)),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

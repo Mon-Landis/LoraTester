@@ -6,11 +6,13 @@ const STACK_SPLITTER_NODE = "LoraStackSplitter";
 const STACK_LISTER_NODE = "LoraStackLister";
 const MULTI_PROMPT_NODE = "MultiPromptSample";
 const MAX_STACK_INPUTS = 16;
+const MULTI_PROMPT_MIN_WIDTH = 480;
 const HIDDEN_WIDGET_TYPE = "hidden";
 const WIDGET_STATE = Symbol("loraTesterWidgetState");
 const DOM_STATE = Symbol("loraTesterDomState");
 const LOCALIZED_OPTION = Symbol("loraTesterLocalizedOption");
 const STACK_INPUT_TEMPLATES = Symbol("loraTesterStackInputTemplates");
+const GRAPH_SYNC_INSTALLED = Symbol("loraTesterGraphSyncInstalled");
 
 const OPTION_LABELS = {
   LoraTesterSampler: {
@@ -211,6 +213,29 @@ function installWidgetTranslations(node, nodeName) {
   }
 }
 
+function preserveUnavailableLoraValues(node) {
+  for (const widget of node.widgets ?? []) {
+    if (!/^lora_(?:[abc]|\d+)_name$/.test(String(widget.name ?? ""))) continue;
+    const value = widget.value;
+    if (value == null || value === "") continue;
+    for (const options of widgetOptionTargets(widget)) {
+      const values = options.values;
+      if (!Array.isArray(values) || values.includes(value)) continue;
+      try {
+        // Replacing the array also invalidates Node 2.0's reactive option cache.
+        options.values = [...values, value];
+      } catch {
+        // Older widgets can expose a read-only property backed by a mutable array.
+        try {
+          values.push(value);
+        } catch {
+          // A fully frozen option list cannot be extended, but must not block UI sync.
+        }
+      }
+    }
+  }
+}
+
 function localizedInputLabel(nodeName, inputName) {
   const language = activeLanguage();
   const fixed = INPUT_LABELS[nodeName]?.[inputName];
@@ -242,7 +267,33 @@ function localizedInputLabel(nodeName, inputName) {
 function installNodeLabels(node, nodeName) {
   for (const widget of node.widgets ?? []) {
     const label = localizedInputLabel(nodeName, String(widget.name ?? ""));
-    if (label) widget.label = label;
+    if (!label) continue;
+    widget.label = label;
+    if (
+      nodeName === MULTI_PROMPT_NODE &&
+      /^(?:prompt_prefix|negative_prompt|positive_prompt_\d+)$/.test(widget.name)
+    ) {
+      for (const options of widgetOptionTargets(widget)) options.placeholder = label;
+      const renderedElements = [...widgetElements(widget)];
+      for (const container of document.querySelectorAll("[node-id][node-type]")) {
+        if (
+          container.getAttribute("node-id") !== String(node.id) ||
+          container.getAttribute("node-type") !== MULTI_PROMPT_NODE ||
+          container.querySelector("label")?.textContent?.trim() !== label
+        ) {
+          continue;
+        }
+        renderedElements.push(container);
+      }
+      for (const element of new Set(renderedElements)) {
+        const input = element.matches?.("textarea, input")
+          ? element
+          : element.querySelector?.("textarea, input");
+        if (!input) continue;
+        input.placeholder = label;
+        input.setAttribute("aria-label", label);
+      }
+    }
   }
   for (const input of node.inputs ?? []) {
     const label = localizedInputLabel(nodeName, String(input.name ?? ""));
@@ -255,11 +306,10 @@ function installNodeLabels(node, nodeName) {
   }
 }
 
-function restoreHiddenOption(widget, state) {
-  for (const options of widgetOptionTargets(widget)) {
-    if (state.hasOptionHidden) options.hidden = state.optionHidden;
-    else delete options.hidden;
-  }
+function restoreHiddenOption(widget) {
+  // Visibility for these optional groups is owned by their count widget.
+  // A restored Node 2.0 store can otherwise preserve this extension's stale true.
+  for (const options of widgetOptionTargets(widget)) delete options.hidden;
 }
 
 function setElementVisible(element, visible) {
@@ -301,9 +351,6 @@ function captureVisibleState(widget) {
     state.computedHeight = widget.computedHeight;
     state.y = widget.y;
     state.lastY = widget.last_y;
-    const options = widget?._state?.options ?? widget.options ?? {};
-    state.hasOptionHidden = Object.prototype.hasOwnProperty.call(options, "hidden");
-    state.optionHidden = options.hidden;
   }
   widget[WIDGET_STATE] = state;
   return state;
@@ -311,6 +358,25 @@ function captureVisibleState(widget) {
 
 function setWidgetVisible(widget, visible) {
   if (!widget) return;
+
+  // Workflow restore can replace a widget after this extension hid its predecessor.
+  // The replacement inherits hidden options but not the symbol-backed restore state.
+  if (visible && !widget[WIDGET_STATE]) {
+    delete widget.hidden;
+    for (const options of widgetOptionTargets(widget)) delete options.hidden;
+    if (
+      widget.type === HIDDEN_WIDGET_TYPE &&
+      widget._state?.type &&
+      widget._state.type !== HIDDEN_WIDGET_TYPE
+    ) {
+      widget.type = widget._state.type;
+      delete widget.computeSize;
+      delete widget.draw;
+    }
+    widgetElements(widget).forEach((element) => setElementVisible(element, true));
+    return;
+  }
+
   const state = captureVisibleState(widget);
 
   if (visible) {
@@ -327,17 +393,21 @@ function setWidgetVisible(widget, visible) {
     else widget.y = state.y;
     if (state.lastY === undefined) delete widget.last_y;
     else widget.last_y = state.lastY;
-    restoreHiddenOption(widget, state);
+    restoreHiddenOption(widget);
     widgetElements(widget).forEach((element) => setElementVisible(element, true));
     state.hiddenByLoraTester = false;
     return;
   }
 
-  if (state.hiddenByLoraTester) return;
-  state.hiddenByLoraTester = true;
-  widget.type = HIDDEN_WIDGET_TYPE;
-  widget.computeSize = () => [0, -4];
-  widget.draw = () => {};
+  if (!state.hiddenByLoraTester) {
+    state.hiddenByLoraTester = true;
+    widget.type = HIDDEN_WIDGET_TYPE;
+    widget.computeSize = () => [0, -4];
+    widget.draw = () => {};
+  }
+
+  // Node 2.0 replaces the widget's private state while restoring workflows.
+  // Reapply every target even when this widget was already hidden earlier.
   widget.hidden = true;
   widget.options ??= {};
   for (const options of widgetOptionTargets(widget)) options.hidden = true;
@@ -350,7 +420,11 @@ function setWidgetVisible(widget, visible) {
 function refreshReactiveCollection(node, property) {
   const collection = node[property];
   if (!Array.isArray(collection)) return;
-  node[property] = [...collection];
+  const snapshot = [...collection];
+  // Node 2.0 wraps this property in a shallow reactive array. Reassigning the
+  // same widget references does not invalidate its processed-widget snapshot.
+  node[property] = [];
+  node[property] = snapshot;
 }
 
 function resizeNodeToWidgets(node) {
@@ -418,6 +492,7 @@ function installDynamicCount(node, widgetName, groups, maximum) {
     const result = originalCallback?.apply(this, [value, ...args]);
     updateWidgetGroups(node, value, groups, maximum);
     refreshWidgetViews(node);
+    scheduleNodeUi(node);
     return result;
   };
   updateWidgetGroups(node, countWidget.value, groups, maximum);
@@ -439,10 +514,18 @@ function installDynamicLoraCount(node) {
     const result = originalCallback?.apply(this, [value, ...args]);
     updateLoraGroups(node, value);
     refreshWidgetViews(node);
+    scheduleNodeUi(node, TARGET_NODE);
     return result;
   };
 
   updateLoraGroups(node, countWidget.value);
+}
+
+function installMultiPromptLayout(node) {
+  const width = node.size?.[0] ?? 0;
+  if (width >= MULTI_PROMPT_MIN_WIDTH) return;
+  const height = node.size?.[1] ?? node.computeSize?.()?.[1] ?? 200;
+  node.setSize?.([MULTI_PROMPT_MIN_WIDTH, height]);
 }
 
 function inputIsConnected(input) {
@@ -491,8 +574,76 @@ function installDynamicStackList(node) {
   updateStackListInputs(node);
 }
 
+function nodeNameForUi(node) {
+  return String(
+    node?.constructor?.nodeData?.name ??
+      node?.constructor?.comfyClass ??
+      node?.comfyClass ??
+      node?.type ??
+      "",
+  );
+}
+
+function supportsNodeUi(nodeName) {
+  return (
+    nodeName === TARGET_NODE ||
+    nodeName === STACK_NODE ||
+    nodeName === STACK_SPLITTER_NODE ||
+    nodeName === STACK_LISTER_NODE ||
+    nodeName === MULTI_PROMPT_NODE ||
+    nodeName in OPTION_LABELS ||
+    nodeName in INPUT_LABELS ||
+    nodeName in OUTPUT_LABELS
+  );
+}
+
+function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
+  if (!supportsNodeUi(nodeName)) return;
+  preserveUnavailableLoraValues(node);
+  installWidgetTranslations(node, nodeName);
+  installNodeLabels(node, nodeName);
+  if (nodeName === TARGET_NODE) installDynamicLoraCount(node);
+  if (nodeName === STACK_NODE) {
+    installDynamicCount(node, "lora_count", STACK_ITEM_GROUPS, 16);
+  }
+  if (nodeName === MULTI_PROMPT_NODE) {
+    installMultiPromptLayout(node);
+    installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
+  }
+  if (nodeName === STACK_LISTER_NODE) installDynamicStackList(node);
+}
+
+function scheduleNodeUi(node, nodeName = nodeNameForUi(node)) {
+  if (!supportsNodeUi(nodeName)) return;
+  queueMicrotask(() => {
+    applyNodeUi(node, nodeName);
+    requestAnimationFrame(() => {
+      applyNodeUi(node, nodeName);
+      requestAnimationFrame(() => applyNodeUi(node, nodeName));
+    });
+  });
+}
+
+function scheduleGraphNodeUi(graph) {
+  for (const node of graph?._nodes ?? []) scheduleNodeUi(node);
+}
+
 app.registerExtension({
   name: "LoraTester.NodeUi",
+  setup() {
+    const canvas = app.canvas;
+    if (!canvas?.setGraph || canvas[GRAPH_SYNC_INSTALLED]) return;
+    canvas[GRAPH_SYNC_INSTALLED] = true;
+    const originalSetGraph = canvas.setGraph;
+    canvas.setGraph = function (...args) {
+      const result = originalSetGraph.apply(this, args);
+      scheduleGraphNodeUi(this.graph);
+      return result;
+    };
+  },
+  loadedGraphNode(node) {
+    scheduleNodeUi(node);
+  },
   beforeRegisterNodeDef(nodeType, nodeData) {
     const hasDynamicLoraCount = nodeData.name === TARGET_NODE;
     const hasDynamicStackCount = nodeData.name === STACK_NODE;
@@ -506,36 +657,24 @@ app.registerExtension({
       nodeData.name === STACK_SPLITTER_NODE;
     if (!hasDynamicLoraCount && !hasDynamicStackCount && !hasDynamicPromptCount && !hasDynamicStackList && !hasWidgetTranslations && !hasNodeLabels) return;
 
-    const applyNodeUi = (node) => {
-      installWidgetTranslations(node, nodeData.name);
-      installNodeLabels(node, nodeData.name);
-      if (hasDynamicLoraCount) installDynamicLoraCount(node);
-      if (hasDynamicStackCount) installDynamicCount(node, "lora_count", STACK_ITEM_GROUPS, 16);
-      if (hasDynamicPromptCount) installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
-      if (hasDynamicStackList) installDynamicStackList(node);
-    };
-
-    const scheduleNodeUi = (node) => {
-      queueMicrotask(() => {
-        applyNodeUi(node);
-        requestAnimationFrame(() => {
-          applyNodeUi(node);
-          requestAnimationFrame(() => applyNodeUi(node));
-        });
-      });
-    };
-
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function (...args) {
       const result = originalOnNodeCreated?.apply(this, args);
-      scheduleNodeUi(this);
+      scheduleNodeUi(this, nodeData.name);
       return result;
     };
 
     const originalOnConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function (...args) {
       const result = originalOnConfigure?.apply(this, args);
-      scheduleNodeUi(this);
+      scheduleNodeUi(this, nodeData.name);
+      return result;
+    };
+
+    const originalOnAfterGraphConfigured = nodeType.prototype.onAfterGraphConfigured;
+    nodeType.prototype.onAfterGraphConfigured = function (...args) {
+      const result = originalOnAfterGraphConfigured?.apply(this, args);
+      applyNodeUi(this, nodeData.name);
       return result;
     };
   },

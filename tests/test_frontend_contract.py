@@ -12,7 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from lora_tester.nodes import LoraTesterSampler, LoraTesterStyleNode
+from lora_tester.nodes import (
+    NODE_CLASS_MAPPINGS,
+    LoraTesterSampler,
+    LoraTesterStyleNode,
+)
 
 
 class FrontendContractTests(unittest.TestCase):
@@ -34,12 +38,38 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("lora_c_min_strength", source)
         self.assertIn("lora_c_max_strength", source)
         self.assertIn("originalOnConfigure", source)
+        self.assertIn("originalOnAfterGraphConfigured", source)
         self.assertIn("updateLoraGroups", source)
         self.assertIn("HIDDEN_WIDGET_TYPE", source)
+        self.assertIn("Reapply every target", source)
         self.assertIn("node.graph?.incrementVersion?.()", source)
         self.assertIn("resizeNodeToWidgets(node)", source)
         self.assertIn("refreshWidgetViews(node)", source)
         self.assertIn("canvas.selectItems?.(selected, false)", source)
+
+    def test_node2_workflow_tabs_and_missing_loras_are_supported(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn("preserveUnavailableLoraValues", source)
+        self.assertIn("values.includes(value)", source)
+        self.assertIn("options.values = [...values, value]", source)
+        self.assertIn("values.push(value)", source)
+        self.assertIn("loadedGraphNode(node)", source)
+        self.assertIn("const originalSetGraph = canvas.setGraph", source)
+        self.assertIn("scheduleGraphNodeUi(this.graph)", source)
+        self.assertIn("node[property] = []", source)
+        self.assertIn("node[property] = snapshot", source)
+        self.assertIn("if (!state.hiddenByLoraTester) {", source)
+        self.assertIn("visible && !widget[WIDGET_STATE]", source)
+        self.assertIn("delete options.hidden", source)
+        self.assertIn("Visibility for these optional groups", source)
+
+    def test_multi_prompt_widgets_keep_readable_layout_and_input_hints(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn("const MULTI_PROMPT_MIN_WIDTH = 480", source)
+        self.assertIn("installMultiPromptLayout(node)", source)
+        self.assertIn("options.placeholder = label", source)
+        self.assertIn('document.querySelectorAll("[node-id][node-type]")', source)
+        self.assertIn('input.setAttribute("aria-label", label)', source)
 
     def test_frontend_localizes_stable_enum_values_without_changing_them(self) -> None:
         source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
@@ -76,6 +106,10 @@ class FrontendContractTests(unittest.TestCase):
             patch("lora_tester.nodes._get_scheduler_names", return_value=("scheduler",)),
         ):
             sampler_inputs = LoraTesterSampler.INPUT_TYPES()
+            all_node_inputs = {
+                node_name: node_class.INPUT_TYPES()
+                for node_name, node_class in NODE_CLASS_MAPPINGS.items()
+            }
         sampler_names = set(sampler_inputs["required"]) | set(sampler_inputs["optional"])
         style_inputs = LoraTesterStyleNode.INPUT_TYPES()
         style_names = set(style_inputs["required"]) | set(style_inputs["optional"])
@@ -90,23 +124,35 @@ class FrontendContractTests(unittest.TestCase):
                 self.assertIn("Lora Tester", main["nodeCategories"])
                 self.assertEqual(
                     set(node_defs),
-                    {
-                        "LoraTesterSampler",
-                        "LoraTesterStyle",
-                        "LoraStack",
-                        "LoraStackSplitter",
-                        "LoraStackLister",
-                        "MultiPromptSample",
-                    },
+                    set(NODE_CLASS_MAPPINGS),
                 )
+                for node_name, input_types in all_node_inputs.items():
+                    with self.subTest(locale=locale, node_name=node_name):
+                        expected_inputs = set(input_types.get("required", {})) | set(
+                            input_types.get("optional", {})
+                        )
+                        localized_inputs = node_defs[node_name].get("inputs", {})
+                        self.assertEqual(set(localized_inputs), expected_inputs)
+                        for translation in localized_inputs.values():
+                            self.assertTrue(translation["name"])
+                            self.assertTrue(translation["tooltip"])
+
+                        expected_outputs = {
+                            str(index)
+                            for index in range(
+                                len(NODE_CLASS_MAPPINGS[node_name].RETURN_TYPES)
+                            )
+                        }
+                        localized_outputs = node_defs[node_name].get("outputs", {})
+                        self.assertEqual(set(localized_outputs), expected_outputs)
+                        for translation in localized_outputs.values():
+                            self.assertTrue(translation["name"])
+                            self.assertTrue(translation["tooltip"])
+
                 self.assertEqual(
-                    set(node_defs["LoraTesterSampler"]["inputs"]),
-                    sampler_names,
+                    set(node_defs["LoraTesterSampler"]["inputs"]), sampler_names
                 )
-                self.assertEqual(
-                    set(node_defs["LoraTesterStyle"]["inputs"]),
-                    style_names,
-                )
+                self.assertEqual(set(node_defs["LoraTesterStyle"]["inputs"]), style_names)
                 self.assertTrue(node_defs["LoraTesterSampler"]["display_name"])
                 self.assertTrue(node_defs["LoraTesterStyle"]["display_name"])
                 for node_name in (

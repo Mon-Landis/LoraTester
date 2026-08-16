@@ -23,7 +23,7 @@
 - 逐张解码并提交给合成器，不在内存中同时保留 69 张源图。
 - 可用 `LoRA Stack` 保存多组 LoRA 文件、触发词和强度，并用 `LoRA Stack Splitter` 生成全部非空组合。
 - 可用动态增长的 `LoRA Stack Lister` 合并多个独立 Stack；连接一个输入后自动显示下一个输入槽。
-- `Multi Prompt Sample` 以 Prompt 为 Y 轴、LoRA 组合为 X 轴生成比较矩阵；左侧固定显示 `Prompt 1 / Prompt 2 / ...`，顶部显示 `BASE / A / B / A+B / ...`，底栏只列原始 LoRA。
+- `Multi Prompt Sample` 以 Prompt 为 Y 轴、LoRA 组合为 X 轴生成比较矩阵；左侧固定显示 `Prompt 1 / Prompt 2 / ...`，顶部显示 `BASE / A / B / A+B / ...`，底栏分别列出不同的 LoRA 文件、触发词与强度配置。同一文件使用不同强度或触发词时会分配不同字母，不会合并。BASE 与第一列效果图默认至少间隔单图宽度的 `1/8`，也可用 `control_gap` 显式覆盖。
 
 ## ComfyUI 节点
 

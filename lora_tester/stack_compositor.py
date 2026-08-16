@@ -16,6 +16,7 @@ from .styles import DecorationContext, RGBColor, StyleConfig, get_style_decorato
 Rect: TypeAlias = tuple[int, int, int, int]
 Coordinate: TypeAlias = tuple[int, int]
 ImageInput: TypeAlias = Image.Image | Any
+DEFAULT_CONTROL_GAP_RATIO = 0.125
 
 
 def _inclusive(rect: Rect) -> Rect:
@@ -40,24 +41,24 @@ def _axis_token(index: int) -> str:
 
 
 def _stack_mix_labels(stacks: Sequence[LoraStack]) -> tuple[str, ...]:
-    """Name columns by their LoRA mix state instead of model-specific filenames."""
+    """Name columns by each complete LoRA configuration in the mix."""
 
-    tokens: dict[str, str] = {}
+    tokens: dict[LoraStackItem, str] = {}
     for stack in stacks:
         for item in stack.items:
-            tokens.setdefault(item.name, _axis_token(len(tokens)))
-    return tuple("+".join(tokens[item.name] for item in stack.items) for stack in stacks)
+            tokens.setdefault(item, _axis_token(len(tokens)))
+    return tuple("+".join(tokens[item] for item in stack.items) for stack in stacks)
 
 
 def _original_lora_items(stacks: Sequence[LoraStack]) -> tuple[LoraStackItem, ...]:
-    """Return each source LoRA once, preserving its first configured values."""
+    """Return each distinct file, trigger-word, and strength configuration once."""
 
     items: list[LoraStackItem] = []
-    seen: set[str] = set()
+    seen: set[LoraStackItem] = set()
     for stack in stacks:
         for item in stack.items:
-            if item.name not in seen:
-                seen.add(item.name)
+            if item not in seen:
+                seen.add(item)
                 items.append(item)
     return tuple(items)
 
@@ -93,6 +94,7 @@ class StackMatrixGeometry:
     header_rect: Rect
     row_label_rects: Mapping[int, Rect]
     cells: Mapping[Coordinate, Rect]
+    control_gap: int
     control_separator_x: int
     header_font_size: int
     row_font_size: int
@@ -194,7 +196,14 @@ class LoraStackMatrixCompositor:
         label_gap = min(style.footer_padding, max(4, row_label_width // 4))
         header_height = max(48, _font_line_height(header_font) + style.footer_padding * 2)
         cell_gap = max(0, int(style.cell_gap))
-        control_gap = max(cell_gap, int(options.control_gap if options.control_gap is not None else style.region_gap))
+        automatic_control_gap = max(
+            int(style.region_gap),
+            round(options.image_width * DEFAULT_CONTROL_GAP_RATIO),
+        )
+        control_gap = max(
+            cell_gap,
+            int(options.control_gap if options.control_gap is not None else automatic_control_gap),
+        )
         left = style.outer_margin + row_label_width
         top = style.outer_margin + header_height
         cells: dict[Coordinate, Rect] = {}
@@ -237,6 +246,7 @@ class LoraStackMatrixCompositor:
             header_rect=header_rect,
             row_label_rects=MappingProxyType(row_label_rects),
             cells=MappingProxyType(cells),
+            control_gap=control_gap,
             control_separator_x=separator_x,
             header_font_size=header_font_size,
             row_font_size=row_font_size,
@@ -379,6 +389,8 @@ class LoraStackMatrixSession:
             accent = self.style.accent_colors[index % len(self.style.accent_colors)]
             self._draw_fitted_text(item.display_name, (left + 8, rect[1] + 4, right - 8, rect[1] + 28), self.geometry.row_font_size, accent, bold=True)
             details = f"@ {item.strength:g}"
+            if item.trigger_word.strip():
+                details += f" / {item.trigger_word.strip()}"
             self._draw_fitted_text(details, (left + 8, rect[1] + 28, right - 8, rect[3] - 4), max(9, self.geometry.row_font_size - 3), self.style.text_color)
 
     def _draw_image_frame(self, row: int, column: int, rect: Rect) -> None:
@@ -471,4 +483,10 @@ class LoraStackMatrixSession:
         return result
 
 
-__all__ = ["LoraStackMatrixCompositor", "LoraStackMatrixSession", "StackMatrixGeometry", "StackMatrixOptions"]
+__all__ = [
+    "DEFAULT_CONTROL_GAP_RATIO",
+    "LoraStackMatrixCompositor",
+    "LoraStackMatrixSession",
+    "StackMatrixGeometry",
+    "StackMatrixOptions",
+]

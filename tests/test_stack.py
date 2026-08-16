@@ -69,6 +69,33 @@ class StackCompositorTests(unittest.TestCase):
         )
         self.assertLessEqual(compositor.geometry.cell(0, 0)[0], 100)
 
+    def test_same_file_with_different_configuration_gets_distinct_output_identity(self) -> None:
+        low = LoraStack((LoraStackItem("Shared.safetensors", "style_low", 0.5),))
+        high = LoraStack((LoraStackItem("Shared.safetensors", "style_high", 1.0),))
+        combined = LoraStack(low.items + high.items)
+
+        self.assertEqual(_stack_mix_labels((low, high, combined)), ("A", "B", "A+B"))
+        original_items = _original_lora_items((low, high, combined))
+        self.assertEqual(len(original_items), 2)
+        self.assertEqual(
+            [(item.display_name, item.trigger_word, item.strength) for item in original_items],
+            [
+                ("Shared", "style_low", 0.5),
+                ("Shared", "style_high", 1.0),
+            ],
+        )
+
+        compositor = LoraStackMatrixCompositor(
+            (low, high, combined),
+            ("portrait",),
+            32,
+            24,
+            style=StyleConfig.black(decorator="none"),
+            max_canvas_pixels=None,
+        )
+        self.assertEqual(compositor.column_count, 4)
+        self.assertEqual(compositor.original_lora_items, original_items)
+
     def test_xy_matrix_keeps_base_column_and_control_gap(self) -> None:
         a = LoraStack((LoraStackItem("A.safetensors"),))
         b = LoraStack((LoraStackItem("B.safetensors"),))
@@ -102,6 +129,34 @@ class StackCompositorTests(unittest.TestCase):
             output.getpixel(((second_row[0] + second_row[2]) // 2, (second_row[1] + second_row[3]) // 2)),
             (0, 255, 255),
         )
+
+    def test_default_control_gap_scales_with_image_width(self) -> None:
+        stack = LoraStack((LoraStackItem("A.safetensors"),))
+        for width, expected_gap in ((320, 40), (640, 80)):
+            with self.subTest(width=width):
+                compositor = LoraStackMatrixCompositor(
+                    (stack,),
+                    ("portrait",),
+                    width,
+                    100,
+                    style=StyleConfig.black(decorator="none"),
+                    max_canvas_pixels=None,
+                )
+                base = compositor.geometry.cell(0, 0)
+                effect = compositor.geometry.cell(0, 1)
+                self.assertEqual(compositor.geometry.control_gap, expected_gap)
+                self.assertEqual(effect[0] - base[2], expected_gap)
+
+        overridden = LoraStackMatrixCompositor(
+            (stack,),
+            ("portrait",),
+            640,
+            100,
+            style=StyleConfig.black(decorator="none"),
+            control_gap=48,
+            max_canvas_pixels=None,
+        )
+        self.assertEqual(overridden.geometry.control_gap, 48)
 
     def test_technical_style_can_render_with_stack_geometry(self) -> None:
         stack = LoraStack((LoraStackItem("A.safetensors"),))

@@ -849,7 +849,7 @@ STACK_SHOW_LORA_DETAILS_INPUT = (
         "default": True,
         "label_on": "show LoRA names and strengths",
         "label_off": "hide LoRA names and strengths",
-        "tooltip": "Show each original LoRA file and its configured strength once in the footer.",
+        "tooltip": "Show each distinct LoRA file, trigger-word, and strength configuration in the footer.",
     },
 )
 
@@ -933,7 +933,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
                         "max": 4096,
                         "step": 1,
                         "advanced": True,
-                        "tooltip": "Gap after the no-LoRA control column. Zero uses the style region gap.",
+                        "tooltip": "Gap after the no-LoRA control column. Zero uses at least one eighth of the image width.",
                     },
                 ),
                 "max_canvas_megapixels": (
