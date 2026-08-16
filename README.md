@@ -24,10 +24,12 @@
 - 可用 `LoRA Stack` 保存多组 LoRA 文件、触发词和强度，并用 `LoRA Stack Splitter` 生成全部非空组合。
 - 可用动态增长的 `LoRA Stack Lister` 合并多个独立 Stack；连接一个输入后自动显示下一个输入槽。
 - `Multi Prompt Sample` 以 Prompt 为 Y 轴、LoRA 组合为 X 轴生成比较矩阵；左侧固定显示 `Prompt 1 / Prompt 2 / ...`，顶部显示 `BASE / A / B / A+B / ...`，底栏分别列出不同的 LoRA 文件、触发词与强度配置。同一文件使用不同强度或触发词时会分配不同字母，不会合并。BASE 与第一列效果图默认至少间隔单图宽度的 `1/8`，也可用 `control_gap` 显式覆盖。
+- LoRA 文件下拉框提供稳定的“画师 Tag 模式”占位项；选择后，该项不加载 LoRA，触发词字段改为画师 Tag，强度字段改为画师权重。旧工作流仍保存原有字段和值。
+- Node 2.0 与旧 LiteGraph 共用一套动态布局：打开工作流、分页切回、缩小后再增大数量时都会重新同步可见项；其他设备缺少已保存 LoRA 时，下拉框仍可打开并保留缺失值供替换。
 
 ## ComfyUI 节点
 
-插件注册六个节点，位于 `Lora Tester` 及其 `Stacks` 子分类：
+插件注册八个节点，位于 `Lora Tester`、`Stacks` 与 `Artist Tags` 子分类：
 
 - `LoRA Tester (KSampler)`：主采样与拼图节点。`lora_count` 默认为 1，可选 1–3；分别执行 5、25、69 次采样。
 - `LoRA Tester Style`：可选样式节点。只有主节点的 `color_mode` 为 `custom` 时使用，可配置背景颜色或单张背景 `IMAGE`、文字与边框颜色、A/B/C 功能色、间距、字体和装饰器。
@@ -35,6 +37,8 @@
 - `LoRA Stack Splitter`：将一个 Stack 拆成所有非空组合并输出 `LORA_STACK_LIST`。例如 ABC 会得到 A、B、C、AB、AC、BC、ABC。
 - `LoRA Stack Lister`：按连接顺序合并多个 `LORA_STACK`，动态显示最多 16 个输入槽。
 - `Multi Prompt Sample`：最多使用 16 行正面提示词，与 `LORA_STACK_LIST` 组成 XY 比较矩阵，并保留无 LoRA 的 BASE 对照列。
+- `Artist Tag Template`：输出 `ARTIST_TAG_TEMPLATE`，用两条表达式分别定义权重为 1 和非 1 时的画师 Tag 写法。
+- `Anima Artist Mixer Configuration`：输出 `ANIMA_ARTIST_MIXER_CONFIG`；默认参数按参考工作流设为 `1.6 / true / base_anchored / true / false / 0.0`。
 
 主节点会根据 `lora_count` 自动调整 LoRA 配置区：1 只显示 A，2 显示 A/B，3 显示 A/B/C。`LoRA Stack` 和 `Multi Prompt Sample` 也会按数量隐藏未启用的配置组；`LoRA Stack Lister` 会在连接后显示下一个输入槽。隐藏只影响界面和节点高度，不会清空已保存的值。插件通过 ComfyUI 原生 `locales` 机制为原有采样和样式节点提供 English 与简体中文翻译；前端扩展另为枚举值、详情开关和动态输入提供显示逻辑，但序列化值保持不变。
 
@@ -67,6 +71,50 @@ actual = min_strength + (max_strength - min_strength) * multiplier
 | 3 | 69 | 73 | A/B、A/C、B/C 三个两两区域、两条 B 独立轴复用图，以及 8 个三 LoRA 混合位置。 |
 
 同一轮中的所有任务复用 seed、latent、采样器、调度器、步数、CFG 和 denoise；节点从基础 MODEL/CLIP 重新应用当前任务的 LoRA，不会把上一格的 LoRA 权重带入下一格。
+
+## 画师 Tag 与模型模板
+
+内置模型判断读取 ComfyUI 已解析的模型配置，不根据 checkpoint 文件名猜测：
+
+| 模型状态 | 默认模板 | 输入宽容与最终示例 |
+|---|---|---|
+| `model.model.model_config.unet_config["image_model"] == "anima"` | `@{tag}` / `(@{tag}:{weight})` | `fkey`、`@fkey`、`@@fkey` 都会得到 `@fkey`；`(@fkey:3)` 配合新权重 `1.2` 会得到 `(@fkey:1.2)`。保留用户输入的空格或下划线。 |
+| 其他模型（Pony、Animagine、Illustrious、NoobAI、CKN 等 Danbooru Tag 系） | `{tag}` / `({tag}:{weight})` | 去除多余 `@` 与旧权重，转为小写并把连续空白换成下划线；`Artist Name`、权重 `1.2` 得到 `(artist_name:1.2)`。 |
+| 手动接入 `Artist Tag Template` | 用户的两条模板 | 只统一去除多余 `@` 和旧括号权重，不擅自改变大小写或空格。模板仅允许 `{tag}`、`{weight}` 字段。 |
+
+[Anima Base/Aesthetic/Turbo 官方模型卡](https://huggingface.co/circlestone-labs/Anima)明确要求画师 Tag 使用 `@` 前缀；[Anima 2.9B 模型卡](https://huggingface.co/Gazingstars123/Anima-2.9B)明确沿用这一提示习惯。因此 Anima 内置模板不会产生 `@@artist`，也不会把用户习惯的空格强制改成下划线。画师模式的一项可输入逗号、中文逗号或换行分隔的多个画师，每个画师使用该项当前权重。
+
+## Anima Artist Mixer 路由
+
+本项目可选兼容 [Anima-Artist-Mixer](https://github.com/An1X3R/Anima-Artist-Mixer)，只使用它的 `AnimaArtistPack` 与 `AnimaArtistAdapterMixer` 注册节点。每个测试格独立判断，行为如下：
+
+| 当前测试格 | 执行结果 |
+|---|---|
+| 非 Anima | 使用内置/手动模板原生拼入提示词；即使连接 Mixer 配置也忽略。 |
+| Anima，合计 0 或 1 个画师 | 原生提示词编码，不查询也不调用外部 Mixer。 |
+| Anima，合计至少 2 个画师，外部项目未加载 | 保留原提示词并原生编码；节点界面显示兼容性警告。 |
+| Anima，合计至少 2 个画师，外部项目已加载 | 从基础提示词提取完整的 `@artist` / `(@artist:weight)` 项，与当前测试项画师合并为 `artist_chain`；剩余内容作为 `base_prompt`。先调用 `AnimaArtistPack.pack()`，再把返回值及配置传给 `AnimaArtistAdapterMixer.patch()`，采样使用它返回的 MODEL 与正向 CONDITIONING。 |
+
+“合计画师数”同时包含：当前测试组合的画师模式项、LoRA 触发词中的完整 Anima 画师项，以及采样器正向提示词中的完整画师项。`Multi Prompt Sample` 还会同时检查通用前缀和当前提示词行。例如测试项 `@test_artist`（权重 `0.25`）加正向提示词 `@prompt_artist, portrait` 时，外部输入为：
+
+```text
+artist_chain:
+(@test_artist:0.25)
+@prompt_artist
+
+base_prompt:
+portrait
+```
+
+外部项目缺失时不会删除原提示词中的画师项，因此回退不会吞掉用户内容。外部项目存在但模型不是 Anima 时也不会调用。配置节点没有接入外部项目的 `advanced_options`，因此不会开启 Anchor-Q 或跨运行 warm-cache。
+
+## 缓存与执行顺序
+
+- ComfyUI 的 `load_torch_file()` 默认把 LoRA state dict 加载到 CPU；MODEL/CLIP patch 的加载、卸载与显存调度继续由 ComfyUI ModelPatcher 管理。本项目不调用 `empty_cache()`，避免打断 ComfyUI 的动态显存策略。
+- 主采样器只在单次执行内保留最近 3 个 LoRA 的 CPU LRU，正好覆盖单节点最多三项；正常结束、异常和用户中断后都会清空。缓存键包含规范化路径，并比较文件大小、修改时间和创建/变更时间；同路径文件被覆盖后会自动重新加载。
+- `Multi Prompt Sample` 使用运行内最多 3 项的 CPU LRU，并按 Stack 列执行：同一组合只应用一次 LoRA MODEL/CLIP patch、只编码一次负面提示词，再依次采样该列的所有提示词行。正常结束、异常和用户中断都会清空该 LRU。
+- 外部 Mixer 的 GPU 侧画师 embedding、混合 context 与 Anchor 状态由其 ModelPatcher cleanup/中断路径清理。本项目不复制或延长这些缓存的生命周期。
+- ComfyUI 自身仍可缓存整个未变化节点的输出；直接采样器与 `LoRA Stack` 的 `IS_CHANGED` 还会把当前有效 LoRA 文件 stat 指纹加入输出缓存签名，因此原路径文件被覆盖也会重新执行。本项目不额外缓存最终大图、latent、VAE 解码图、正向 conditioning 或 patched MODEL，避免 CPU/显存泄漏和陈旧内容复用。
 
 ## 安装、更新与重启
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 
@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 import torch
 
 from lora_tester.compositor import CompositionSession
+from lora_tester.artist import ARTIST_TAG_MODE
 from lora_tester.layout import LoraSpec, build_layout
 from lora_tester.nodes import (
     NODE_CLASS_MAPPINGS,
@@ -92,13 +93,14 @@ class NodeTests(unittest.TestCase):
             "unique_id": "test-node",
         }
 
-    def _run_fake_sample(self, count):
+    def _run_fake_sample(self, count, overrides=None):
         events = []
         sampler_calls = []
         load_calls = []
         apply_calls = []
         progress = FakeProgress()
         arguments = self._sample_arguments(count)
+        arguments.update(overrides or {})
         arguments["vae"] = FakeVAE(events)
 
         def resolve(name):
@@ -168,6 +170,7 @@ class NodeTests(unittest.TestCase):
             result = node.sample(**arguments)[0]
 
         return {
+            "node": node,
             "arguments": arguments,
             "events": events,
             "sampler_calls": sampler_calls,
@@ -333,6 +336,87 @@ class NodeTests(unittest.TestCase):
         )
         self.assertTrue(all(call["negative"]["text"] == "blur" for call in calls.values()))
 
+    def test_artist_mode_skips_lora_loading_and_uses_tag_weight(self):
+        run = self._run_fake_sample(
+            2,
+            {
+                "lora_a_name": ARTIST_TAG_MODE,
+                "lora_a_trigger": "@fkey",
+                "lora_a_min_strength": 0.0,
+                "lora_a_max_strength": 0.8,
+            },
+        )
+        self.assertEqual([Path(path).name for path in run["load_calls"]], ["B.safetensors"])
+        self.assertTrue(
+            all(call[2] == "state:B.safetensors" for call in run["apply_calls"])
+        )
+        plan = build_layout(
+            (
+                LoraSpec(ARTIST_TAG_MODE, 0.8, "@fkey"),
+                LoraSpec("B.safetensors", 1.0, "beta"),
+            )
+        )
+        calls = {
+            task.task_id: call for task, call in zip(plan.tasks, run["sampler_calls"])
+        }
+        self.assertEqual(calls["base"]["positive"]["text"], "portrait")
+        self.assertEqual(calls["A025"]["positive"]["text"], "(fkey:0.2), portrait")
+        self.assertEqual(
+            calls["A100+B100"]["positive"]["text"],
+            "(fkey:0.8), beta, portrait",
+        )
+        self.assertEqual(len(run["node"]._lora_cache), 0)
+
+    def test_anima_prompt_artist_joins_test_artist_in_external_mixer(self):
+        pack_calls = []
+        mixer_calls = []
+
+        class Pack:
+            def pack(self, **kwargs):
+                pack_calls.append(kwargs)
+                return ({"artist_chain": kwargs["artist_chain"]},)
+
+        class Mixer:
+            def patch(self, **kwargs):
+                mixer_calls.append(kwargs)
+                return (
+                    ("mixed", kwargs["artist_pack"]["artist_chain"]),
+                    {"text": kwargs["artist_pack"]["artist_chain"], "stack": ()},
+                )
+
+        anima_model = SimpleNamespace(
+            model=SimpleNamespace(
+                model_config=SimpleNamespace(unet_config={"image_model": "anima"})
+            )
+        )
+        with patch(
+            "lora_tester.artist._resolve_anima_mixer_nodes",
+            return_value=(Pack, Mixer),
+        ):
+            run = self._run_fake_sample(
+                1,
+                {
+                    "model": anima_model,
+                    "positive_prompt": "@prompt_artist, portrait",
+                    "lora_a_name": ARTIST_TAG_MODE,
+                    "lora_a_trigger": "@test_artist",
+                    "lora_a_min_strength": 0.0,
+                    "lora_a_max_strength": 1.0,
+                },
+            )
+
+        self.assertEqual(len(pack_calls), 4)
+        self.assertEqual(
+            pack_calls[0]["artist_chain"],
+            "(@test_artist:0.25)\n@prompt_artist",
+        )
+        self.assertEqual(pack_calls[0]["base_prompt"], "portrait")
+        self.assertEqual(mixer_calls[0]["strength"], 1.6)
+        self.assertEqual(
+            run["sampler_calls"][1]["model"],
+            ("mixed", "(@test_artist:0.25)\n@prompt_artist"),
+        )
+
     def test_min_strengths_reach_tasks_and_activate_center_triggers(self):
         arguments = self._sample_arguments(3)
         arguments.update(
@@ -433,6 +517,48 @@ class NodeTests(unittest.TestCase):
             self.assertEqual(len(loads), 4)
             node._load_lora("A")
             self.assertEqual(len(loads), 5)
+
+    def test_lora_cache_reloads_when_file_is_overwritten(self):
+        node = LoraTesterSampler()
+        with (
+            patch("lora_tester.nodes._resolve_lora_path", return_value="A.safetensors"),
+            patch(
+                "lora_tester.nodes._lora_file_signature",
+                side_effect=[(10, 1, 1), (10, 1, 1), (10, 2, 2), (10, 2, 2)],
+            ),
+            patch(
+                "lora_tester.nodes._load_lora_file",
+                side_effect=[("state:first", None), ("state:second", None)],
+            ) as load,
+        ):
+            first = node._load_lora("A.safetensors")
+            second = node._load_lora("A.safetensors")
+
+        self.assertEqual(first.state_dict, "state:first")
+        self.assertEqual(second.state_dict, "state:second")
+        self.assertEqual(load.call_count, 2)
+
+    def test_is_changed_fingerprints_only_active_lora_files(self):
+        with (
+            patch(
+                "lora_tester.nodes._resolve_lora_path",
+                side_effect=lambda name: str(ROOT / name),
+            ),
+            patch(
+                "lora_tester.nodes._lora_file_signature",
+                side_effect=lambda path: (len(path), 20, 30),
+            ),
+        ):
+            fingerprint = LoraTesterSampler.IS_CHANGED(
+                lora_count=2,
+                lora_a_name="A.safetensors",
+                lora_b_name=ARTIST_TAG_MODE,
+                lora_c_name="ignored.safetensors",
+            )
+
+        self.assertEqual(len(fingerprint), 1)
+        self.assertTrue(fingerprint[0][0].lower().endswith("a.safetensors"))
+        self.assertEqual(fingerprint[0][1], (len(str(ROOT / "A.safetensors")), 20, 30))
 
     def test_main_input_contract_contains_display_toggle_and_custom_style(self):
         with (

@@ -71,6 +71,21 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn('document.querySelectorAll("[node-id][node-type]")', source)
         self.assertIn('input.setAttribute("aria-label", label)', source)
 
+    def test_artist_mode_labels_warning_and_upstream_stack_tracking(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn('const ARTIST_TAG_MODE = "__lora_tester_artist_tag__"', source)
+        self.assertIn("ARTIST_MODE_OPTION_LABELS", source)
+        self.assertIn("artistModeLabels(node, nodeName)", source)
+        self.assertIn("Artist ${title} Tag Weight", source)
+        self.assertIn("countPromptArtistTags", source)
+        self.assertIn("stackArtistCountsFromNode", source)
+        self.assertIn('registeredNodeAvailable("AnimaArtistPack")', source)
+        self.assertIn('"AnimaArtistAdapterMixer"', source)
+        self.assertIn("updateMixerWarning(node, nodeName)", source)
+        self.assertIn("node.addDOMWidget", source)
+        self.assertIn("serialize: false", source)
+        self.assertIn("node.onWidgetChanged = function", source)
+
     def test_frontend_localizes_stable_enum_values_without_changing_them(self) -> None:
         source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
         self.assertIn('get?.("Comfy.Locale")', source)

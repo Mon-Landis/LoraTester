@@ -4,6 +4,14 @@ from .comfy_adapter import (
     pil_to_comfy_image,
     submit_comfy_batch,
 )
+from .artist import (
+    ANIMA_ARTIST_TEMPLATE,
+    ARTIST_TAG_MODE,
+    DANBOORU_ARTIST_TEMPLATE,
+    ArtistTagTemplate,
+    AnimaArtistMixerConfig,
+    detect_model_family,
+)
 from .compositor import (
     CompositionOptions,
     CompositionSession,
@@ -13,6 +21,8 @@ from .compositor import (
 )
 from .layout import AxisSpec, LayoutPlan, LoraSpec, RenderTask, build_layout
 from .nodes import (
+    AnimaArtistMixerConfigNode,
+    ArtistTagTemplateNode,
     LoraStackListerNode,
     LoraStackNode,
     LoraStackSplitterNode,
@@ -30,6 +40,13 @@ from .styles import (
 
 
 __all__ = [
+    "ANIMA_ARTIST_TEMPLATE",
+    "ARTIST_TAG_MODE",
+    "DANBOORU_ARTIST_TEMPLATE",
+    "ArtistTagTemplate",
+    "ArtistTagTemplateNode",
+    "AnimaArtistMixerConfig",
+    "AnimaArtistMixerConfigNode",
     "CompositionOptions",
     "CompositionSession",
     "LayoutGeometry",
@@ -53,6 +70,7 @@ __all__ = [
     "available_style_decorators",
     "build_layout",
     "compose_comfy_batch",
+    "detect_model_family",
     "image_to_pil",
     "iter_comfy_image_batch",
     "pil_to_comfy_image",

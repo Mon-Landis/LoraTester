@@ -1,7 +1,7 @@
 {
   "LoraTesterSampler": {
     "display_name": "LoRA 混合测试器（KSampler）",
-    "description": "使用完全一致的采样参数测试一至三个 LoRA，在节点内完成提示词编码、采样、解码并拼合为带标注的对比图。",
+    "description": "使用完全一致的采样参数测试一至三个 LoRA 或画师 Tag，在节点内完成提示词编码、采样、解码并拼合为带标注的对比图。",
     "inputs": {
       "model": {
         "name": "基础模型",
@@ -52,8 +52,8 @@
         "tooltip": "整轮对比统一使用的降噪强度。"
       },
       "lora_count": {
-        "name": "LoRA 数量",
-        "tooltip": "使用前一、二或三组 LoRA；未使用的 B/C 组会自动隐藏。"
+        "name": "测试项数量",
+        "tooltip": "使用前一、二或三组 LoRA/画师 Tag；未使用的 B/C 组会自动隐藏。"
       },
       "lora_a_name": {
         "name": "LoRA A 文件",
@@ -123,6 +123,14 @@
       "custom_style": {
         "name": "自定义样式",
         "tooltip": "可选接入 LoRA 测试器样式节点；仅在颜色模式为“自定义样式”时使用。"
+      },
+      "artist_tag_template": {
+        "name": "画师 Tag 模板",
+        "tooltip": "可选的画师 Tag 语法覆盖；未连接时，Anima 使用 @ 前缀，其他模型使用规范化的 Danbooru Tag。"
+      },
+      "anima_mixer_config": {
+        "name": "Anima Mixer 配置",
+        "tooltip": "Anima Artist Mixer 已加载时，用于 Anima 多画师测试的可选参数；其他模型会忽略。"
       }
     },
     "outputs": {
@@ -270,13 +278,58 @@
       }
     }
   },
+  "ArtistTagTemplate": {
+    "display_name": "画师 Tag 模板",
+    "description": "定义默认权重与显式权重两种画师 Tag 表达式。",
+    "inputs": {
+      "default_template": {
+        "name": "默认权重模板",
+        "tooltip": "画师权重恰好为 1 时使用的表达式，必须包含 {tag}。"
+      },
+      "weighted_template": {
+        "name": "显式权重模板",
+        "tooltip": "画师权重不为 1 时使用的表达式，必须包含 {tag} 和 {weight}。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "画师 Tag 模板",
+        "tooltip": "供兼容测试节点使用的画师 Tag 格式规则。"
+      }
+    }
+  },
+  "AnimaArtistMixerConfig": {
+    "display_name": "Anima Artist Mixer 配置",
+    "description": "为 Anima 多画师测试配置可选的 Anima Artist Adapter Mixer 集成。",
+    "inputs": {
+      "strength": { "name": "混合强度", "tooltip": "传给 Anima Artist Adapter Mixer 的垂直画师差分强度。" },
+      "normalize_weights": { "name": "归一化权重", "tooltip": "在外部 Mixer 中将画师权重归一化为相对比例。" },
+      "alignment_mode": {
+        "name": "对齐模式",
+        "tooltip": "外部 Mixer 使用的 Adapter 后 Token 对齐方式。",
+        "values": {
+          "base_anchored": "基础提示词锚定",
+          "shared_base_ids": "共享基础 ID"
+        }
+      },
+      "enabled": { "name": "启用", "tooltip": "选中集成路径时启用外部 Mixer 补丁。" },
+      "apply_to_uncond": { "name": "应用到无条件分支", "tooltip": "让外部 Mixer 实验性地影响无条件分支。" },
+      "uncond_strength": { "name": "无条件分支强度", "tooltip": "外部 Mixer 对无条件分支的影响强度。" }
+    },
+    "outputs": {
+      "0": {
+        "name": "Anima Mixer 配置",
+        "tooltip": "启用集成时传给 Anima Artist Adapter Mixer 的设置。"
+      }
+    }
+  },
   "LoraStack": {
     "display_name": "LoRA 组合配置",
-    "description": "配置一组同时应用的 LoRA 文件、触发词和强度。",
+    "description": "配置一组同时应用的 LoRA 文件与画师 Tag。",
     "inputs": {
       "lora_count": {
-        "name": "LoRA 数量",
-        "tooltip": "当前组合中启用的 LoRA 数量。"
+        "name": "测试项数量",
+        "tooltip": "当前组合中启用的 LoRA 或画师 Tag 项目数量。"
       },
       "lora_1_name": { "name": "LoRA 1 文件", "tooltip": "组合第 1 项使用的必选 LoRA 文件。" },
       "lora_1_trigger": { "name": "LoRA 1 触发词", "tooltip": "组合第 1 项使用的触发词。" },
@@ -325,7 +378,8 @@
       "lora_15_strength": { "name": "LoRA 15 强度", "tooltip": "组合第 15 项同时应用于模型与 CLIP 的强度。" },
       "lora_16_name": { "name": "LoRA 16 文件", "tooltip": "组合第 16 项使用的必选 LoRA 文件。" },
       "lora_16_trigger": { "name": "LoRA 16 触发词", "tooltip": "组合第 16 项使用的触发词。" },
-      "lora_16_strength": { "name": "LoRA 16 强度", "tooltip": "组合第 16 项同时应用于模型与 CLIP 的强度。" }
+      "lora_16_strength": { "name": "LoRA 16 强度", "tooltip": "组合第 16 项同时应用于模型与 CLIP 的强度。" },
+      "artist_tag_template": { "name": "画师 Tag 模板", "tooltip": "随组合保存并由拆分节点继续传递的可选画师 Tag 语法。" }
     },
     "outputs": {
       "0": {
@@ -416,7 +470,9 @@
       "show_lora_details": { "name": "显示原始 LoRA 底栏", "tooltip": "在底栏中分别列出每个不同的 LoRA 文件、触发词与强度配置。" },
       "control_gap": { "name": "BASE 对照列间距", "tooltip": "BASE 对照列与第一列 LoRA 测试结果之间的水平间距；0 会自动使用至少为图片宽度八分之一的间距。" },
       "max_canvas_megapixels": { "name": "最大画布（百万像素）", "tooltip": "最终 XY 对比图超过该像素数量时中止。" },
-      "custom_style": { "name": "自定义样式", "tooltip": "颜色模式为自定义时使用的 LoRA 测试器样式。" }
+      "custom_style": { "name": "自定义样式", "tooltip": "颜色模式为自定义时使用的 LoRA 测试器样式。" },
+      "artist_tag_template": { "name": "画师 Tag 模板", "tooltip": "覆盖模型内置和组合自带的画师 Tag 语法。" },
+      "anima_mixer_config": { "name": "Anima Mixer 配置", "tooltip": "Anima Artist Mixer 已加载时，用于 Anima 多画师测试格的可选参数。" }
     },
     "outputs": {
       "0": {

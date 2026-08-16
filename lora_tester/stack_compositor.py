@@ -387,10 +387,15 @@ class LoraStackMatrixSession:
             if index:
                 self._draw.line((left, rect[1], left, rect[3]), fill=self.style.frame_color, width=1)
             accent = self.style.accent_colors[index % len(self.style.accent_colors)]
-            self._draw_fitted_text(item.display_name, (left + 8, rect[1] + 4, right - 8, rect[1] + 28), self.geometry.row_font_size, accent, bold=True)
-            details = f"@ {item.strength:g}"
-            if item.trigger_word.strip():
-                details += f" / {item.trigger_word.strip()}"
+            if item.is_artist_tag:
+                title = f"Artist tag: {item.display_name}"
+                details = f"Weight: {item.strength:g}"
+            else:
+                title = f"LoRA: {item.display_name}"
+                details = f"Strength: {item.strength:g}"
+                if item.trigger_word.strip():
+                    details += f" / Trigger: {item.trigger_word.strip()}"
+            self._draw_fitted_text(title, (left + 8, rect[1] + 4, right - 8, rect[1] + 28), self.geometry.row_font_size, accent, bold=True)
             self._draw_fitted_text(details, (left + 8, rect[1] + 28, right - 8, rect[3] - 4), max(9, self.geometry.row_font_size - 3), self.style.text_color)
 
     def _draw_image_frame(self, row: int, column: int, rect: Rect) -> None:

@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 |
 |---|---|
-| ComfyUI | `0.29.2`，提交 `3221224`，2026-07-31 |
+| ComfyUI | `0.33.0`，提交 `aaabf342`，2026-08-15 |
 | ComfyUI 路径 | `D:\ComfyUI\ComfyUI_windows_portable\ComfyUI` |
 | 插件开发路径 | `D:\ComfyUI\LoraTester` |
 | 便携 Python | `3.13.14` |
@@ -12,7 +12,7 @@
 | CUDA / GPU | CUDA 13.0 / NVIDIA GeForce RTX 2080 Ti |
 | Pillow / NumPy | `12.3.0` / `2.5.1` |
 | 系统 Python | `3.14.4`，不作为 ComfyUI 兼容性基准 |
-| Node.js / npm | 当前未安装；纯 Python 节点不需要 |
+| ComfyUI 前端 | `1.49.6` |
 
 开发、测试和预览均应使用便携版 Python。它启用了隔离路径，直接运行 `-c` 时不会自动加入当前工作目录；仓库脚本已经显式处理插件路径。
 
@@ -46,7 +46,7 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
   -> D:\ComfyUI\LoraTester
 ```
 
-根 `__init__.py` 当前注册六个节点：`LoraTesterSampler`、`LoraTesterStyle`、`LoraStack`、`LoraStackSplitter`、`LoraStackLister` 与 `MultiPromptSample`。
+根 `__init__.py` 当前注册八个节点：`LoraTesterSampler`、`LoraTesterStyle`、`ArtistTagTemplate`、`AnimaArtistMixerConfig`、`LoraStack`、`LoraStackSplitter`、`LoraStackLister` 与 `MultiPromptSample`。
 
 ## 稳定节点字段
 
@@ -73,6 +73,9 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 - 隐藏/恢复最小权重、最大权重、触发词和文件选择输入时保持节点尺寸稳定；
 - 对颜色模式、背景适配、装饰器和详情开关进行 English/简体中文显示翻译；
 - 加载已有工作流时按序列化的 `lora_count` 恢复可见分组。
+- 在 Node 2.0 与旧 LiteGraph 的创建、恢复、分页切换生命周期中重复同步动态分组，并保留其他设备上缺失的 LoRA 下拉值。
+- 本地化画师模式占位项，并按 LoRA/画师模式切换触发词与权重字段标题。
+- 从直接采样器或上游 Stack/Splitter/Lister 推导潜在多画师测试；外部 Mixer 未注册时在采样节点底部显示 Anima 警告。
 
 前端扩展只改变显示状态和标签，不改变序列化字段值。后续若增加以下能力，再评估引入 Node.js 构建链：
 
@@ -81,6 +84,12 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 - 执行中的 69 项任务进度矩阵。
 
 当前脚本为原生 ES 模块，无需 npm 构建步骤。
+
+## 画师模式与缓存边界
+
+画师模式的稳定下拉值是 `__lora_tester_artist_tag__`，只允许翻译显示名，不得修改序列化值。Anima 判断必须读取 ComfyUI 的模型配置 `unet_config["image_model"]`，不得用 checkpoint 文件名。外部兼容通过 `nodes.NODE_CLASS_MAPPINGS` 延迟解析 `AnimaArtistPack` 和 `AnimaArtistAdapterMixer`；缺少插件时仍必须能导入和执行本项目。
+
+LoRA state dict 是 CPU 数据。两个采样节点的运行内 LRU 上限为 3，并以文件 stat 指纹失效，在成功、异常或中断后清空；直接采样器与 Stack 的 `IS_CHANGED` 也把有效文件指纹加入 ComfyUI 输出缓存签名。矩阵采样节点在一次执行内按 Stack 列复用 patch。MODEL/CLIP clone、Mixer GPU 状态及显存调度由 ComfyUI/外部 Mixer 管理，不在本项目中调用 `empty_cache()` 或保存 patched MODEL。
 
 ## 测试与发布
 
@@ -109,4 +118,4 @@ Set-Location D:\ComfyUI\ComfyUI_windows_portable\ComfyUI
 ..\python_embeded\python.exe main.py --quick-test-for-ci --disable-all-custom-nodes --whitelist-custom-nodes LoraTester --database-url "sqlite:///:memory:"
 ```
 
-当前检查结果为插件导入 `0.0 seconds`、退出码 `0`，节点映射数量为 6；真实 `INPUT_TYPES` 调用也已通过。
+当前检查结果为插件导入 `0.0 seconds`、退出码 `0`，节点映射数量为 8；真实 `INPUT_TYPES` 调用也已通过。

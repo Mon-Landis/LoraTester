@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Iterable, Mapping, Sequence
 
+from .artist import ARTIST_TAG_MODE, split_artist_tags
+
 
 LEVELS = (0.25, 0.5, 0.75, 1.0)
 SLOTS = ("A", "B", "C")
@@ -41,10 +43,27 @@ class LoraSpec:
             raise ValueError("LoRA min_weight must be finite")
         if float(self.min_weight) >= float(self.max_weight):
             raise ValueError("LoRA min_weight must be lower than max_weight")
+        if self.is_artist_tag and not split_artist_tags(self.trigger_word):
+            raise ValueError("Artist tag cannot be empty")
 
     @property
     def display_name(self) -> str:
+        if self.is_artist_tag:
+            return self.trigger_word.strip() or "Artist tag"
         return _display_name(str(self.name))
+
+    @property
+    def is_artist_tag(self) -> bool:
+        return str(self.name).strip() == ARTIST_TAG_MODE
+
+    @property
+    def footer_text(self) -> str:
+        if self.is_artist_tag:
+            return f"Artist tag: {self.trigger_word.strip()}"
+        text = f"LoRA: {self.name}"
+        if self.trigger_word.strip():
+            text += f"\nTrigger: {self.trigger_word.strip()}"
+        return text
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +242,7 @@ def _make_task(
     prompt_additions = tuple(
         loras[index].trigger_word.strip()
         for index in active_indexes
-        if loras[index].trigger_word.strip()
+        if not loras[index].is_artist_tag and loras[index].trigger_word.strip()
     )
     if not nominal_indexes:
         task_id = "base"

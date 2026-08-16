@@ -1,7 +1,7 @@
 {
   "LoraTesterSampler": {
     "display_name": "LoRA Tester (KSampler)",
-    "description": "Tests one to three LoRAs with fixed sampling inputs, decodes every result, and assembles a labeled comparison sheet.",
+    "description": "Tests one to three LoRAs or artist tags with fixed sampling inputs and assembles a labeled comparison sheet.",
     "inputs": {
       "model": {
         "name": "Model",
@@ -52,8 +52,8 @@
         "tooltip": "Denoising strength used for every comparison image."
       },
       "lora_count": {
-        "name": "LoRA Count",
-        "tooltip": "Uses the first one, two, or three LoRA groups. The unused groups are hidden automatically."
+        "name": "Test Item Count",
+        "tooltip": "Uses the first one, two, or three LoRA or artist-tag groups. Unused groups are hidden automatically."
       },
       "lora_a_name": {
         "name": "LoRA A File",
@@ -123,6 +123,14 @@
       "custom_style": {
         "name": "Custom Style",
         "tooltip": "Optional output from LoRA Tester Style. Used only when Color Mode is Custom."
+      },
+      "artist_tag_template": {
+        "name": "Artist Tag Template",
+        "tooltip": "Optional artist-tag syntax override. Without it, Anima uses @ tags and other models use normalized Danbooru tags."
+      },
+      "anima_mixer_config": {
+        "name": "Anima Mixer Configuration",
+        "tooltip": "Optional settings for multi-artist Anima tests when Anima Artist Mixer is loaded. Ignored by other models."
       }
     },
     "outputs": {
@@ -270,13 +278,58 @@
       }
     }
   },
+  "ArtistTagTemplate": {
+    "display_name": "Artist Tag Template",
+    "description": "Defines the default and explicitly weighted forms of an artist tag.",
+    "inputs": {
+      "default_template": {
+        "name": "Default Weight Template",
+        "tooltip": "Expression used when the artist weight is exactly 1. Must contain {tag}."
+      },
+      "weighted_template": {
+        "name": "Explicit Weight Template",
+        "tooltip": "Expression used for any non-default artist weight. Must contain {tag} and {weight}."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Artist Tag Template",
+        "tooltip": "Artist-tag formatting rules for compatible tester nodes."
+      }
+    }
+  },
+  "AnimaArtistMixerConfig": {
+    "display_name": "Anima Artist Mixer Configuration",
+    "description": "Configures the optional Anima Artist Adapter Mixer integration for multi-artist Anima tests.",
+    "inputs": {
+      "strength": { "name": "Strength", "tooltip": "Perpendicular artist-delta strength passed to Anima Artist Adapter Mixer." },
+      "normalize_weights": { "name": "Normalize Weights", "tooltip": "Normalizes artist weights as relative ratios in the external Mixer." },
+      "alignment_mode": {
+        "name": "Alignment Mode",
+        "tooltip": "Post-adapter token alignment used by the external Mixer.",
+        "values": {
+          "base_anchored": "Base anchored",
+          "shared_base_ids": "Shared base IDs"
+        }
+      },
+      "enabled": { "name": "Enabled", "tooltip": "Enables the external Mixer patch when the integration is selected." },
+      "apply_to_uncond": { "name": "Apply to Unconditional", "tooltip": "Experimental external Mixer influence on unconditional rows." },
+      "uncond_strength": { "name": "Unconditional Strength", "tooltip": "Strength of external Mixer influence on unconditional rows." }
+    },
+    "outputs": {
+      "0": {
+        "name": "Anima Mixer Configuration",
+        "tooltip": "Settings passed to Anima Artist Adapter Mixer when active."
+      }
+    }
+  },
   "LoraStack": {
     "display_name": "LoRA Stack",
-    "description": "Configures LoRA files, trigger words, and strengths that are applied together.",
+    "description": "Configures LoRA files and artist tags that are applied together.",
     "inputs": {
       "lora_count": {
-        "name": "LoRA Count",
-        "tooltip": "Number of enabled LoRAs in this stack."
+        "name": "Test Item Count",
+        "tooltip": "Number of enabled LoRA or artist-tag entries in this stack."
       },
       "lora_1_name": { "name": "LoRA 1 File", "tooltip": "Required LoRA file for stack entry 1." },
       "lora_1_trigger": { "name": "LoRA 1 Trigger Words", "tooltip": "Trigger words for LoRA entry 1." },
@@ -325,7 +378,8 @@
       "lora_15_strength": { "name": "LoRA 15 Strength", "tooltip": "Model and CLIP strength for LoRA entry 15." },
       "lora_16_name": { "name": "LoRA 16 File", "tooltip": "Required LoRA file for stack entry 16." },
       "lora_16_trigger": { "name": "LoRA 16 Trigger Words", "tooltip": "Trigger words for LoRA entry 16." },
-      "lora_16_strength": { "name": "LoRA 16 Strength", "tooltip": "Model and CLIP strength for LoRA entry 16." }
+      "lora_16_strength": { "name": "LoRA 16 Strength", "tooltip": "Model and CLIP strength for LoRA entry 16." },
+      "artist_tag_template": { "name": "Artist Tag Template", "tooltip": "Optional artist-tag syntax stored with this stack and preserved by the splitter." }
     },
     "outputs": {
       "0": {
@@ -416,7 +470,9 @@
       "show_lora_details": { "name": "Show Original LoRAs", "tooltip": "Lists each distinct LoRA file, trigger-word, and strength configuration in the footer." },
       "control_gap": { "name": "BASE Control Gap", "tooltip": "Horizontal gap between BASE and the first LoRA test column; 0 automatically uses at least one eighth of the image width." },
       "max_canvas_megapixels": { "name": "Maximum Canvas (MP)", "tooltip": "Stops when the final XY sheet would exceed this pixel count." },
-      "custom_style": { "name": "Custom Style", "tooltip": "LoRA Tester style used when Color Mode is Custom." }
+      "custom_style": { "name": "Custom Style", "tooltip": "LoRA Tester style used when Color Mode is Custom." },
+      "artist_tag_template": { "name": "Artist Tag Template", "tooltip": "Overrides model-specific and stack-specific artist-tag syntax." },
+      "anima_mixer_config": { "name": "Anima Mixer Configuration", "tooltip": "Optional settings for multi-artist Anima test cells when Anima Artist Mixer is loaded." }
     },
     "outputs": {
       "0": {

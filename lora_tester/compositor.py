@@ -469,7 +469,7 @@ class LoraComparisonCompositor:
             column_width = (grid_bounds[2] - grid_bounds[0]) / len(self.plan.loras)
             available_width = max(1, round(column_width) - footer_padding * 2)
             max_name_lines = max(
-                len(_wrap_text_pixels(str(lora.name), name_font, available_width))
+                len(_wrap_text_pixels(lora.footer_text, name_font, available_width))
                 for lora in self.plan.loras
             )
             footer_height = max(
@@ -878,7 +878,7 @@ class CompositionSession:
             self._draw.text((left + padding, title_y), title, fill=self.style.accent_colors[index], font=font)
             name_y = title_y + _font_line_height(font) + self.geometry.footer_title_gap
             available = max(1, right - left - padding * 2)
-            for line in _wrap_text_pixels(str(lora.name), small_font, available):
+            for line in _wrap_text_pixels(lora.footer_text, small_font, available):
                 self._draw.text((left + padding, name_y), line, fill=self.style.text_color, font=small_font)
                 name_y += _font_line_height(small_font) + self.geometry.footer_name_line_gap
 

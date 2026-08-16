@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from typing import Iterable
 
+from .artist import ARTIST_TAG_MODE, ArtistTagTemplate, split_artist_tags
+
 
 def _display_name(value: str) -> str:
     normalized = value.replace("\\", "/")
@@ -27,9 +29,21 @@ class LoraStackItem:
             raise ValueError("LoRA file cannot be empty")
         if not math.isfinite(float(self.strength)):
             raise ValueError("LoRA strength must be finite")
+        if self.is_artist_tag and not split_artist_tags(self.trigger_word):
+            raise ValueError("Artist tag cannot be empty")
+
+    @property
+    def is_artist_tag(self) -> bool:
+        return str(self.name).strip() == ARTIST_TAG_MODE
+
+    @property
+    def artist_tags(self) -> tuple[str, ...]:
+        return split_artist_tags(self.trigger_word) if self.is_artist_tag else ()
 
     @property
     def display_name(self) -> str:
+        if self.is_artist_tag:
+            return ", ".join(self.artist_tags)
         return _display_name(str(self.name))
 
 
@@ -38,6 +52,7 @@ class LoraStack:
     """An ordered collection of LoRA entries applied together."""
 
     items: tuple[LoraStackItem, ...]
+    artist_template: ArtistTagTemplate | None = None
 
     def __post_init__(self) -> None:
         normalized = tuple(self.items)
@@ -45,6 +60,10 @@ class LoraStack:
             raise ValueError("LoRA stack cannot be empty")
         if any(not isinstance(item, LoraStackItem) for item in normalized):
             raise TypeError("LoRA stack items must be LoraStackItem instances")
+        if self.artist_template is not None and not isinstance(
+            self.artist_template, ArtistTagTemplate
+        ):
+            raise TypeError("artist_template must come from an Artist Tag Template node")
         object.__setattr__(self, "items", normalized)
 
     @classmethod
@@ -57,7 +76,20 @@ class LoraStack:
 
     @property
     def trigger_words(self) -> tuple[str, ...]:
-        return tuple(item.trigger_word.strip() for item in self.items if item.trigger_word.strip())
+        return tuple(
+            item.trigger_word.strip()
+            for item in self.items
+            if not item.is_artist_tag and item.trigger_word.strip()
+        )
+
+    @property
+    def artist_entries(self) -> tuple[tuple[str, float], ...]:
+        return tuple(
+            (tag, float(item.strength))
+            for item in self.items
+            if item.is_artist_tag
+            for tag in item.artist_tags
+        )
 
     def signature(self) -> tuple[tuple[str, str, float], ...]:
         return tuple((item.name, item.trigger_word, float(item.strength)) for item in self.items)
@@ -95,7 +127,12 @@ def split_lora_stack(stack: LoraStack) -> LoraStackList:
     combinations: list[LoraStack] = []
     for size in range(1, len(stack.items) + 1):
         for indexes in itertools.combinations(range(len(stack.items)), size):
-            combinations.append(LoraStack(tuple(stack.items[index] for index in indexes)))
+            combinations.append(
+                LoraStack(
+                    tuple(stack.items[index] for index in indexes),
+                    artist_template=stack.artist_template,
+                )
+            )
     return LoraStackList(tuple(combinations))
 
 
