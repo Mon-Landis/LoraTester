@@ -75,6 +75,31 @@ class StackNodeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "entry 2"):
             node.build_stack(2, **{**values, "lora_2_name": ""})
 
+    def test_stack_validator_ignores_missing_hidden_entries(self):
+        def resolve(name):
+            if name in {"A.safetensors", "B.safetensors"}:
+                return name
+            raise FileNotFoundError(name)
+
+        with patch("lora_tester.nodes._resolve_lora_path", side_effect=resolve):
+            self.assertTrue(
+                LoraStackNode.VALIDATE_INPUTS(
+                    lora_count=2,
+                    lora_1_name="A.safetensors",
+                    lora_2_name="B.safetensors",
+                    lora_3_name="missing.safetensors",
+                )
+            )
+            self.assertIn(
+                "active slot 2",
+                LoraStackNode.VALIDATE_INPUTS(
+                    lora_count=2,
+                    lora_1_name="A.safetensors",
+                    lora_2_name="missing.safetensors",
+                    lora_3_name="missing.safetensors",
+                ),
+            )
+
     def test_stack_artist_mode_and_template_survive_splitter(self):
         template = ArtistTagTemplate("artist:{tag}", "(artist:{tag}:{weight})")
         stack = LoraStackNode().build_stack(

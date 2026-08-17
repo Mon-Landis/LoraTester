@@ -71,6 +71,37 @@ def _resolve_lora_path(name: str) -> str:
     return folder_paths.get_full_path_or_raise("loras", name)
 
 
+def _validate_active_lora_names(
+    count: Any,
+    maximum: int,
+    names: Sequence[Any],
+) -> bool | str:
+    """Validate only slots that the node will consume for this execution.
+
+    ComfyUI performs built-in combo validation for every declared widget before
+    invoking a node. Dynamic nodes therefore need an explicit validator so a
+    hidden, saved file from another machine does not block an otherwise valid
+    lower-count workflow.
+    """
+    try:
+        normalized_count = int(count)
+    except (TypeError, ValueError):
+        return f"LoRA count must be an integer between 1 and {maximum}"
+    if not 1 <= normalized_count <= maximum:
+        return f"LoRA count must be between 1 and {maximum}"
+    for index, raw_name in enumerate(tuple(names)[:normalized_count], start=1):
+        name = str(raw_name or "").strip()
+        if not name:
+            return f"LoRA slot {index} cannot be empty"
+        if name == ARTIST_TAG_MODE:
+            continue
+        try:
+            _resolve_lora_path(name)
+        except (OSError, KeyError, TypeError, ValueError):
+            return f"LoRA file for active slot {index} is unavailable: {name}"
+    return True
+
+
 def _load_lora_file(path: str) -> tuple[Any, Any]:
     import comfy.utils
 
@@ -699,6 +730,20 @@ class LoraTesterSampler:
             for slot in ("a", "b", "c")[:count]
         )
 
+    @classmethod
+    def VALIDATE_INPUTS(
+        cls,
+        lora_count: int = 1,
+        lora_a_name: str = "",
+        lora_b_name: str = "",
+        lora_c_name: str = "",
+    ) -> bool | str:
+        return _validate_active_lora_names(
+            lora_count,
+            3,
+            (lora_a_name, lora_b_name, lora_c_name),
+        )
+
     @_with_run_local_lora_cache
     def sample(
         self,
@@ -1264,6 +1309,50 @@ class LoraStackNode:
         return _lora_input_fingerprint(
             values.get(f"lora_{index}_name", "")
             for index in range(1, count + 1)
+        )
+
+    @classmethod
+    def VALIDATE_INPUTS(
+        cls,
+        lora_count: int = 1,
+        lora_1_name: str = "",
+        lora_2_name: str = "",
+        lora_3_name: str = "",
+        lora_4_name: str = "",
+        lora_5_name: str = "",
+        lora_6_name: str = "",
+        lora_7_name: str = "",
+        lora_8_name: str = "",
+        lora_9_name: str = "",
+        lora_10_name: str = "",
+        lora_11_name: str = "",
+        lora_12_name: str = "",
+        lora_13_name: str = "",
+        lora_14_name: str = "",
+        lora_15_name: str = "",
+        lora_16_name: str = "",
+    ) -> bool | str:
+        return _validate_active_lora_names(
+            lora_count,
+            MAX_STACK_ITEMS,
+            (
+                lora_1_name,
+                lora_2_name,
+                lora_3_name,
+                lora_4_name,
+                lora_5_name,
+                lora_6_name,
+                lora_7_name,
+                lora_8_name,
+                lora_9_name,
+                lora_10_name,
+                lora_11_name,
+                lora_12_name,
+                lora_13_name,
+                lora_14_name,
+                lora_15_name,
+                lora_16_name,
+            ),
         )
 
     def build_stack(

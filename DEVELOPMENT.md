@@ -63,6 +63,8 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 
 主节点的三个 LoRA 槽位都使用 `*_min_strength` 与 `*_max_strength` 成对输入。节点构造 `LoraSpec` 时会校验最低权重严格小于最高权重；不要只在前端限制范围，后端校验是工作流/API 调用的最终边界。
 
+低权重组合的质量是模型行为边界，不是合成器质量承诺：实际 LoRA 权重非零时，生产路径会从基础 MODEL/CLIP 应用该权重，并保留对应触发词；显式画师项按当前画师权重渲染。LoRA 与画师同时处于低权重时，触发词条件可能比模型补丁衰减得慢，结果可能出现明显画风退化并低于 BASE 基线。该现象不应通过跨格复用 patched MODEL、删除触发词或把单画师项送入外部 Mixer 来“修正”；回归测试应同时检查低格的实际 patch 权重和最终正向文本。
+
 ## 前端扩展
 
 `web/lora_tester.js` 当前已经提供以下行为：
@@ -74,6 +76,7 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 - 对颜色模式、背景适配、装饰器和详情开关进行 English/简体中文显示翻译；
 - 加载已有工作流时按序列化的 `lora_count` 恢复可见分组。
 - 在 Node 2.0 与旧 LiteGraph 的创建、恢复、分页切换生命周期中重复同步动态分组，并保留其他设备上缺失的 LoRA 下拉值。
+- 后端 `VALIDATE_INPUTS` 只校验动态数量范围内的 LoRA 槽位；ComfyUI 会对所有声明的 combo 做通用校验，因此不能只依赖前端隐藏或追加缺失值来绕过隐藏槽位的跨设备缺失文件。
 - 本地化画师模式占位项，并按 LoRA/画师模式切换触发词与权重字段标题。
 - 直接采样器只从独立画师 Tag 字段和显式画师模式项推导多画师测试；组合采样器只从上游 Stack/Splitter/Lister 推导，普通提示词与 LoRA 触发词不再自动抽取。外部 Mixer 未注册且高级 Mixer 开关开启时在采样节点底部显示 Anima 警告；关闭开关必须同时隐藏警告并让后端强制使用原生编码。
 

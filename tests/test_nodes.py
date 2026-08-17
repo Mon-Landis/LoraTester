@@ -371,6 +371,42 @@ class NodeTests(unittest.TestCase):
         )
         self.assertEqual(len(run["node"]._lora_cache), 0)
 
+    def test_low_weight_artist_lora_cell_keeps_independent_lora_and_trigger(self):
+        """A low mixed cell is still a real LoRA+artist conditioning sample."""
+        run = self._run_fake_sample(
+            2,
+            {
+                "lora_a_name": ARTIST_TAG_MODE,
+                "lora_a_trigger": "@fkey",
+                "lora_a_max_strength": 0.8,
+                "lora_b_name": "B.safetensors",
+                "lora_b_trigger": "beta",
+                "lora_b_max_strength": 1.0,
+            },
+        )
+        calls = {
+            task.task_id: call
+            for task, call in zip(
+                build_layout(
+                    (
+                        LoraSpec(ARTIST_TAG_MODE, 0.8, "@fkey"),
+                        LoraSpec("B.safetensors", 1.0, "beta"),
+                    )
+                ).tasks,
+                run["sampler_calls"],
+            )
+        }
+        low_mix = calls["A025+B025"]
+        self.assertEqual(low_mix["model"], (("state:B.safetensors", 0.25),))
+        self.assertEqual(
+            low_mix["positive"]["stack"],
+            (("state:B.safetensors", 0.25),),
+        )
+        self.assertEqual(
+            low_mix["positive"]["text"],
+            "(fkey:0.2), beta, portrait",
+        )
+
     def test_anima_independent_artist_joins_test_artist_in_external_mixer(self):
         pack_calls = []
         mixer_calls = []
@@ -803,6 +839,39 @@ class NodeTests(unittest.TestCase):
             self.assertEqual(inputs["required"][field][1]["default"], 0.0)
         self.assertEqual(inputs["required"]["color_mode"][0], ["black", "white", "custom"])
         self.assertEqual(inputs["optional"]["custom_style"][0], "LORA_TESTER_STYLE")
+
+    def test_direct_validator_ignores_missing_hidden_lora(self):
+        def resolve(name):
+            if name in {"A.safetensors", "B.safetensors"}:
+                return name
+            raise FileNotFoundError(name)
+
+        with patch("lora_tester.nodes._resolve_lora_path", side_effect=resolve):
+            self.assertTrue(
+                LoraTesterSampler.VALIDATE_INPUTS(
+                    lora_count=2,
+                    lora_a_name="A.safetensors",
+                    lora_b_name="B.safetensors",
+                    lora_c_name="missing.safetensors",
+                )
+            )
+            self.assertTrue(
+                LoraTesterSampler.VALIDATE_INPUTS(
+                    lora_count=1,
+                    lora_a_name="A.safetensors",
+                    lora_b_name="missing.safetensors",
+                    lora_c_name="missing.safetensors",
+                )
+            )
+            self.assertIn(
+                "active slot 2",
+                LoraTesterSampler.VALIDATE_INPUTS(
+                    lora_count=2,
+                    lora_a_name="A.safetensors",
+                    lora_b_name="missing.safetensors",
+                    lora_c_name="missing.safetensors",
+                ),
+            )
 
     def test_direct_log_lists_weights_artists_and_observable_cache_state(self):
         with self.assertLogs("lora_tester.nodes", level="INFO") as captured:

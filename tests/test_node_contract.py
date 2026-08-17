@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sys
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from lora_tester.node_contract import (
     USE_ANIMA_ARTIST_MIXER_FIELD,
     USE_ANIMA_ARTIST_MIXER_INPUT,
 )
+from lora_tester.nodes import LoraStackNode, LoraTesterSampler
 
 
 class NodeContractTests(unittest.TestCase):
@@ -49,6 +51,18 @@ class NodeContractTests(unittest.TestCase):
         self.assertEqual(input_type, "BOOLEAN")
         self.assertTrue(options["default"])
         self.assertTrue(options["advanced"])
+
+    def test_dynamic_file_validators_explicitly_claim_every_combo_slot(self) -> None:
+        direct = inspect.getfullargspec(LoraTesterSampler.VALIDATE_INPUTS)
+        stack = inspect.getfullargspec(LoraStackNode.VALIDATE_INPUTS)
+        self.assertIsNone(direct.varkw)
+        self.assertIsNone(stack.varkw)
+        self.assertTrue(
+            {"lora_a_name", "lora_b_name", "lora_c_name"}.issubset(direct.args)
+        )
+        self.assertTrue(
+            {f"lora_{index}_name" for index in range(1, 17)}.issubset(stack.args)
+        )
 
 
 if __name__ == "__main__":
