@@ -75,6 +75,7 @@ class StackMatrixOptions:
     show_stack_details: bool = True
     max_canvas_pixels: int | None = 150_000_000
     control_gap: int | None = None
+    reserve_artist_mixer_labels: bool = False
 
     def __post_init__(self) -> None:
         if int(self.image_width) <= 0 or int(self.image_height) <= 0:
@@ -98,9 +99,14 @@ class StackMatrixGeometry:
     control_separator_x: int
     header_font_size: int
     row_font_size: int
+    artist_mixer_label_height: int
+    artist_mixer_label_rects: Mapping[Coordinate, Rect]
 
     def cell(self, row: int, column: int) -> Rect:
         return self.cells[(int(row), int(column))]
+
+    def artist_mixer_label(self, row: int, column: int) -> Rect | None:
+        return self.artist_mixer_label_rects.get((int(row), int(column)))
 
 
 class LoraStackMatrixCompositor:
@@ -118,6 +124,7 @@ class LoraStackMatrixCompositor:
         image_fit: str = "strict",
         max_canvas_pixels: int | None = 150_000_000,
         control_gap: int | None = None,
+        reserve_artist_mixer_labels: bool = False,
     ) -> None:
         self.stacks = tuple(stacks)
         self.prompts = tuple(str(prompt).strip() for prompt in prompts)
@@ -133,6 +140,7 @@ class LoraStackMatrixCompositor:
             show_stack_details=bool(show_stack_details),
             max_canvas_pixels=max_canvas_pixels,
             control_gap=control_gap,
+            reserve_artist_mixer_labels=bool(reserve_artist_mixer_labels),
         )
         self.fonts = FontResolver(self.style.font_path)
         self.geometry = self._build_geometry()
@@ -204,29 +212,44 @@ class LoraStackMatrixCompositor:
             cell_gap,
             int(options.control_gap if options.control_gap is not None else automatic_control_gap),
         )
+        artist_mixer_label_height = (
+            _font_line_height(row_font) + style.footer_padding * 2
+            if options.reserve_artist_mixer_labels
+            else 0
+        )
+        row_step = options.image_height + artist_mixer_label_height + cell_gap
         left = style.outer_margin + row_label_width
         top = style.outer_margin + header_height
         cells: dict[Coordinate, Rect] = {}
+        artist_mixer_label_rects: dict[Coordinate, Rect] = {}
         current_x = left
         for column in range(self.column_count):
             if column:
                 current_x += control_gap if column == 1 else cell_gap
             for row in range(self.row_count):
-                y = top + row * (options.image_height + cell_gap)
+                y = top + row * row_step
                 cells[(row, column)] = (current_x, y, current_x + options.image_width, y + options.image_height)
+                if artist_mixer_label_height:
+                    artist_mixer_label_rects[(row, column)] = (
+                        current_x,
+                        y + options.image_height,
+                        current_x + options.image_width,
+                        y + options.image_height + artist_mixer_label_height,
+                    )
             current_x += options.image_width
         grid_bounds = (
             left,
             top,
             current_x,
-            top + self.row_count * options.image_height + max(0, self.row_count - 1) * cell_gap,
+            top + self.row_count * (options.image_height + artist_mixer_label_height)
+            + max(0, self.row_count - 1) * cell_gap,
         )
         row_label_rects = {
             row: (
                 style.outer_margin,
-                top + row * (options.image_height + cell_gap),
+                top + row * row_step,
                 left - label_gap,
-                top + row * (options.image_height + cell_gap) + options.image_height,
+                top + row * row_step + options.image_height,
             )
             for row in range(self.row_count)
         }
@@ -250,6 +273,8 @@ class LoraStackMatrixCompositor:
             control_separator_x=separator_x,
             header_font_size=header_font_size,
             row_font_size=row_font_size,
+            artist_mixer_label_height=artist_mixer_label_height,
+            artist_mixer_label_rects=MappingProxyType(artist_mixer_label_rects),
         )
 
 
@@ -272,7 +297,14 @@ class LoraStackMatrixSession:
     def expected_count(self) -> int:
         return self.compositor.row_count * self.compositor.column_count
 
-    def submit(self, image: ImageInput, *, coordinate: Coordinate, replace_existing: bool = False) -> None:
+    def submit(
+        self,
+        image: ImageInput,
+        *,
+        coordinate: Coordinate,
+        replace_existing: bool = False,
+        artist_mixer: bool = False,
+    ) -> None:
         row, column = int(coordinate[0]), int(coordinate[1])
         if not (0 <= row < self.compositor.row_count and 0 <= column < self.compositor.column_count):
             raise ValueError(f"Matrix coordinate is outside the layout: {(row, column)}")
@@ -283,6 +315,8 @@ class LoraStackMatrixSession:
         rect = self.geometry.cell(row, column)
         self._canvas.paste(prepared, (rect[0], rect[1]))
         self._draw_image_frame(row, column, rect)
+        if artist_mixer:
+            self._draw_artist_mixer_label(row, column)
         self._submitted.add(key)
 
     def finalize(self, *, strict: bool = True) -> Image.Image:
@@ -356,6 +390,9 @@ class LoraStackMatrixSession:
             for column in range(self.compositor.column_count):
                 self._draw.rectangle(_inclusive(self.geometry.cell(row, column)), fill=self.style.placeholder_color)
                 self._draw_image_frame(row, column, self.geometry.cell(row, column))
+                label_rect = self.geometry.artist_mixer_label(row, column)
+                if label_rect is not None:
+                    self._draw.rectangle(_inclusive(label_rect), fill=self.style.panel_color)
         if self.style.show_region_frames:
             self._draw.line(
                 (self.geometry.control_separator_x, self.geometry.grid_bounds[1], self.geometry.control_separator_x, self.geometry.grid_bounds[3]),
@@ -402,6 +439,32 @@ class LoraStackMatrixSession:
         color = self.style.frame_color if column == 0 else self.style.accent_colors[(column - 1) % len(self.style.accent_colors)]
         width = self.style.frame_width if column == 0 else self.style.cell_frame_width
         self._draw.rectangle(_inclusive(rect), outline=color, width=max(1, width))
+
+    def _draw_artist_mixer_label(self, row: int, column: int) -> None:
+        label_rect = self.geometry.artist_mixer_label(row, column)
+        if label_rect is None:
+            raise RuntimeError(
+                "Anima Artist Mixer label was submitted without reserving label geometry"
+            )
+        self._draw.rectangle(_inclusive(label_rect), fill=self.style.panel_color)
+        accent_width = max(3, min(12, self.compositor.options.image_width // 64))
+        self._draw.rectangle(
+            (label_rect[0], label_rect[1], label_rect[0] + accent_width - 1, label_rect[3] - 1),
+            fill=self.style.accent_colors[0],
+        )
+        padding = max(8, self.style.footer_padding)
+        self._draw_fitted_text(
+            "Anima Artist Mixer",
+            (
+                label_rect[0] + accent_width + padding,
+                label_rect[1],
+                label_rect[2] - padding,
+                label_rect[3],
+            ),
+            self.geometry.row_font_size,
+            self.style.text_color,
+            bold=True,
+        )
 
     def _draw_vertical_text(
         self,

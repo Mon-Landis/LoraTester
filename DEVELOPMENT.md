@@ -46,7 +46,7 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
   -> D:\ComfyUI\LoraTester
 ```
 
-根 `__init__.py` 当前注册八个节点：`LoraTesterSampler`、`LoraTesterStyle`、`ArtistTagTemplate`、`AnimaArtistMixerConfig`、`LoraStack`、`LoraStackSplitter`、`LoraStackLister` 与 `MultiPromptSample`。
+根 `__init__.py` 当前注册八个节点：`LoraTesterSampler`（显示名 `Style Component Tester`）、`LoraTesterStyle`、`ArtistTagTemplate`、`AnimaArtistMixerConfig`、`LoraStack`、`LoraStackSplitter`、`LoraStackLister` 与 `MultiPromptSample`（显示名 `Style Combination Tester`）。注册键和类名保持稳定，显示名变更不会改变已保存工作流。
 
 ## 稳定节点字段
 

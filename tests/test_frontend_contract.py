@@ -134,6 +134,16 @@ class FrontendContractTests(unittest.TestCase):
         style_inputs = LoraTesterStyleNode.INPUT_TYPES()
         style_names = set(style_inputs["required"]) | set(style_inputs["optional"])
 
+        expected_display_names = {
+            "en": {
+                "LoraTesterSampler": "Style Component Tester",
+                "MultiPromptSample": "Style Combination Tester",
+            },
+            "zh": {
+                "LoraTesterSampler": "风格组件测试器",
+                "MultiPromptSample": "风格组合测试器",
+            },
+        }
         for locale in ("en", "zh"):
             with self.subTest(locale=locale):
                 locale_root = ROOT / "locales" / locale
@@ -175,6 +185,8 @@ class FrontendContractTests(unittest.TestCase):
                 self.assertEqual(set(node_defs["LoraTesterStyle"]["inputs"]), style_names)
                 self.assertTrue(node_defs["LoraTesterSampler"]["display_name"])
                 self.assertTrue(node_defs["LoraTesterStyle"]["display_name"])
+                for node_name, display_name in expected_display_names[locale].items():
+                    self.assertEqual(node_defs[node_name]["display_name"], display_name)
                 for node_name in (
                     "LoraStack",
                     "LoraStackSplitter",

@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
+import numpy as np
 from PIL import Image
 
 
@@ -14,6 +16,7 @@ if str(ROOT) not in sys.path:
 from lora_tester.stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
 from lora_tester.stack_compositor import (
     LoraStackMatrixCompositor,
+    LoraStackMatrixSession,
     _original_lora_items,
     _prompt_axis_label,
     _stack_mix_labels,
@@ -170,6 +173,46 @@ class StackCompositorTests(unittest.TestCase):
         )
         output = compositor.compose([Image.new("RGB", (32, 24), "red")] * 2)
         self.assertEqual(output.size, compositor.geometry.canvas_size)
+
+    def test_artist_mixer_annotation_is_drawn_only_for_marked_cell(self) -> None:
+        stacks = (
+            LoraStack((LoraStackItem("A.safetensors"),)),
+            LoraStack((LoraStackItem("B.safetensors"),)),
+        )
+        compositor = LoraStackMatrixCompositor(
+            stacks,
+            ("portrait", "landscape"),
+            64,
+            48,
+            style=StyleConfig.black(decorator="none"),
+            show_stack_details=False,
+            reserve_artist_mixer_labels=True,
+            max_canvas_pixels=None,
+        )
+        calls: list[str] = []
+        original = LoraStackMatrixSession._draw_fitted_text
+
+        def capture(session, text, rect, font_size, color, **kwargs):
+            calls.append(str(text))
+            return original(session, text, rect, font_size, color, **kwargs)
+
+        with patch.object(LoraStackMatrixSession, "_draw_fitted_text", new=capture):
+            session = compositor.start()
+            session.submit(Image.new("RGB", (64, 48), "red"), coordinate=(0, 0))
+            self.assertNotIn("Anima Artist Mixer", calls)
+            session.submit(Image.new("RGB", (64, 48), "blue"), coordinate=(1, 0), artist_mixer=True)
+            output = session.finalize(strict=False)
+
+        self.assertIn("Anima Artist Mixer", calls)
+        label = compositor.geometry.artist_mixer_label(1, 0)
+        self.assertIsNotNone(label)
+        self.assertEqual(
+            compositor.geometry.cell(1, 0)[1] - compositor.geometry.cell(0, 0)[3],
+            compositor.geometry.artist_mixer_label_height + compositor.style.cell_gap,
+        )
+        self.assertTrue(
+            np.any(np.all(np.asarray(output.crop(label)) == compositor.style.text_color, axis=2))
+        )
 
 
 if __name__ == "__main__":

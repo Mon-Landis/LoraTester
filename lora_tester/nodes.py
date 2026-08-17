@@ -346,6 +346,36 @@ def _route_prompt_entries(
     )
 
 
+def _direct_mixer_labels_possible(
+    model: Any,
+    specs: Sequence[LoraSpec],
+    independent_artist_tags: str,
+    mixer_config: AnimaArtistMixerConfig | None,
+    use_anima_artist_mixer: bool,
+) -> bool:
+    """Reserve compositor label space when a direct test can route through the mixer."""
+    if detect_model_family(model) != MODEL_FAMILY_ANIMA:
+        return False
+    if not bool(use_anima_artist_mixer):
+        return False
+    config = mixer_config or AnimaArtistMixerConfig()
+    if not isinstance(config, AnimaArtistMixerConfig):
+        raise TypeError(
+            "anima_mixer_config must come from an Anima Artist Mixer Configuration node"
+        )
+    if not config.enabled or config.strength <= 0.0:
+        return False
+    artist_count = sum(
+        len(split_artist_tags(spec.trigger_word))
+        for spec in specs
+        if spec.is_artist_tag
+    )
+    artist_count += len(parse_artist_tag_entries(independent_artist_tags))
+    if artist_count <= 1:
+        return False
+    return anima_artist_mixer_available()
+
+
 @dataclass(frozen=True, slots=True)
 class _CombinationPreflight:
     model_family: str
@@ -804,6 +834,13 @@ class LoraTesterSampler:
             for result in load_results
         )
         progress = _make_progress_bar(plan.unique_task_count, node_id=unique_id)
+        reserve_artist_mixer_labels = _direct_mixer_labels_possible(
+            model,
+            specs,
+            independent_artist_tags,
+            anima_mixer_config,
+            use_anima_artist_mixer,
+        )
 
         if bool(log_test_details):
             logger.info(
@@ -904,9 +941,14 @@ class LoraTesterSampler:
                     style=style,
                     image_fit="strict",
                     max_canvas_pixels=max(1, round(float(max_canvas_megapixels) * 1_000_000)),
+                    reserve_artist_mixer_labels=reserve_artist_mixer_labels,
                 )
                 session = compositor.start()
-            session.submit(decoded_image, task_id=task.task_id)
+            session.submit(
+                decoded_image,
+                task_id=task.task_id,
+                artist_mixer=route.used_external_mixer,
+            )
             progress.update_absolute(index, plan.unique_task_count)
 
             del route, task_model, task_clip, positive, negative, sampled, decoded, decoded_image
@@ -1723,9 +1765,14 @@ class MultiPromptSampleNode(LoraTesterSampler):
                                 round(float(max_canvas_megapixels) * 1_000_000),
                             ),
                             control_gap=int(control_gap) or None,
+                            reserve_artist_mixer_labels=preflight.mixer_active,
                         )
                         session = compositor.start()
-                    session.submit(decoded_image, coordinate=(row, column))
+                    session.submit(
+                        decoded_image,
+                        coordinate=(row, column),
+                        artist_mixer=route.used_external_mixer,
+                    )
                     task_index += 1
                     progress.update_absolute(task_index, total_tasks)
                     del route, task_model, positive, sampled, decoded, decoded_image
@@ -1735,7 +1782,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
             # release it on success, error, or user interruption.
             self._lora_cache.clear()
         if session is None:
-            raise RuntimeError("Multi Prompt Sample generated no images")
+            raise RuntimeError("Style Combination Tester generated no images")
         return (pil_to_comfy_image(session.finalize(strict=True)),)
 
 
@@ -1751,14 +1798,14 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LoraTesterSampler": "LoRA Tester (KSampler)",
+    "LoraTesterSampler": "Style Component Tester",
     "LoraTesterStyle": "LoRA Tester Style",
     "ArtistTagTemplate": "Artist Tag Template",
     "AnimaArtistMixerConfig": "Anima Artist Mixer Configuration",
     "LoraStack": "LoRA Stack",
     "LoraStackSplitter": "LoRA Stack Splitter",
     "LoraStackLister": "LoRA Stack Lister",
-    "MultiPromptSample": "Multi Prompt Sample",
+    "MultiPromptSample": "Style Combination Tester",
 }
 
 

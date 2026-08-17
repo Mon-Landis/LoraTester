@@ -92,6 +92,7 @@ class CellGeometry:
     caption_rect: Rect | None
     image_rect: Rect
     special_label_rect: Rect | None
+    artist_mixer_label_rect: Rect | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +101,7 @@ class LayoutGeometry:
     image_height: int
     caption_height: int
     special_label_height: int
+    artist_mixer_label_height: int
     footer_gap: int
     footer_padding: int
     footer_title_gap: int
@@ -172,6 +174,7 @@ class LoraComparisonCompositor:
         style: StyleConfig | None = None,
         image_fit: str = "strict",
         max_canvas_pixels: int | None = 150_000_000,
+        reserve_artist_mixer_labels: bool = False,
     ) -> None:
         self.plan = build_layout(tuple(loras))
         self.options = CompositionOptions(
@@ -182,6 +185,7 @@ class LoraComparisonCompositor:
             max_canvas_pixels=max_canvas_pixels,
         )
         self.style = style or StyleConfig.black()
+        self.reserve_artist_mixer_labels = bool(reserve_artist_mixer_labels)
         self.fonts = FontResolver(self.style.font_path)
         self.geometry = self._build_geometry()
         pixels = self.geometry.canvas_size[0] * self.geometry.canvas_size[1]
@@ -206,6 +210,7 @@ class LoraComparisonCompositor:
         style: StyleConfig | None = None,
         image_fit: str = "strict",
         max_canvas_pixels: int | None = 150_000_000,
+        reserve_artist_mixer_labels: bool = False,
     ) -> "LoraComparisonCompositor":
         names = tuple(lora_names)
         weights = tuple(lora_weights)
@@ -238,6 +243,7 @@ class LoraComparisonCompositor:
             style=style,
             image_fit=image_fit,
             max_canvas_pixels=max_canvas_pixels,
+            reserve_artist_mixer_labels=reserve_artist_mixer_labels,
         )
 
     def start(self) -> "CompositionSession":
@@ -305,8 +311,13 @@ class LoraComparisonCompositor:
             if special_coordinates
             else 0
         )
+        artist_mixer_label_height = (
+            _font_line_height(axis_value_font) + axis_padding * 2
+            if self.reserve_artist_mixer_labels
+            else 0
+        )
         row_heights = {
-            y: options.image_height + caption_height
+            y: options.image_height + caption_height + artist_mixer_label_height
             for y in self.plan.y_positions
         }
         axes_by_side = {
@@ -325,7 +336,8 @@ class LoraComparisonCompositor:
         bottom_band = horizontal_band if axes_by_side["bottom"] else 0
         bottom_special_band = (
             special_label_height
-            if any(y == self.plan.y_positions[-1] for _, y in special_coordinates)
+            if not artist_mixer_label_height
+            and any(y == self.plan.y_positions[-1] for _, y in special_coordinates)
             else 0
         )
         bottom_content_band = max(bottom_band, bottom_special_band)
@@ -399,12 +411,22 @@ class LoraComparisonCompositor:
                     left + options.image_width,
                     label_top + special_label_height,
                 )
+            artist_mixer_label_rect = None
+            if artist_mixer_label_height:
+                label_top = image_rect[3]
+                artist_mixer_label_rect = (
+                    left,
+                    label_top,
+                    left + options.image_width,
+                    label_top + artist_mixer_label_height,
+                )
             cell_geometries[cell.coordinate] = CellGeometry(
                 coordinate=cell.coordinate,
                 cell_rect=(left, top, left + options.image_width, top + row_heights[y]),
                 caption_rect=caption_rect,
                 image_rect=image_rect,
                 special_label_rect=special_label_rect,
+                artist_mixer_label_rect=artist_mixer_label_rect,
             )
 
         region_rects: dict[str, Rect] = {}
@@ -490,6 +512,7 @@ class LoraComparisonCompositor:
             image_height=options.image_height,
             caption_height=caption_height,
             special_label_height=special_label_height,
+            artist_mixer_label_height=artist_mixer_label_height,
             footer_gap=footer_gap,
             footer_padding=footer_padding,
             footer_title_gap=footer_title_gap,
@@ -551,6 +574,7 @@ class CompositionSession:
         *,
         task_id: str | None = None,
         replace_existing: bool = False,
+        artist_mixer: bool = False,
     ) -> RenderTask:
         with self._lock:
             if task_id is None:
@@ -568,6 +592,8 @@ class CompositionSession:
                 self._canvas.paste(prepared, (geometry.image_rect[0], geometry.image_rect[1]))
                 self._draw_image_frame(task, geometry.image_rect)
                 self._draw_special_cell_label(task, coordinate)
+                if artist_mixer:
+                    self._draw_artist_mixer_label(coordinate)
             self._submitted.add(task.task_id)
             return task
 
@@ -627,6 +653,11 @@ class CompositionSession:
                 self._draw_caption(task, cell.coordinate, geometry.caption_rect)
             self._draw.rectangle(_inclusive(geometry.image_rect), fill=self.style.placeholder_color)
             self._draw_image_frame(task, geometry.image_rect)
+            if geometry.artist_mixer_label_rect is not None:
+                self._draw.rectangle(
+                    _inclusive(geometry.artist_mixer_label_rect),
+                    fill=self.style.panel_color,
+                )
             self._draw_special_cell_label(task, cell.coordinate)
 
         if self.style.show_region_frames:
@@ -779,6 +810,33 @@ class CompositionSession:
         padding = max(8, self.geometry.axis_padding)
         self._draw_fitted_text(
             task.caption,
+            (
+                label_rect[0] + accent_width + padding,
+                label_rect[1],
+                label_rect[2] - padding,
+                label_rect[3],
+            ),
+            font_size=self.geometry.axis_value_font_size,
+            color=self.style.text_color,
+            bold=True,
+        )
+
+    def _draw_artist_mixer_label(self, coordinate: Coordinate) -> None:
+        geometry = self.geometry.cell(coordinate)
+        label_rect = geometry.artist_mixer_label_rect
+        if label_rect is None:
+            raise RuntimeError(
+                "Anima Artist Mixer label was submitted without reserving label geometry"
+            )
+        self._draw.rectangle(_inclusive(label_rect), fill=self.style.panel_color)
+        accent_width = max(3, min(12, self.options.image_width // 64))
+        self._draw.rectangle(
+            (label_rect[0], label_rect[1], label_rect[0] + accent_width - 1, label_rect[3] - 1),
+            fill=self.style.accent_colors[0],
+        )
+        padding = max(8, self.geometry.axis_padding)
+        self._draw_fitted_text(
+            "Anima Artist Mixer",
             (
                 label_rect[0] + accent_width + padding,
                 label_rect[1],

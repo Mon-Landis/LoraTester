@@ -1,7 +1,7 @@
 {
   "LoraTesterSampler": {
-    "display_name": "LoRA 混合测试器（KSampler）",
-    "description": "使用完全一致的采样参数测试一至三个 LoRA 或画师 Tag，在节点内完成提示词编码、采样、解码并拼合为带标注的对比图。",
+    "display_name": "风格组件测试器",
+    "description": "使用完全一致的采样参数测试一至三个 LoRA 或画师 Tag 风格组件，在节点内完成提示词编码、采样、解码并拼合为带标注的对比图。",
     "inputs": {
       "model": {
         "name": "基础模型",
@@ -445,8 +445,8 @@
     }
   },
   "MultiPromptSample": {
-    "display_name": "多提示词 LoRA 测试",
-    "description": "使用相同种子采样提示词与 LoRA 组合矩阵，并生成 XY 对比图。",
+    "display_name": "风格组合测试器",
+    "description": "使用相同种子采样提示词与风格组件组合矩阵，并生成 XY 对比图。",
     "inputs": {
       "model": { "name": "基础模型", "tooltip": "每个对比格都从该基础模型重新应用 LoRA。" },
       "clip": { "name": "CLIP", "tooltip": "用于编码每个提示词和 LoRA 触发词组合。" },

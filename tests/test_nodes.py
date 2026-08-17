@@ -927,7 +927,11 @@ class NodeTests(unittest.TestCase):
         self.assertIs(NODE_CLASS_MAPPINGS["LoraTesterStyle"], LoraTesterStyleNode)
         self.assertEqual(
             NODE_DISPLAY_NAME_MAPPINGS["LoraTesterSampler"],
-            "LoRA Tester (KSampler)",
+            "Style Component Tester",
+        )
+        self.assertEqual(
+            NODE_DISPLAY_NAME_MAPPINGS["MultiPromptSample"],
+            "Style Combination Tester",
         )
 
 

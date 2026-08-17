@@ -188,6 +188,51 @@ class CompositorTests(unittest.TestCase):
         output = session.finalize(strict=False)
         self.assertEqual(output.getpixel((image_rect[0] + 20, image_rect[1] + 20)), (255, 0, 0))
 
+    def test_artist_mixer_annotation_is_drawn_only_for_marked_submission(self) -> None:
+        compositor = LoraComparisonCompositor.from_values(
+            ["LoraX", "LoraY"],
+            [1.0, 1.0],
+            64,
+            48,
+            style=StyleConfig.black(decorator="none", show_axis_labels=False),
+            show_lora_details=False,
+            reserve_artist_mixer_labels=True,
+            max_canvas_pixels=None,
+        )
+        calls: list[str] = []
+        original = CompositionSession._draw_fitted_text
+
+        def capture(session, text, rect, **kwargs):
+            calls.append(str(text))
+            return original(session, text, rect, **kwargs)
+
+        with patch.object(CompositionSession, "_draw_fitted_text", new=capture):
+            session = compositor.start()
+            session.submit(Image.new("RGB", (64, 48), "red"), task_id="base")
+            self.assertNotIn("Anima Artist Mixer", calls)
+            session.submit(Image.new("RGB", (64, 48), "blue"), task_id="A100", artist_mixer=True)
+            output = session.finalize(strict=False)
+
+        self.assertIn("Anima Artist Mixer", calls)
+        first_x = min(cell.image_rect[0] for cell in compositor.geometry.cells.values())
+        first_column = sorted(
+            (
+                cell
+                for cell in compositor.geometry.cells.values()
+                if cell.artist_mixer_label_rect and cell.image_rect[0] == first_x
+            ),
+            key=lambda cell: cell.image_rect[1],
+        )
+        label = first_column[0].artist_mixer_label_rect
+        self.assertIsNotNone(label)
+        self.assertLessEqual(label[3], first_column[1].image_rect[1])
+        mixer_label = compositor.geometry.cell(
+            compositor.plan.placements_for("A100")[0]
+        ).artist_mixer_label_rect
+        self.assertTrue(
+            np.any(np.all(np.asarray(output.crop(mixer_label)) == compositor.style.text_color, axis=2))
+        )
+
     def test_footer_spacing_scales_with_large_composites(self) -> None:
         compositor = LoraComparisonCompositor.from_values(
             ["LoraX", "LoraY", "LoraZZZ"],

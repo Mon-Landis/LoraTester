@@ -1,7 +1,7 @@
 {
   "LoraTesterSampler": {
-    "display_name": "LoRA Tester (KSampler)",
-    "description": "Tests one to three LoRAs or artist tags with fixed sampling inputs and assembles a labeled comparison sheet.",
+    "display_name": "Style Component Tester",
+    "description": "Tests one to three LoRA or artist-tag style components with fixed sampling inputs and assembles a labeled comparison sheet.",
     "inputs": {
       "model": {
         "name": "Model",
@@ -445,8 +445,8 @@
     }
   },
   "MultiPromptSample": {
-    "display_name": "Multi Prompt LoRA Test",
-    "description": "Samples a prompt-by-LoRA matrix with one shared seed and builds an XY comparison sheet.",
+    "display_name": "Style Combination Tester",
+    "description": "Samples a prompt-by-style-component matrix with one shared seed and builds an XY comparison sheet.",
     "inputs": {
       "model": { "name": "Base Model", "tooltip": "Every comparison cell reapplies LoRAs from this base model." },
       "clip": { "name": "CLIP", "tooltip": "Encodes each prompt and LoRA trigger-word combination." },
