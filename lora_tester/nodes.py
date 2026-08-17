@@ -249,6 +249,34 @@ def _throw_if_interrupted() -> None:
     comfy.model_management.throw_exception_if_processing_interrupted()
 
 
+def _release_temporary_model(value: Any, base_value: Any) -> None:
+    """Release a per-test MODEL/CLIP clone through ComfyUI's model manager.
+
+    DynamicVRAM shares pinned host buffers between patcher clones.  The normal
+    execution boundary eventually releases those clones, but a long-running
+    comparison node creates many of them inside one execution.  Releasing each
+    finished clone keeps its host-buffer pins bounded without touching global
+    CUDA caches or passing the caller's base model as the unload target.
+    ComfyUI still owns clone-group eviction and may evict another loaded member
+    of that group as needed.
+    """
+    if value is None or value is base_value:
+        return
+    patcher = getattr(value, "patcher", value)
+    base_patcher = getattr(base_value, "patcher", base_value)
+    if patcher is base_patcher or not hasattr(patcher, "clone_base_uuid"):
+        return
+    try:
+        import comfy.model_management
+
+        unload = getattr(comfy.model_management, "unload_model_and_clones", None)
+        if unload is not None:
+            unload(patcher)
+    except (ImportError, AttributeError, RuntimeError, TypeError):
+        # Cleanup must not turn a completed image test into a node failure.
+        logger.debug("[LoraTester] temporary model cleanup was unavailable", exc_info=True)
+
+
 def _make_progress_bar(total: int, node_id: Any = None) -> Any:
     import comfy.utils
 
@@ -394,6 +422,7 @@ def _combination_preflight(
     artist_template: ArtistTagTemplate | None,
     mixer_config: AnimaArtistMixerConfig | None,
     use_anima_artist_mixer: bool = True,
+    independent_artist_tags: str = "",
 ) -> _CombinationPreflight:
     family = detect_model_family(model)
     config = mixer_config or AnimaArtistMixerConfig()
@@ -402,16 +431,28 @@ def _combination_preflight(
             "anima_mixer_config must come from an Anima Artist Mixer Configuration node"
         )
     combinations: list[str] = []
-    has_artist_tags = False
-    for stack in stacks:
-        entries = stack.artist_entries
-        has_artist_tags = has_artist_tags or bool(entries)
+    independent_entries = parse_artist_tag_entries(independent_artist_tags)
+    has_artist_tags = bool(independent_entries)
+
+    def add_combination(
+        entries: Sequence[tuple[str, float]],
+        template: ArtistTagTemplate,
+    ) -> None:
         if len(entries) <= 1:
-            continue
-        template = artist_template or stack.artist_template or artist_template_for_model(model)
+            return
         rendered = " + ".join(template.format(tag, weight) for tag, weight in entries)
         if rendered not in combinations:
             combinations.append(rendered)
+
+    add_combination(
+        independent_entries,
+        artist_template or artist_template_for_model(model),
+    )
+    for stack in stacks:
+        entries = (*stack.artist_entries, *independent_entries)
+        has_artist_tags = has_artist_tags or bool(stack.artist_entries)
+        template = artist_template or stack.artist_template or artist_template_for_model(model)
+        add_combination(entries, template)
     available = anima_artist_mixer_available()
     switch_enabled = bool(use_anima_artist_mixer)
     enabled = bool(switch_enabled and config.enabled and config.strength > 0.0)
@@ -855,103 +896,119 @@ class LoraTesterSampler:
         used_lora_names: set[str] = set()
         for index, task in enumerate(plan.tasks, start=1):
             _throw_if_interrupted()
-            task_model, task_clip = self._apply_task_loras(
-                model,
-                clip,
-                task,
-                loaded_loras,
-            )
-            route = _route_prompt_entries(
-                model=task_model,
-                clip=task_clip,
-                prefix_parts=(),
-                entries=tuple(
-                    (spec.is_artist_tag, spec.trigger_word, weight)
-                    for spec, weight in zip(specs, task.weights)
-                ),
-                suffix_parts=(positive_prompt,),
-                artist_template=artist_tag_template,
-                mixer_config=anima_mixer_config,
-                independent_artist_tags=independent_artist_tags,
-                use_anima_artist_mixer=use_anima_artist_mixer,
-            )
-            task_model = route.model
-            positive = route.positive
-            active_lora_values: list[tuple[str, float, str, str]] = []
-            for slot_index, (spec, weight) in enumerate(zip(specs, task.weights)):
-                if spec.is_artist_tag or math.isclose(float(weight), 0.0, abs_tol=1e-12):
-                    continue
-                cache_status = lora_cache_status[slot_index]
-                if spec.name in used_lora_names:
-                    cache_status = "run-local:hit"
-                active_lora_values.append(
-                    (spec.name, float(weight), cache_status, spec.trigger_word)
+            applied_model = applied_clip = task_model = task_clip = None
+            route = positive = negative = sampled = decoded = decoded_image = None
+            try:
+                applied_model, applied_clip = self._apply_task_loras(
+                    model,
+                    clip,
+                    task,
+                    loaded_loras,
                 )
-                used_lora_names.add(spec.name)
-            active_loras = tuple(active_lora_values)
-            active_artists: list[tuple[str, float, str]] = []
-            for spec, weight in zip(specs, task.weights):
-                if not spec.is_artist_tag or math.isclose(float(weight), 0.0, abs_tol=1e-12):
-                    continue
+                task_model = applied_model
+                task_clip = applied_clip
+                route = _route_prompt_entries(
+                    model=task_model,
+                    clip=task_clip,
+                    prefix_parts=(),
+                    entries=tuple(
+                        (spec.is_artist_tag, spec.trigger_word, weight)
+                        for spec, weight in zip(specs, task.weights)
+                    ),
+                    suffix_parts=(positive_prompt,),
+                    artist_template=artist_tag_template,
+                    mixer_config=anima_mixer_config,
+                    independent_artist_tags=independent_artist_tags,
+                    use_anima_artist_mixer=use_anima_artist_mixer,
+                )
+                task_model = route.model
+                positive = route.positive
+                active_lora_values: list[tuple[str, float, str, str]] = []
+                for slot_index, (spec, weight) in enumerate(zip(specs, task.weights)):
+                    if spec.is_artist_tag or math.isclose(float(weight), 0.0, abs_tol=1e-12):
+                        continue
+                    cache_status = lora_cache_status[slot_index]
+                    if spec.name in used_lora_names:
+                        cache_status = "run-local:hit"
+                    active_lora_values.append(
+                        (spec.name, float(weight), cache_status, spec.trigger_word)
+                    )
+                    used_lora_names.add(spec.name)
+                active_loras = tuple(active_lora_values)
+                active_artists: list[tuple[str, float, str]] = []
+                for spec, weight in zip(specs, task.weights):
+                    if not spec.is_artist_tag or math.isclose(float(weight), 0.0, abs_tol=1e-12):
+                        continue
+                    active_artists.extend(
+                        (tag, float(weight), "external:lazy-per-sample" if route.used_external_mixer else "none")
+                        for tag in split_artist_tags(spec.trigger_word)
+                    )
                 active_artists.extend(
                     (tag, float(weight), "external:lazy-per-sample" if route.used_external_mixer else "none")
-                    for tag in split_artist_tags(spec.trigger_word)
+                    for tag, weight in parse_artist_tag_entries(independent_artist_tags)
                 )
-            active_artists.extend(
-                (tag, float(weight), "external:lazy-per-sample" if route.used_external_mixer else "none")
-                for tag, weight in parse_artist_tag_entries(independent_artist_tags)
-            )
-            if bool(log_test_details):
-                _log_test_usage(
-                    label=(
-                        f"Direct test image {index}/{plan.unique_task_count} "
-                        f"| task={task.task_id}"
-                    ),
-                    loras=active_loras,
-                    artists=tuple(active_artists),
-                    rendered_tags=route.rendered_tags,
-                    route=route,
-                    model_cache="recomputed from base model",
+                if bool(log_test_details):
+                    _log_test_usage(
+                        label=(
+                            f"Direct test image {index}/{plan.unique_task_count} "
+                            f"| task={task.task_id}"
+                        ),
+                        loras=active_loras,
+                        artists=tuple(active_artists),
+                        rendered_tags=route.rendered_tags,
+                        route=route,
+                        model_cache="recomputed from base model",
+                    )
+                negative = _encode_prompt(task_clip, negative_prompt)
+                sampled = _common_ksampler(
+                    task_model,
+                    int(seed),
+                    int(steps),
+                    float(cfg),
+                    sampler_name,
+                    scheduler,
+                    positive,
+                    negative,
+                    latent_image,
+                    float(denoise),
+                    progress=progress,
+                    completed_tasks=index - 1,
+                    total_tasks=plan.unique_task_count,
                 )
-            negative = _encode_prompt(task_clip, negative_prompt)
-            sampled = _common_ksampler(
-                task_model,
-                int(seed),
-                int(steps),
-                float(cfg),
-                sampler_name,
-                scheduler,
-                positive,
-                negative,
-                latent_image,
-                float(denoise),
-                progress=progress,
-                completed_tasks=index - 1,
-                total_tasks=plan.unique_task_count,
-            )
-            decoded = _decode_vae(vae, sampled)
-            decoded_image = image_to_pil(decoded)
+                decoded = _decode_vae(vae, sampled)
+                decoded_image = image_to_pil(decoded)
 
-            if session is None:
-                compositor = LoraComparisonCompositor(
-                    specs,
-                    decoded_image.width,
-                    decoded_image.height,
-                    show_lora_details=bool(show_lora_details),
-                    style=style,
-                    image_fit="strict",
-                    max_canvas_pixels=max(1, round(float(max_canvas_megapixels) * 1_000_000)),
-                    reserve_artist_mixer_labels=reserve_artist_mixer_labels,
+                if session is None:
+                    compositor = LoraComparisonCompositor(
+                        specs,
+                        decoded_image.width,
+                        decoded_image.height,
+                        show_lora_details=bool(show_lora_details),
+                        style=style,
+                        image_fit="strict",
+                        max_canvas_pixels=max(1, round(float(max_canvas_megapixels) * 1_000_000)),
+                        reserve_artist_mixer_labels=reserve_artist_mixer_labels,
+                    )
+                    session = compositor.start()
+                session.submit(
+                    decoded_image,
+                    task_id=task.task_id,
+                    artist_mixer=route.used_external_mixer,
                 )
-                session = compositor.start()
-            session.submit(
-                decoded_image,
-                task_id=task.task_id,
-                artist_mixer=route.used_external_mixer,
-            )
-            progress.update_absolute(index, plan.unique_task_count)
-
-            del route, task_model, task_clip, positive, negative, sampled, decoded, decoded_image
+                progress.update_absolute(index, plan.unique_task_count)
+            finally:
+                # A route can replace the LoRA-patched model with an external
+                # mixer clone, so release both objects while the local references
+                # still identify them.  The base MODEL/CLIP are never passed as
+                # unload targets; clone-group eviction remains ComfyUI-owned.
+                _release_temporary_model(task_model, model)
+                if applied_model is not task_model:
+                    _release_temporary_model(applied_model, model)
+                _release_temporary_model(task_clip, clip)
+                if applied_clip is not task_clip:
+                    _release_temporary_model(applied_clip, clip)
+                applied_model = applied_clip = task_model = task_clip = None
+                route = positive = negative = sampled = decoded = decoded_image = None
 
         if session is None:
             raise RuntimeError("LoRA Tester generated no render tasks")
@@ -1564,6 +1621,19 @@ class MultiPromptSampleNode(LoraTesterSampler):
                         "advanced": True,
                     },
                 ),
+                "independent_artist_tags": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": True,
+                        "tooltip": (
+                            "Artist-only tags applied to every matrix cell and parsed "
+                            "separately for optional Anima mixing. Shared/row prompts "
+                            "and LoRA triggers are never extracted."
+                        ),
+                    },
+                ),
             },
             "optional": {
                 "custom_style": ("LORA_TESTER_STYLE", {"tooltip": "Used when color_mode is custom."}),
@@ -1616,6 +1686,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
         use_anima_artist_mixer: bool = True,
         control_gap: int = 0,
         max_canvas_megapixels: float = DEFAULT_MAX_CANVAS_MEGAPIXELS,
+        independent_artist_tags: str = "",
         custom_style: StyleConfig | None = None,
         artist_tag_template: ArtistTagTemplate | None = None,
         anima_mixer_config: AnimaArtistMixerConfig | None = None,
@@ -1642,6 +1713,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
             artist_tag_template,
             anima_mixer_config,
             use_anima_artist_mixer,
+            independent_artist_tags,
         )
         if bool(log_test_details):
             _log_combination_preflight(preflight)
@@ -1660,123 +1732,145 @@ class MultiPromptSampleNode(LoraTesterSampler):
                 prompt_entries: tuple[tuple[bool, str, float], ...] = ()
                 stack_template = artist_tag_template
                 column_lora_usage: list[tuple[str, float, str, str]] = []
-                if stack is not None:
-                    stack_template = artist_tag_template or stack.artist_template
-                    prompt_entries = tuple(
-                        (item.is_artist_tag, item.trigger_word, float(item.strength))
-                        for item in stack.items
-                    )
-                    for item in stack.items:
-                        if item.is_artist_tag:
-                            continue
-                        loaded, cache_hit = self._load_lora_with_status(item.name)
-                        column_lora_usage.append(
-                            (
-                                item.name,
-                                float(item.strength),
-                                "run-local:hit" if cache_hit else "run-local:miss",
-                                item.trigger_word,
-                            )
+                negative = None
+                try:
+                    if stack is not None:
+                        stack_template = artist_tag_template or stack.artist_template
+                        prompt_entries = tuple(
+                            (item.is_artist_tag, item.trigger_word, float(item.strength))
+                            for item in stack.items
                         )
-                        column_model, column_clip = _apply_lora_to_models(
-                            column_model,
-                            column_clip,
-                            loaded.state_dict,
-                            float(item.strength),
-                            loaded.metadata,
-                        )
-                negative = _encode_prompt(column_clip, negative_prompt)
-                for row, prompt in enumerate(prompts):
-                    _throw_if_interrupted()
-                    route = _route_prompt_entries(
-                        model=column_model,
-                        clip=column_clip,
-                        prefix_parts=(prompt_prefix,),
-                        entries=prompt_entries,
-                        suffix_parts=(prompt,),
-                        artist_template=stack_template,
-                        mixer_config=anima_mixer_config,
-                        use_anima_artist_mixer=use_anima_artist_mixer,
-                    )
-                    task_model = route.model
-                    positive = route.positive
-                    stack_label, _, _ = _stack_log_details(stack)
-                    if bool(log_test_details):
-                        artist_cache_status = (
-                            "external:lazy-per-sample"
-                            if route.used_external_mixer
-                            else "none"
-                        )
-                        artist_usage = tuple(
-                            (tag, float(weight), artist_cache_status)
-                            for tag, weight in (stack.artist_entries if stack is not None else ())
-                        )
-                        _log_test_usage(
-                            label=(
-                                f"Combination image {task_index + 1}/{total_tasks} "
-                                f"| prompt_row={row + 1}/{len(prompts)} "
-                                f"| column={column + 1}/{len(stacks) + 1} "
-                                f"| stack={stack_label!r}"
-                            ),
-                            loras=tuple(
+                        for item in stack.items:
+                            if item.is_artist_tag:
+                                continue
+                            loaded, cache_hit = self._load_lora_with_status(item.name)
+                            column_lora_usage.append(
                                 (
-                                    name,
-                                    weight,
-                                    "run-local:hit" if row > 0 else cache_status,
-                                    trigger,
+                                    item.name,
+                                    float(item.strength),
+                                    "run-local:hit" if cache_hit else "run-local:miss",
+                                    item.trigger_word,
                                 )
-                                for name, weight, cache_status, trigger in column_lora_usage
-                            ),
-                            artists=artist_usage,
-                            rendered_tags=route.rendered_tags,
-                            route=route,
-                            model_cache=(
-                                "column build" if row == 0 else "column reuse"
-                            ),
-                        )
-                    sampled = _common_ksampler(
-                        task_model,
-                        int(seed),
-                        int(steps),
-                        float(cfg),
-                        sampler_name,
-                        scheduler,
-                        positive,
-                        negative,
-                        latent_image,
-                        float(denoise),
-                        progress=progress,
-                        completed_tasks=task_index,
-                        total_tasks=total_tasks,
-                    )
-                    decoded = _decode_vae(vae, sampled)
-                    decoded_image = image_to_pil(decoded)
-                    if compositor is None:
-                        compositor = LoraStackMatrixCompositor(
-                            stacks,
-                            prompts,
-                            decoded_image.width,
-                            decoded_image.height,
-                            style=style,
-                            show_stack_details=bool(show_lora_details),
-                            image_fit="strict",
-                            max_canvas_pixels=max(
-                                1,
-                                round(float(max_canvas_megapixels) * 1_000_000),
-                            ),
-                            control_gap=int(control_gap) or None,
-                            reserve_artist_mixer_labels=preflight.mixer_active,
-                        )
-                        session = compositor.start()
-                    session.submit(
-                        decoded_image,
-                        coordinate=(row, column),
-                        artist_mixer=route.used_external_mixer,
-                    )
-                    task_index += 1
-                    progress.update_absolute(task_index, total_tasks)
-                    del route, task_model, positive, sampled, decoded, decoded_image
-                del column_model, column_clip, negative
+                            )
+                            column_model, column_clip = _apply_lora_to_models(
+                                column_model,
+                                column_clip,
+                                loaded.state_dict,
+                                float(item.strength),
+                                loaded.metadata,
+                            )
+                    negative = _encode_prompt(column_clip, negative_prompt)
+                    for row, prompt in enumerate(prompts):
+                        _throw_if_interrupted()
+                        task_model = task_clip = route = positive = sampled = decoded = decoded_image = None
+                        try:
+                            task_model = column_model
+                            task_clip = column_clip
+                            route = _route_prompt_entries(
+                                model=column_model,
+                                clip=column_clip,
+                                prefix_parts=(prompt_prefix,),
+                                entries=prompt_entries,
+                                suffix_parts=(prompt,),
+                                artist_template=stack_template,
+                                mixer_config=anima_mixer_config,
+                                independent_artist_tags=independent_artist_tags,
+                                use_anima_artist_mixer=use_anima_artist_mixer,
+                            )
+                            task_model = route.model
+                            positive = route.positive
+                            stack_label, _, _ = _stack_log_details(stack)
+                            if bool(log_test_details):
+                                artist_cache_status = (
+                                    "external:lazy-per-sample"
+                                    if route.used_external_mixer
+                                    else "none"
+                                )
+                                artist_entries = (
+                                    *(stack.artist_entries if stack is not None else ()),
+                                    *parse_artist_tag_entries(independent_artist_tags),
+                                )
+                                artist_usage = tuple(
+                                    (tag, float(weight), artist_cache_status)
+                                    for tag, weight in artist_entries
+                                )
+                                _log_test_usage(
+                                    label=(
+                                        f"Combination image {task_index + 1}/{total_tasks} "
+                                        f"| prompt_row={row + 1}/{len(prompts)} "
+                                        f"| column={column + 1}/{len(stacks) + 1} "
+                                        f"| stack={stack_label!r}"
+                                    ),
+                                    loras=tuple(
+                                        (
+                                            name,
+                                            weight,
+                                            "run-local:hit" if row > 0 else cache_status,
+                                            trigger,
+                                        )
+                                        for name, weight, cache_status, trigger in column_lora_usage
+                                    ),
+                                    artists=artist_usage,
+                                    rendered_tags=route.rendered_tags,
+                                    route=route,
+                                    model_cache=(
+                                        "column build" if row == 0 else "column reuse"
+                                    ),
+                                )
+                            sampled = _common_ksampler(
+                                task_model,
+                                int(seed),
+                                int(steps),
+                                float(cfg),
+                                sampler_name,
+                                scheduler,
+                                positive,
+                                negative,
+                                latent_image,
+                                float(denoise),
+                                progress=progress,
+                                completed_tasks=task_index,
+                                total_tasks=total_tasks,
+                            )
+                            decoded = _decode_vae(vae, sampled)
+                            decoded_image = image_to_pil(decoded)
+                            if compositor is None:
+                                compositor = LoraStackMatrixCompositor(
+                                    stacks,
+                                    prompts,
+                                    decoded_image.width,
+                                    decoded_image.height,
+                                    style=style,
+                                    show_stack_details=bool(show_lora_details),
+                                    image_fit="strict",
+                                    max_canvas_pixels=max(
+                                        1,
+                                        round(float(max_canvas_megapixels) * 1_000_000),
+                                    ),
+                                    control_gap=int(control_gap) or None,
+                                    reserve_artist_mixer_labels=preflight.mixer_active,
+                                )
+                                session = compositor.start()
+                            session.submit(
+                                decoded_image,
+                                coordinate=(row, column),
+                                artist_mixer=route.used_external_mixer,
+                            )
+                            task_index += 1
+                            progress.update_absolute(task_index, total_tasks)
+                        finally:
+                            if task_model is not column_model:
+                                _release_temporary_model(task_model, column_model)
+                            # The route currently leaves CLIP unchanged, but keep
+                            # this cleanup explicit for future mixer implementations.
+                            if task_clip is not column_clip:
+                                _release_temporary_model(task_clip, column_clip)
+                            task_model = task_clip = route = positive = sampled = decoded = decoded_image = None
+                finally:
+                    if stack is not None:
+                        _release_temporary_model(column_model, model)
+                        _release_temporary_model(column_clip, clip)
+                    column_model = column_clip = negative = None
         finally:
             # LoRA state dicts are CPU tensors. Keep only a tiny run-local LRU and
             # release it on success, error, or user interruption.

@@ -33,18 +33,21 @@ This report does not generate images; it records deterministic routing and prefl
 
 ## Combination Preflight
 
-| Case | Family | Artist tags | Multi-artist tests | Available | Switch | Enabled | Active | Mixer combinations |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| anima_mixer_present | anima | True | True | True | True | True | True | ['(@first:0.5) + @second'] |
-| anima_mixer_missing | anima | True | True | False | True | True | False | ['(@first:0.5) + @second'] |
-| anima_switch_disabled | anima | True | True | True | False | False | False | ['(@first:0.5) + @second'] |
-| anima_single_artist | anima | True | False | True | True | True | False | [] |
-| danbooru_multi_artist | danbooru | True | True | True | True | True | False | [] |
+| Case | Family | Independent artist tags | Artist tags | Multi-artist tests | Available | Switch | Enabled | Active | Mixer combinations |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| anima_mixer_present | anima |  | True | True | True | True | True | True | ['(@first:0.5) + @second'] |
+| anima_mixer_missing | anima |  | True | True | False | True | True | False | ['(@first:0.5) + @second'] |
+| anima_switch_disabled | anima |  | True | True | True | False | False | False | ['(@first:0.5) + @second'] |
+| anima_single_artist | anima |  | True | False | True | True | True | False | [] |
+| anima_independent_one_plus_stack_artist | anima | @independent | True | True | True | True | True | True | ['@first + @independent'] |
+| anima_independent_two_cover_base_and_stacks | anima | @independent, (@second:0.5) | True | True | True | True | True | True | ['@independent + (@second:0.5)', '@first + @independent + (@second:0.5)'] |
+| danbooru_multi_artist | danbooru |  | True | True | True | True | True | False | [] |
 
 ## Interpretation
 
 - `@tag` in a normal positive prompt or LoRA trigger remains ordinary base prompt text.
-- Only explicit artist-mode entries and the direct sampler's independent artist field become artist entries.
+- Only explicit artist-mode entries and either sampler's independent artist field become artist entries.
+- The combination sampler applies its independent field to BASE and every Stack cell, then decides Mixer routing per cell.
 - Anima uses the optional external Mixer only for a multi-artist test when it is available and enabled.
 - Disabling the sampler's advanced Mixer switch forces native prompt encoding before external-node lookup.
 - Non-Anima models use their native artist-tag template and never activate the Anima Mixer.

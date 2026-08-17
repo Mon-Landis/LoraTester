@@ -37,7 +37,7 @@
 - `LoRA Stack`：最多配置 16 组 LoRA 文件、触发词和强度，输出 `LORA_STACK`；所有启用项都必须选择文件。
 - `LoRA Stack Splitter`：将一个 Stack 拆成所有非空组合并输出 `LORA_STACK_LIST`。例如 ABC 会得到 A、B、C、AB、AC、BC、ABC。
 - `LoRA Stack Lister`：按连接顺序合并多个 `LORA_STACK`，动态显示最多 16 个输入槽。
-- `Style Combination Tester`：最多使用 16 行正面提示词，与 `LORA_STACK_LIST` 组成 XY 比较矩阵，并保留无 LoRA/画师组合的 BASE 对照列。
+- `Style Combination Tester`：最多使用 16 行正面提示词，与 `LORA_STACK_LIST` 组成 XY 比较矩阵，并保留无 LoRA/画师组合的 BASE 对照列；“独立画师 Tag”会应用到 BASE 和所有 Stack 测试格。
 - `Artist Tag Template`：输出 `ARTIST_TAG_TEMPLATE`，用两条表达式分别定义权重为 1 和非 1 时的画师 Tag 写法。
 - `Anima Artist Mixer Configuration`：输出 `ANIMA_ARTIST_MIXER_CONFIG`；默认参数按参考工作流设为 `1.6 / true / base_anchored / true / false / 0.0`。
 
@@ -103,7 +103,7 @@ actual = min_strength + (max_strength - min_strength) * multiplier
 | Anima，合计 0 或 1 个画师 | 原生提示词编码，不查询也不调用外部 Mixer。 |
 | Anima，高级设置中的 `Use Anima Artist Mixer` 已关闭 | 强制原生提示词编码；即使存在多个画师且外部项目已加载也不查询、不调用 Mixer。 |
 | Anima，合计至少 2 个画师，外部项目未加载 | 保留原提示词并原生编码；节点界面显示兼容性警告。 |
-| Anima，合计至少 2 个画师，外部项目已加载 | 仅将画师模式项和直接采样器的“独立画师 Tag”字段加入 `artist_chain`；正向提示词、通用前缀和 LoRA 触发词中的 `@tag` 原样保留在 `base_prompt`。先调用 `AnimaArtistPack.pack()`，再把返回值及配置传给 `AnimaArtistAdapterMixer.patch()`，采样使用它返回的 MODEL 与正向 CONDITIONING。 |
+| Anima，合计至少 2 个画师，外部项目已加载 | 仅将画师模式项和当前采样节点的“独立画师 Tag”字段加入 `artist_chain`；正向提示词、通用前缀和 LoRA 触发词中的 `@tag` 原样保留在 `base_prompt`。先调用 `AnimaArtistPack.pack()`，再把返回值及配置传给 `AnimaArtistAdapterMixer.patch()`，采样使用它返回的 MODEL 与正向 CONDITIONING。 |
 
 直接采样器的双条目布局共有 25 张测试图。使用 Anima、Mixer 已加载且高级开关开启时，实际节点执行测试得到：
 
@@ -116,7 +116,7 @@ actual = min_strength + (max_strength - min_strength) * multiplier
 | 2 | 1 个画师模式 + 1 个 LoRA | 25 / 25 |
 | 2 | 2 个 LoRA | 25 / 25 |
 
-“合计画师数”包含当前测试组合的显式画师模式项，以及直接采样器独立字段中的画师项。普通提示词中的 `@tag` 不再参与计数或自动抽取。例如直接采样器的测试项 `@test_artist`（权重 `0.25`）加独立字段 `@independent_artist` 和正向提示词 `@prompt_artist, portrait` 时，外部输入为：
+“合计画师数”包含当前测试格的显式画师模式项，以及当前采样节点独立字段中的画师项。普通提示词中的 `@tag` 不再参与计数或自动抽取。例如直接采样器的测试项 `@test_artist`（权重 `0.25`）加独立字段 `@independent_artist` 和正向提示词 `@prompt_artist, portrait` 时，外部输入为：
 
 ```text
 artist_chain:
@@ -129,15 +129,20 @@ base_prompt:
 
 外部项目缺失时不会删除原提示词中的画师项，因此回退不会吞掉用户内容。外部项目存在但模型不是 Anima 时也不会调用。高级 Mixer 开关默认开启；关闭后同时抑制缺失 Mixer 的前端警告并强制后端使用原生编码。配置节点的 `enabled=false` 或 `strength=0` 也会强制原生编码。配置节点没有接入外部项目的 `advanced_options`，因此不会开启 Anchor-Q 或跨运行 warm-cache。组合测试器会在开始前输出模型族、画师混合状态、Mixer 可用/开关/启用/生效状态和需要 Mixer 的组合，并在每张图采样前输出当前 Stack、LoRA、画师项和路由模式。
 
+组合测试器同样逐格路由：独立字段为 1 个画师时，BASE 原生编码；某个 Stack 再含 1 个画师时，只有该 Stack 列进入 Mixer。独立字段自身已有至少 2 个画师时，BASE 和全部 Stack 列都会进入 Mixer。字段为空时完全保持旧工作流行为；关闭高级 Mixer 开关时所有列都强制原生编码。
+
 ### 测试详情日志
 
 两个采样节点的高级设置中都有 `Log Test Details`（默认开启）。开启后，每个测试格会分行输出：LoRA 文件名与实际权重、画师 Tag 与权重、最终渲染 Tag、原生/Mixer 路由，以及缓存状态。`cache=run-local:miss` 表示本次执行首次从文件加载，`cache=run-local:hit` 表示命中本次执行的 CPU state-dict LRU；`Patched model: column reuse` 表示组合测试器在同一 Stack 列复用了已经应用 LoRA 的 MODEL/CLIP。画师项的 `cache=external:lazy-per-sample` 表示外部 Mixer 会在当前采样步首次需要时建立并复用 embedding，`cache=none` 表示原生提示词编码，不代表跨测试格缓存。关闭开关后不会输出本项目的逐格详情和组合预检日志，但外部节点自身的日志仍由外部项目控制。
 
-直接采样器的独立字段支持逗号、中文逗号或换行分隔，也支持 `fkey`、`@fkey`、`(@fkey:0.5)` 等形式。字段为空时保持旧工作流的原生提示词行为。
+两个采样器的独立字段都支持逗号、中文逗号或换行分隔，也支持 `fkey`、`@fkey`、`(@fkey:0.5)` 等形式。组合测试器中的该字段应用到 BASE 和所有 Stack 测试格。字段为空时保持旧工作流的原生提示词行为。
 
 ## 缓存与执行顺序
 
 - ComfyUI 的 `load_torch_file()` 默认把 LoRA state dict 加载到 CPU；MODEL/CLIP patch 的加载、卸载与显存调度继续由 ComfyUI ModelPatcher 管理。本项目不调用 `empty_cache()`，避免打断 ComfyUI 的动态显存策略。
+- 每个直接测试格在成功、采样异常或用户中断时，都会在 `finally` 中通过 ComfyUI 的 `unload_model_and_clones()` 释放临时 MODEL/CLIP clone；组合测试器还会在每个提示词行释放临时 Artist Mixer route，并在每个非 BASE 列结束时释放列级 LoRA clone。基础输入对象不会被直接作为卸载目标，clone 组内的设备调度仍由 ComfyUI 管理。
+- AIMDO/DynamicVRAM 会在多个测试格之间共享动态 pinned host buffer。旧版执行路径可能让 host buffer 在后半轮测试中逐渐逼近预留上限，于是日志出现 `hostbuf_grow requested ... beyond reserved host buffer`；只要采样仍继续完成，这通常是主机缓冲区的非致命压力告警，不代表最终图片被改写。显式按格/列释放 clone 可以避免本节点把临时 patcher 长期留在当前执行中；本项目仍不主动调用全局 `gc.collect()`、`empty_cache()` 或修改 ComfyUI 的 RAM/VRAM 上限。
+- LoRA state-dict LRU 只缓存本轮 CPU 文件读取，执行结束、异常和中断都会清空；它不持有 MODEL、CLIP、conditioning、latent、图片或外部 Mixer 对象。若在升级后仍持续出现 host buffer 告警，应先确认其它节点没有保留 DynamicVRAM clone，再单独检查 ComfyUI/AIMDO 版本和启动参数。
 - 主采样器只在单次执行内保留最近 3 个 LoRA 的 CPU LRU，正好覆盖单节点最多三项；正常结束、异常和用户中断后都会清空。缓存键包含规范化路径，并比较文件大小、修改时间和创建/变更时间；同路径文件被覆盖后会自动重新加载。
 - `Style Combination Tester` 使用运行内最多 3 项的 CPU LRU，并按 Stack 列执行：同一组合只应用一次 LoRA MODEL/CLIP patch、只编码一次负面提示词，再依次采样该列的所有提示词行。正常结束、异常和用户中断都会清空该 LRU。
 - 外部 Mixer 的 GPU 侧画师 embedding、混合 context 与 Anchor 状态由其 ModelPatcher cleanup/中断路径清理。实际源码中 `build_artist_embedding_sum()` 会按提示词、权重、模型 patch 和输入 tensor 签名缓存加权后的画师 embedding sum，`_mixed_context_cache` 则缓存当前采样运行的混合 context；这些缓存会在运行、模型 patch 或输入改变时失效。本项目不复制或延长这些缓存的生命周期，也不再额外保留跨测试格的画师向量。

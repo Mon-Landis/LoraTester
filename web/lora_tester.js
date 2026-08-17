@@ -146,6 +146,7 @@ const INPUT_LABELS = {
     lorastacks: { en: "LoRA Stack List", zh: "LoRA 组合列表" },
     prompt_count: { en: "Prompt Count", zh: "提示词数量" },
     prompt_prefix: { en: "Shared Prompt Prefix", zh: "通用正面提示词前缀" },
+    independent_artist_tags: { en: "Independent Artist Tags", zh: "独立画师 Tag" },
     negative_prompt: { en: "Shared Negative Prompt", zh: "通用负面提示词" },
     seed: { en: "Seed", zh: "随机种子" },
     steps: { en: "Steps", zh: "采样步数" },
@@ -344,7 +345,7 @@ function installNodeLabels(node, nodeName) {
     widget.label = label;
     if ((
       nodeName === MULTI_PROMPT_NODE &&
-      /^(?:prompt_prefix|negative_prompt|positive_prompt_\d+)$/.test(widget.name)
+      /^(?:prompt_prefix|independent_artist_tags|negative_prompt|positive_prompt_\d+)$/.test(widget.name)
     ) || (
       nodeName === TARGET_NODE && widget.name === "independent_artist_tags"
     )) {
@@ -805,12 +806,17 @@ function animaArtistMixerEnabled(node) {
 }
 
 function multiPromptHasMultiArtistTest(node) {
+  const independentArtists = countIndependentArtistTags(
+    widgetValue(node, "independent_artist_tags"),
+  );
   const input = node.inputs?.find((item) => item.name === "lorastacks");
   const stackCounts = [];
   for (const source of sourceNodesForInput(node, input)) {
     stackCounts.push(...stackArtistCountsFromNode(source));
   }
-  return stackCounts.some((stackArtists) => stackArtists > 1);
+  return independentArtists > 1 || stackCounts.some(
+    (stackArtists) => stackArtists + independentArtists > 1,
+  );
 }
 
 function registeredNodeAvailable(name) {
@@ -923,7 +929,7 @@ function installArtistObservers(node, nodeName) {
       return name === "lora_count" || /^lora_\d+_(?:name|trigger)$/.test(name);
     }
     if (nodeName === MULTI_PROMPT_NODE) {
-      return name === "use_anima_artist_mixer";
+      return name === "independent_artist_tags" || name === "use_anima_artist_mixer";
     }
     return false;
   };

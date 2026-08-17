@@ -287,6 +287,7 @@
     {
       "case": "anima_mixer_present",
       "model_family": "anima",
+      "independent_artist_tags": "",
       "has_artist_tags": true,
       "has_multi_artist_tests": true,
       "mixer_available": true,
@@ -300,6 +301,7 @@
     {
       "case": "anima_mixer_missing",
       "model_family": "anima",
+      "independent_artist_tags": "",
       "has_artist_tags": true,
       "has_multi_artist_tests": true,
       "mixer_available": false,
@@ -313,6 +315,7 @@
     {
       "case": "anima_switch_disabled",
       "model_family": "anima",
+      "independent_artist_tags": "",
       "has_artist_tags": true,
       "has_multi_artist_tests": true,
       "mixer_available": true,
@@ -326,6 +329,7 @@
     {
       "case": "anima_single_artist",
       "model_family": "anima",
+      "independent_artist_tags": "",
       "has_artist_tags": true,
       "has_multi_artist_tests": false,
       "mixer_available": true,
@@ -335,8 +339,38 @@
       "mixer_combinations": []
     },
     {
+      "case": "anima_independent_one_plus_stack_artist",
+      "model_family": "anima",
+      "independent_artist_tags": "@independent",
+      "has_artist_tags": true,
+      "has_multi_artist_tests": true,
+      "mixer_available": true,
+      "mixer_switch_enabled": true,
+      "mixer_enabled": true,
+      "mixer_active": true,
+      "mixer_combinations": [
+        "@first + @independent"
+      ]
+    },
+    {
+      "case": "anima_independent_two_cover_base_and_stacks",
+      "model_family": "anima",
+      "independent_artist_tags": "@independent, (@second:0.5)",
+      "has_artist_tags": true,
+      "has_multi_artist_tests": true,
+      "mixer_available": true,
+      "mixer_switch_enabled": true,
+      "mixer_enabled": true,
+      "mixer_active": true,
+      "mixer_combinations": [
+        "@independent + (@second:0.5)",
+        "@first + @independent + (@second:0.5)"
+      ]
+    },
+    {
       "case": "danbooru_multi_artist",
       "model_family": "danbooru",
+      "independent_artist_tags": "",
       "has_artist_tags": true,
       "has_multi_artist_tests": true,
       "mixer_available": true,

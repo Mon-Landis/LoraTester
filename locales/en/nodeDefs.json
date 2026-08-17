@@ -484,6 +484,7 @@
       "use_anima_artist_mixer": { "name": "Use Anima Artist Mixer", "tooltip": "Advanced: use the optional Anima Artist Mixer for multi-artist Anima tests; disable to force native artist-tag encoding." },
       "control_gap": { "name": "BASE Control Gap", "tooltip": "Horizontal gap between BASE and the first LoRA test column; 0 automatically uses at least one eighth of the image width." },
       "max_canvas_megapixels": { "name": "Maximum Canvas (MP)", "tooltip": "Stops when the final XY sheet would exceed this pixel count." },
+      "independent_artist_tags": { "name": "Independent Artist Tags", "tooltip": "Artist-only tags applied to every matrix cell and parsed separately for optional Anima mixing. Shared prompts, row prompts, and LoRA triggers are never extracted." },
       "custom_style": { "name": "Custom Style", "tooltip": "LoRA Tester style used when Color Mode is Custom." },
       "artist_tag_template": { "name": "Artist Tag Template", "tooltip": "Overrides model-specific and stack-specific artist-tag syntax." },
       "anima_mixer_config": { "name": "Anima Mixer Configuration", "tooltip": "Optional settings for multi-artist Anima test cells when Anima Artist Mixer is loaded." }

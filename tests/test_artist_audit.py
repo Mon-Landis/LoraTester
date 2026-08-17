@@ -44,6 +44,22 @@ class ArtistAuditTests(unittest.TestCase):
             cases["anima_multi_artist_switch_disabled"]["artist_chain"]
         )
 
+        preflight = {item["case"]: item for item in audit["preflight_cases"]}
+        self.assertTrue(
+            preflight["anima_independent_one_plus_stack_artist"]["mixer_active"]
+        )
+        self.assertEqual(
+            preflight["anima_independent_one_plus_stack_artist"]["mixer_combinations"],
+            ["@first + @independent"],
+        )
+        self.assertEqual(
+            preflight["anima_independent_two_cover_base_and_stacks"]["mixer_combinations"],
+            [
+                "@independent + (@second:0.5)",
+                "@first + @independent + (@second:0.5)",
+            ],
+        )
+
     def test_checked_in_audit_is_deterministic(self) -> None:
         audit = build_audit()
         checked_in = json.loads(

@@ -484,6 +484,7 @@
       "use_anima_artist_mixer": { "name": "使用 Anima Artist Mixer", "tooltip": "高级设置：对 Anima 多画师测试使用可选的 Anima Artist Mixer；关闭后强制使用原生画师 Tag 编码。" },
       "control_gap": { "name": "BASE 对照列间距", "tooltip": "BASE 对照列与第一列 LoRA 测试结果之间的水平间距；0 会自动使用至少为图片宽度八分之一的间距。" },
       "max_canvas_megapixels": { "name": "最大画布（百万像素）", "tooltip": "最终 XY 对比图超过该像素数量时中止。" },
+      "independent_artist_tags": { "name": "独立画师 Tag", "tooltip": "仅将此处的画师 Tag 应用于每个测试格并尝试用于 Anima 混合；通用提示词、行提示词和 LoRA 触发词均不会被自动抽取。" },
       "custom_style": { "name": "自定义样式", "tooltip": "颜色模式为自定义时使用的 LoRA 测试器样式。" },
       "artist_tag_template": { "name": "画师 Tag 模板", "tooltip": "覆盖模型内置和组合自带的画师 Tag 语法。" },
       "anima_mixer_config": { "name": "Anima Mixer 配置", "tooltip": "Anima Artist Mixer 已加载时，用于 Anima 多画师测试格的可选参数。" }

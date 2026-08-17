@@ -79,6 +79,8 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("Artist ${title} Tag Weight", source)
         self.assertIn("countIndependentArtistTags", source)
         self.assertIn('"independent_artist_tags"', source)
+        self.assertIn("independentArtists > 1", source)
+        self.assertIn("stackArtists + independentArtists > 1", source)
         self.assertIn("stackArtistCountsFromNode", source)
         self.assertIn('registeredNodeAvailable("AnimaArtistPack")', source)
         self.assertIn('"AnimaArtistAdapterMixer"', source)

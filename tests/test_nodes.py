@@ -24,6 +24,7 @@ from lora_tester.nodes import (
     LoraTesterSampler,
     LoraTesterStyleNode,
     _common_ksampler,
+    _release_temporary_model,
     _sampling_progress_value,
     compose_positive_prompt,
 )
@@ -208,6 +209,42 @@ class NodeTests(unittest.TestCase):
                         for index, call in enumerate(run["sampler_calls"])
                     )
                 )
+
+    def test_temporary_model_cleanup_uses_comfy_manager_and_skips_base(self):
+        patcher = SimpleNamespace(clone_base_uuid=object())
+        base_patcher = SimpleNamespace(clone_base_uuid=object())
+        value = SimpleNamespace(patcher=patcher)
+        base_value = SimpleNamespace(patcher=base_patcher)
+        with patch("comfy.model_management.unload_model_and_clones") as unload:
+            _release_temporary_model(value, base_value)
+            _release_temporary_model(base_value, base_value)
+
+        unload.assert_called_once_with(patcher)
+
+    def test_direct_sampler_releases_each_temporary_route_on_error(self):
+        arguments = self._sample_arguments(1)
+        arguments["vae"] = FakeVAE([])
+        node = LoraTesterSampler()
+        with (
+            patch("lora_tester.nodes._resolve_lora_path", return_value=str(ROOT / "A.safetensors")),
+            patch("lora_tester.nodes._load_lora_file", return_value=("state:A", None)),
+            patch("lora_tester.nodes._apply_lora_to_models", return_value=("patched-model", FakeClip())),
+            patch("lora_tester.nodes._common_ksampler", side_effect=RuntimeError("sample failed")),
+            patch("lora_tester.nodes._make_progress_bar", return_value=FakeProgress()),
+            patch("lora_tester.nodes._throw_if_interrupted"),
+            patch("lora_tester.nodes._release_temporary_model") as release,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "sample failed"):
+                node.sample(**arguments)
+
+        self.assertEqual(release.call_count, 2)
+
+    def test_direct_sampler_releases_model_and_clip_for_every_completed_cell(self):
+        with patch("lora_tester.nodes._release_temporary_model") as release:
+            self._run_fake_sample(1)
+
+        # Five unique cells, with one MODEL and one CLIP cleanup per cell.
+        self.assertEqual(release.call_count, 10)
 
     def test_sampling_progress_reserves_postprocess_boundary(self):
         self.assertAlmostEqual(_sampling_progress_value(0, 0, 20), 1 / 21)

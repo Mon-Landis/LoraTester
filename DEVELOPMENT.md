@@ -78,7 +78,7 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 - 在 Node 2.0 与旧 LiteGraph 的创建、恢复、分页切换生命周期中重复同步动态分组，并保留其他设备上缺失的 LoRA 下拉值。
 - 后端 `VALIDATE_INPUTS` 只校验动态数量范围内的 LoRA 槽位；ComfyUI 会对所有声明的 combo 做通用校验，因此不能只依赖前端隐藏或追加缺失值来绕过隐藏槽位的跨设备缺失文件。
 - 本地化画师模式占位项，并按 LoRA/画师模式切换触发词与权重字段标题。
-- 直接采样器只从独立画师 Tag 字段和显式画师模式项推导多画师测试；组合采样器只从上游 Stack/Splitter/Lister 推导，普通提示词与 LoRA 触发词不再自动抽取。外部 Mixer 未注册且高级 Mixer 开关开启时在采样节点底部显示 Anima 警告；关闭开关必须同时隐藏警告并让后端强制使用原生编码。
+- 两个采样器都只从各自的独立画师 Tag 字段和显式画师模式项推导多画师测试；组合采样器将独立字段应用到 BASE 与所有 Stack 测试格，并逐格合计上游 Stack/Splitter/Lister 中的画师项。普通提示词与 LoRA 触发词不再自动抽取。外部 Mixer 未注册且高级 Mixer 开关开启时在采样节点底部显示 Anima 警告；关闭开关必须同时隐藏警告并让后端强制使用原生编码。
 
 前端扩展只改变显示状态和标签，不改变序列化字段值。后续若增加以下能力，再评估引入 Node.js 构建链：
 
@@ -92,7 +92,9 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 
 画师模式的稳定下拉值是 `__lora_tester_artist_tag__`，只允许翻译显示名，不得修改序列化值。Anima 判断必须读取 ComfyUI 的模型配置 `unet_config["image_model"]`，不得用 checkpoint 文件名。外部兼容通过 `nodes.NODE_CLASS_MAPPINGS` 延迟解析 `AnimaArtistPack` 和 `AnimaArtistAdapterMixer`；缺少插件时仍必须能导入和执行本项目。
 
-LoRA state dict 是 CPU 数据。两个采样节点的运行内 LRU 上限为 3，并以文件 stat 指纹失效，在成功、异常或中断后清空；直接采样器与 Stack 的 `IS_CHANGED` 也把有效文件指纹加入 ComfyUI 输出缓存签名。矩阵采样节点在一次执行内按 Stack 列复用 patch。MODEL/CLIP clone、Mixer GPU 状态及显存调度由 ComfyUI/外部 Mixer 管理，不在本项目中调用 `empty_cache()` 或保存 patched MODEL。
+LoRA state dict 是 CPU 数据。两个采样节点的运行内 LRU 上限为 3，并以文件 stat 指纹失效，在成功、异常或中断后清空；直接采样器与 Stack 的 `IS_CHANGED` 也把有效文件指纹加入 ComfyUI 输出缓存签名。矩阵采样节点在一次执行内按 Stack 列复用 patch。每个直接测试格用 `finally` 释放临时 MODEL/CLIP clone；矩阵节点在每个提示词行释放外部 Mixer route，在每个非 BASE 列的 `finally` 释放列级 clone。释放通过 ComfyUI `unload_model_and_clones()` 完成，基础输入对象不会被直接作为卸载目标，异常和中断也会执行；clone 组内其它成员是否淘汰由 ComfyUI 决定。MODEL/CLIP clone、Mixer GPU 状态及显存调度由 ComfyUI/外部 Mixer 管理，不在本项目中调用 `empty_cache()`、全局 `gc.collect()` 或保存 patched MODEL。
+
+AIMDO/DynamicVRAM 会让多个 clone 共享 pinned host buffer。若旧 clone 在一轮长矩阵中没有及时卸载，后半段可能出现 `hostbuf_grow ... beyond reserved host buffer`；这是 host buffer 预留压力日志，采样仍完成时通常不改变最终 IMAGE。节点只负责释放自己创建的临时引用，不会擅自修改 `--cache-ram`、RAM/VRAM 上限或 ComfyUI 的全局缓存策略；持续告警时应继续排查其它节点或 ComfyUI/AIMDO 版本是否保留了 clone。
 
 两个采样节点的 `log_test_details` 与 `use_anima_artist_mixer` 都是默认开启的 advanced BOOLEAN。后者关闭时必须在解析出多画师后、查询外部节点前短路为原生编码；配置节点的 `enabled=false` 或 `strength=0` 具有同样效果。日志必须由后端按测试格输出实际 LoRA/画师权重和路由；LoRA 的 `run-local:miss/hit` 只反映本节点可观察的 state-dict LRU 查找，组合矩阵的 `column reuse` 反映同一 Stack 列的 patched MODEL/CLIP 复用。外部 Mixer 的 embedding 缓存由它自己的生命周期管理，本节点只能标记 `external:lazy-per-sample`，不得声称跨格命中。
 
