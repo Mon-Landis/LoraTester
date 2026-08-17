@@ -1,0 +1,295 @@
+{
+  "scope": "production routing functions; no image generation",
+  "parser_cases": [
+    {
+      "input": "fkey",
+      "entries": [
+        [
+          "fkey",
+          1.0
+        ]
+      ]
+    },
+    {
+      "input": "@fkey",
+      "entries": [
+        [
+          "fkey",
+          1.0
+        ]
+      ]
+    },
+    {
+      "input": "@@fkey",
+      "entries": [
+        [
+          "fkey",
+          1.0
+        ]
+      ]
+    },
+    {
+      "input": "(@fkey:0.4)",
+      "entries": [
+        [
+          "fkey",
+          0.4
+        ]
+      ]
+    },
+    {
+      "input": "fkey\n(@wlop:1.2), second",
+      "entries": [
+        [
+          "fkey",
+          1.0
+        ],
+        [
+          "wlop",
+          1.2
+        ],
+        [
+          "second",
+          1.0
+        ]
+      ]
+    }
+  ],
+  "template_cases": [
+    {
+      "model_family": "anima",
+      "default": "@fkey",
+      "weighted": "(@fkey:1.2)"
+    },
+    {
+      "model_family": "danbooru",
+      "default": "artist_name",
+      "weighted": "(artist_name:1.2)"
+    }
+  ],
+  "routing_cases": [
+    {
+      "case": "anima_lora_only_is_native",
+      "model_family": "anima",
+      "positive_prompt": "portrait",
+      "test_entries": [
+        [
+          false,
+          "@trigger_artist",
+          0.25
+        ]
+      ],
+      "independent_artist_tags": "",
+      "mixer_available": true,
+      "route": "native_prompt",
+      "rendered_tags": [],
+      "artist_chain": null,
+      "mixer_base_prompt": null,
+      "encoded_positive": {
+        "text": "@trigger_artist, portrait"
+      }
+    },
+    {
+      "case": "anima_single_artist_plus_lora_is_native",
+      "model_family": "anima",
+      "positive_prompt": "portrait",
+      "test_entries": [
+        [
+          true,
+          "test_artist",
+          0.25
+        ],
+        [
+          false,
+          "@trigger_artist",
+          0.25
+        ]
+      ],
+      "independent_artist_tags": "",
+      "mixer_available": true,
+      "route": "native_prompt",
+      "rendered_tags": [
+        "(@test_artist:0.25)"
+      ],
+      "artist_chain": null,
+      "mixer_base_prompt": null,
+      "encoded_positive": {
+        "text": "(@test_artist:0.25), @trigger_artist, portrait"
+      }
+    },
+    {
+      "case": "anima_prompt_tag_is_base_text",
+      "model_family": "anima",
+      "positive_prompt": "@prompt_artist, portrait",
+      "test_entries": [
+        [
+          true,
+          "test_artist",
+          1.0
+        ]
+      ],
+      "independent_artist_tags": "",
+      "mixer_available": true,
+      "route": "native_prompt",
+      "rendered_tags": [
+        "@test_artist"
+      ],
+      "artist_chain": null,
+      "mixer_base_prompt": null,
+      "encoded_positive": {
+        "text": "@test_artist, @prompt_artist, portrait"
+      }
+    },
+    {
+      "case": "anima_independent_tags_use_mixer",
+      "model_family": "anima",
+      "positive_prompt": "@prompt_artist, portrait",
+      "test_entries": [
+        [
+          true,
+          "test_artist",
+          1.0
+        ]
+      ],
+      "independent_artist_tags": "@independent, (@second:0.5)",
+      "mixer_available": true,
+      "route": "anima_artist_mixer",
+      "rendered_tags": [
+        "@test_artist",
+        "@independent",
+        "(@second:0.5)"
+      ],
+      "artist_chain": "@test_artist\n@independent\n(@second:0.5)",
+      "mixer_base_prompt": "@prompt_artist, portrait",
+      "encoded_positive": {
+        "text": "MIXED",
+        "artist_chain": "@test_artist\n@independent\n(@second:0.5)"
+      }
+    },
+    {
+      "case": "anima_independent_tags_fallback_without_mixer",
+      "model_family": "anima",
+      "positive_prompt": "@prompt_artist, portrait",
+      "test_entries": [
+        [
+          true,
+          "test_artist",
+          1.0
+        ]
+      ],
+      "independent_artist_tags": "@independent, (@second:0.5)",
+      "mixer_available": false,
+      "route": "native_prompt_missing_mixer",
+      "rendered_tags": [
+        "@test_artist",
+        "@independent",
+        "(@second:0.5)"
+      ],
+      "artist_chain": null,
+      "mixer_base_prompt": null,
+      "encoded_positive": {
+        "text": "@test_artist, @independent, (@second:0.5), @prompt_artist, portrait"
+      }
+    },
+    {
+      "case": "anima_lora_trigger_is_not_extracted",
+      "model_family": "anima",
+      "positive_prompt": "portrait",
+      "test_entries": [
+        [
+          true,
+          "test_artist",
+          1.0
+        ],
+        [
+          false,
+          "@trigger_artist",
+          1.0
+        ]
+      ],
+      "independent_artist_tags": "@independent",
+      "mixer_available": true,
+      "route": "anima_artist_mixer",
+      "rendered_tags": [
+        "@test_artist",
+        "@independent"
+      ],
+      "artist_chain": "@test_artist\n@independent",
+      "mixer_base_prompt": "@trigger_artist, portrait",
+      "encoded_positive": {
+        "text": "MIXED",
+        "artist_chain": "@test_artist\n@independent"
+      }
+    },
+    {
+      "case": "danbooru_uses_native_tag_template",
+      "model_family": "danbooru",
+      "positive_prompt": "@prompt_artist, portrait",
+      "test_entries": [
+        [
+          true,
+          "Artist Name",
+          1.2
+        ]
+      ],
+      "independent_artist_tags": "fkey",
+      "mixer_available": true,
+      "route": "native_prompt",
+      "rendered_tags": [
+        "(artist_name:1.2)",
+        "fkey"
+      ],
+      "artist_chain": null,
+      "mixer_base_prompt": null,
+      "encoded_positive": {
+        "text": "(artist_name:1.2), fkey, @prompt_artist, portrait"
+      }
+    }
+  ],
+  "preflight_cases": [
+    {
+      "case": "anima_mixer_present",
+      "model_family": "anima",
+      "has_artist_tags": true,
+      "has_multi_artist_tests": true,
+      "mixer_available": true,
+      "mixer_enabled": true,
+      "mixer_active": true,
+      "mixer_combinations": [
+        "(@first:0.5) + @second"
+      ]
+    },
+    {
+      "case": "anima_mixer_missing",
+      "model_family": "anima",
+      "has_artist_tags": true,
+      "has_multi_artist_tests": true,
+      "mixer_available": false,
+      "mixer_enabled": true,
+      "mixer_active": false,
+      "mixer_combinations": [
+        "(@first:0.5) + @second"
+      ]
+    },
+    {
+      "case": "anima_single_artist",
+      "model_family": "anima",
+      "has_artist_tags": true,
+      "has_multi_artist_tests": false,
+      "mixer_available": true,
+      "mixer_enabled": true,
+      "mixer_active": false,
+      "mixer_combinations": []
+    },
+    {
+      "case": "danbooru_multi_artist",
+      "model_family": "danbooru",
+      "has_artist_tags": true,
+      "has_multi_artist_tests": true,
+      "mixer_available": true,
+      "mixer_enabled": true,
+      "mixer_active": false,
+      "mixer_combinations": []
+    }
+  ]
+}

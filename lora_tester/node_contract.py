@@ -14,6 +14,22 @@ SHOW_LORA_DETAILS_INPUT = (
     },
 )
 
+LOG_TEST_DETAILS_FIELD = "log_test_details"
+
+LOG_TEST_DETAILS_INPUT = (
+    "BOOLEAN",
+    {
+        "default": True,
+        "advanced": True,
+        "label_on": "log test details",
+        "label_off": "hide test details from log",
+        "tooltip": (
+            "Log each comparison cell with its active LoRA files, artist tags, "
+            "weights, route, and observable cache state."
+        ),
+    },
+)
+
 COLOR_MODE_INPUT = (
     ["black", "white", "custom"],
     {
@@ -24,6 +40,7 @@ COLOR_MODE_INPUT = (
 
 FUTURE_NODE_COMPOSITOR_FIELDS = {
     SHOW_LORA_DETAILS_FIELD: SHOW_LORA_DETAILS_INPUT,
+    LOG_TEST_DETAILS_FIELD: LOG_TEST_DETAILS_INPUT,
     "color_mode": COLOR_MODE_INPUT,
 }
 
@@ -31,6 +48,8 @@ FUTURE_NODE_COMPOSITOR_FIELDS = {
 __all__ = [
     "COLOR_MODE_INPUT",
     "FUTURE_NODE_COMPOSITOR_FIELDS",
+    "LOG_TEST_DETAILS_FIELD",
+    "LOG_TEST_DETAILS_INPUT",
     "SHOW_LORA_DETAILS_FIELD",
     "SHOW_LORA_DETAILS_INPUT",
 ]

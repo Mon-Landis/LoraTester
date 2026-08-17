@@ -17,7 +17,7 @@ ANIMA_ARTIST_PACK_NODE = "AnimaArtistPack"
 ANIMA_ADAPTER_MIXER_NODE = "AnimaArtistAdapterMixer"
 
 _EXPLICIT_WEIGHT = re.compile(
-    r"^\(\s*(.*?)\s*:\s*[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?\s*\)$"
+    r"^\(\s*(.*?)\s*:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*\)$"
 )
 _ANIMA_PROMPT_WEIGHTED = re.compile(
     r"^\(\s*@(.+?)\s*:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*\)$"
@@ -59,6 +59,22 @@ def normalize_artist_tag(value: str) -> str:
 def split_artist_tags(value: str) -> tuple[str, ...]:
     parts = re.split(r"[,\r\n\uff0c]+", str(value or ""))
     return tuple(normalize_artist_tag(part) for part in parts if part.strip())
+
+
+def parse_artist_tag_entries(value: str) -> tuple[tuple[str, float], ...]:
+    """Parse artist-only text where every comma/newline item is an artist tag."""
+    entries: list[tuple[str, float]] = []
+    for raw_part in re.split(r"[,\r\n\uff0c]+", str(value or "")):
+        part = raw_part.strip()
+        if not part:
+            continue
+        weighted = _EXPLICIT_WEIGHT.fullmatch(part)
+        weight = float(weighted.group(2)) if weighted else 1.0
+        if not math.isfinite(weight):
+            raise ValueError("Artist tag weight must be finite")
+        tag = weighted.group(1) if weighted else part
+        entries.append((normalize_artist_tag(tag), weight))
+    return tuple(entries)
 
 
 def extract_anima_artist_tags(text: str) -> tuple[str, tuple[tuple[str, float], ...]]:
@@ -240,15 +256,9 @@ def route_artist_prompt(
     mixer_config: AnimaArtistMixerConfig | None = None,
 ) -> ArtistPromptRoute:
     template = artist_template or artist_template_for_model(model)
-    cleaned_mixer_prompt = str(mixer_base_prompt)
-    prompt_artist_entries: tuple[tuple[str, float], ...] = ()
-    if detect_model_family(model) == MODEL_FAMILY_ANIMA:
-        cleaned_mixer_prompt, prompt_artist_entries = extract_anima_artist_tags(
-            cleaned_mixer_prompt
-        )
     expanded_entries = tuple(
         (tag, float(weight))
-        for value, weight in (*artist_entries, *prompt_artist_entries)
+        for value, weight in artist_entries
         for tag in split_artist_tags(value)
     )
     rendered_tags = tuple(template.format(tag, weight) for tag, weight in expanded_entries)
@@ -284,7 +294,7 @@ def route_artist_prompt(
         artist_pack = pack_class().pack(
             clip=clip,
             artist_chain=artist_chain,
-            base_prompt=cleaned_mixer_prompt,
+            base_prompt=str(mixer_base_prompt),
         )[0]
         patched_model, positive = mixer_class().patch(
             model=model,
@@ -325,6 +335,7 @@ __all__ = [
     "detect_model_family",
     "extract_anima_artist_tags",
     "normalize_artist_tag",
+    "parse_artist_tag_entries",
     "route_artist_prompt",
     "split_artist_tags",
 ]

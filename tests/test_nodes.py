@@ -67,6 +67,7 @@ class NodeTests(unittest.TestCase):
             "vae": None,
             "latent_image": {"samples": torch.zeros((1, 4, 2, 2), dtype=torch.float32)},
             "positive_prompt": "portrait",
+            "independent_artist_tags": "",
             "negative_prompt": "blur",
             "seed": 123456,
             "steps": 12,
@@ -367,7 +368,7 @@ class NodeTests(unittest.TestCase):
         )
         self.assertEqual(len(run["node"]._lora_cache), 0)
 
-    def test_anima_prompt_artist_joins_test_artist_in_external_mixer(self):
+    def test_anima_independent_artist_joins_test_artist_in_external_mixer(self):
         pack_calls = []
         mixer_calls = []
 
@@ -384,11 +385,15 @@ class NodeTests(unittest.TestCase):
                     {"text": kwargs["artist_pack"]["artist_chain"], "stack": ()},
                 )
 
-        anima_model = SimpleNamespace(
-            model=SimpleNamespace(
+        class AnimaModel:
+            model = SimpleNamespace(
                 model_config=SimpleNamespace(unet_config={"image_model": "anima"})
             )
-        )
+
+            def __add__(self, _value):
+                return self
+
+        anima_model = AnimaModel()
         with patch(
             "lora_tester.artist._resolve_anima_mixer_nodes",
             return_value=(Pack, Mixer),
@@ -398,6 +403,7 @@ class NodeTests(unittest.TestCase):
                 {
                     "model": anima_model,
                     "positive_prompt": "@prompt_artist, portrait",
+                    "independent_artist_tags": "@independent_artist",
                     "lora_a_name": ARTIST_TAG_MODE,
                     "lora_a_trigger": "@test_artist",
                     "lora_a_min_strength": 0.0,
@@ -408,14 +414,105 @@ class NodeTests(unittest.TestCase):
         self.assertEqual(len(pack_calls), 4)
         self.assertEqual(
             pack_calls[0]["artist_chain"],
-            "(@test_artist:0.25)\n@prompt_artist",
+            "(@test_artist:0.25)\n@independent_artist",
         )
-        self.assertEqual(pack_calls[0]["base_prompt"], "portrait")
+        self.assertEqual(
+            pack_calls[0]["base_prompt"], "@prompt_artist, portrait"
+        )
         self.assertEqual(mixer_calls[0]["strength"], 1.6)
         self.assertEqual(
             run["sampler_calls"][1]["model"],
-            ("mixed", "(@test_artist:0.25)\n@prompt_artist"),
+            ("mixed", "(@test_artist:0.25)\n@independent_artist"),
         )
+
+    def test_at_lora_trigger_is_never_added_to_direct_artist_chain(self):
+        pack_calls = []
+
+        class Pack:
+            def pack(self, **kwargs):
+                pack_calls.append(kwargs)
+                return ({"artist_chain": kwargs["artist_chain"]},)
+
+        class Mixer:
+            def patch(self, **kwargs):
+                return (
+                    kwargs["model"],
+                    {"text": kwargs["artist_pack"]["artist_chain"], "stack": ()},
+                )
+
+        class AnimaModel(tuple):
+            def __new__(cls, values=()):
+                return tuple.__new__(cls, values)
+
+            def __init__(self, values=()):
+                self.model = SimpleNamespace(
+                    model_config=SimpleNamespace(unet_config={"image_model": "anima"})
+                )
+
+            def __add__(self, value):
+                return AnimaModel(tuple(self) + tuple(value))
+
+        anima_model = AnimaModel()
+        with patch(
+            "lora_tester.artist._resolve_anima_mixer_nodes",
+            return_value=(Pack, Mixer),
+        ):
+            self._run_fake_sample(
+                3,
+                {
+                    "model": anima_model,
+                    "lora_a_name": "A.safetensors",
+                    "lora_a_trigger": "@lora_trigger",
+                    "lora_b_name": ARTIST_TAG_MODE,
+                    "lora_b_trigger": "@artist_one",
+                    "lora_c_name": ARTIST_TAG_MODE,
+                    "lora_c_trigger": "@artist_two",
+                },
+            )
+
+        self.assertTrue(pack_calls)
+        self.assertTrue(
+            all("@lora_trigger" not in call["artist_chain"] for call in pack_calls)
+        )
+        self.assertTrue(
+            any("@lora_trigger" in call["base_prompt"] for call in pack_calls)
+        )
+
+    def test_two_axis_single_artist_and_at_lora_never_use_mixer(self):
+        class AnimaModel(tuple):
+            def __new__(cls, values=()):
+                return tuple.__new__(cls, values)
+
+            def __init__(self, values=()):
+                self.model = SimpleNamespace(
+                    model_config=SimpleNamespace(unet_config={"image_model": "anima"})
+                )
+
+            def __add__(self, value):
+                return AnimaModel(tuple(self) + tuple(value))
+
+        with patch(
+            "lora_tester.artist._resolve_anima_mixer_nodes",
+            side_effect=AssertionError("A zero/single-artist cell must not use the mixer"),
+        ):
+            run = self._run_fake_sample(
+                2,
+                {
+                    "model": AnimaModel(),
+                    "log_test_details": False,
+                    "lora_a_name": "A.safetensors",
+                    "lora_a_trigger": "@lora_trigger",
+                    "lora_b_name": ARTIST_TAG_MODE,
+                    "lora_b_trigger": "@artist_one",
+                },
+            )
+
+        encoded_prompts = {
+            call["positive"]["text"] for call in run["sampler_calls"]
+        }
+        self.assertIn("@lora_trigger, portrait", encoded_prompts)
+        self.assertIn("@artist_one, portrait", encoded_prompts)
+        self.assertIn("@lora_trigger, @artist_one, portrait", encoded_prompts)
 
     def test_min_strengths_reach_tasks_and_activate_center_triggers(self):
         arguments = self._sample_arguments(3)
@@ -569,11 +666,38 @@ class NodeTests(unittest.TestCase):
             inputs = LoraTesterSampler.INPUT_TYPES()
         self.assertIn("show_lora_details", inputs["required"])
         self.assertTrue(inputs["required"]["show_lora_details"][1]["default"])
+        self.assertIn("log_test_details", inputs["required"])
+        self.assertTrue(inputs["required"]["log_test_details"][1]["default"])
+        self.assertTrue(inputs["required"]["log_test_details"][1]["advanced"])
         self.assertEqual(inputs["required"]["lora_count"][1]["default"], 1)
         for field in ("lora_a_min_strength", "lora_b_min_strength", "lora_c_min_strength"):
             self.assertEqual(inputs["required"][field][1]["default"], 0.0)
         self.assertEqual(inputs["required"]["color_mode"][0], ["black", "white", "custom"])
         self.assertEqual(inputs["optional"]["custom_style"][0], "LORA_TESTER_STYLE")
+
+    def test_direct_log_lists_weights_artists_and_observable_cache_state(self):
+        with self.assertLogs("lora_tester.nodes", level="INFO") as captured:
+            self._run_fake_sample(
+                2,
+                {
+                    "lora_b_name": ARTIST_TAG_MODE,
+                    "lora_b_trigger": "@painter",
+                    "lora_b_max_strength": 1.25,
+                    "independent_artist_tags": "(indie:0.7)",
+                },
+            )
+        output = "\n".join(captured.output)
+        self.assertIn('"A.safetensors" | weight=', output)
+        self.assertIn("cache=run-local:miss", output)
+        self.assertIn('"painter" | weight=', output)
+        self.assertIn('"indie" | weight=0.7', output)
+        self.assertIn("cache=none", output)
+        self.assertIn("Route: native_prompt", output)
+
+    def test_direct_log_toggle_suppresses_detail_records(self):
+        with patch("lora_tester.nodes.logger.info") as log_info:
+            self._run_fake_sample(1, {"log_test_details": False})
+        self.assertFalse(log_info.called)
 
     def test_style_node_builds_custom_style_and_rejects_background_batches(self):
         required = LoraTesterStyleNode.INPUT_TYPES()["required"]

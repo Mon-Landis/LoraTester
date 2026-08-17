@@ -21,7 +21,11 @@
       },
       "positive_prompt": {
         "name": "Positive Prompt",
-        "tooltip": "Positive prompt encoded inside the node. Active LoRA trigger words are prepended in A/B/C order."
+        "tooltip": "Positive prompt encoded inside the node. Active LoRA trigger words are prepended in A/B/C order; artist tags are not auto-extracted."
+      },
+      "independent_artist_tags": {
+        "name": "Independent Artist Tags",
+        "tooltip": "Artist-only tags parsed separately for optional Anima mixing. Comma, newline, and explicit weighted forms are supported."
       },
       "negative_prompt": {
         "name": "Negative Prompt",
@@ -115,6 +119,10 @@
       "show_lora_details": {
         "name": "Show LoRA Details Footer",
         "tooltip": "Shows the original A/B/C LoRA names and configured minimum/maximum strengths below the sheet."
+      },
+      "log_test_details": {
+        "name": "Log Test Details",
+        "tooltip": "Advanced: log every comparison cell with active LoRA files, artist tags, weights, route, and observable cache state."
       },
       "max_canvas_megapixels": {
         "name": "Maximum Canvas (MP)",
@@ -468,6 +476,7 @@
       "denoise": { "name": "Denoise", "tooltip": "Denoising strength shared by every comparison cell." },
       "color_mode": { "name": "Color Mode", "tooltip": "Color preset for the final XY comparison sheet." },
       "show_lora_details": { "name": "Show Original LoRAs", "tooltip": "Lists each distinct LoRA file, trigger-word, and strength configuration in the footer." },
+      "log_test_details": { "name": "Log Test Details", "tooltip": "Advanced: log every comparison cell with active LoRA files, artist tags, weights, route, and observable cache state." },
       "control_gap": { "name": "BASE Control Gap", "tooltip": "Horizontal gap between BASE and the first LoRA test column; 0 automatically uses at least one eighth of the image width." },
       "max_canvas_megapixels": { "name": "Maximum Canvas (MP)", "tooltip": "Stops when the final XY sheet would exceed this pixel count." },
       "custom_style": { "name": "Custom Style", "tooltip": "LoRA Tester style used when Color Mode is Custom." },

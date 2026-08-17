@@ -67,6 +67,16 @@ const TOGGLE_LABELS = {
         label_off: "隐藏名称和最低/最高权重",
       },
     },
+    log_test_details: {
+      en: {
+        label_on: "log test details",
+        label_off: "hide test details from log",
+      },
+      zh: {
+        label_on: "输出测试详情日志",
+        label_off: "不输出测试详情日志",
+      },
+    },
   },
   MultiPromptSample: {
     show_lora_details: {
@@ -79,12 +89,24 @@ const TOGGLE_LABELS = {
         label_off: "隐藏 LoRA 名称和强度",
       },
     },
+    log_test_details: {
+      en: {
+        label_on: "log test details",
+        label_off: "hide test details from log",
+      },
+      zh: {
+        label_on: "输出测试详情日志",
+        label_off: "不输出测试详情日志",
+      },
+    },
   },
 };
 
 const INPUT_LABELS = {
   LoraTesterSampler: {
     lora_count: { en: "Test Item Count", zh: "测试项数量" },
+    independent_artist_tags: { en: "Independent Artist Tags", zh: "独立画师 Tag" },
+    log_test_details: { en: "Log Test Details", zh: "输出测试详情日志" },
     artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
     anima_mixer_config: { en: "Anima Mixer Configuration", zh: "Anima Mixer 配置" },
   },
@@ -112,6 +134,7 @@ const INPUT_LABELS = {
     denoise: { en: "Denoise", zh: "降噪强度" },
     color_mode: { en: "Color Mode", zh: "颜色模式" },
     show_lora_details: { en: "Show Original LoRAs", zh: "显示原始 LoRA 底栏" },
+    log_test_details: { en: "Log Test Details", zh: "输出测试详情日志" },
     control_gap: { en: "BASE Control Gap", zh: "BASE 对照列间距" },
     max_canvas_megapixels: { en: "Maximum Canvas (MP)", zh: "最大画布（百万像素）" },
     custom_style: { en: "Custom Style", zh: "自定义样式" },
@@ -297,10 +320,12 @@ function installNodeLabels(node, nodeName) {
     const label = localizedInputLabel(nodeName, String(widget.name ?? ""));
     if (!label) continue;
     widget.label = label;
-    if (
+    if ((
       nodeName === MULTI_PROMPT_NODE &&
       /^(?:prompt_prefix|negative_prompt|positive_prompt_\d+)$/.test(widget.name)
-    ) {
+    ) || (
+      nodeName === TARGET_NODE && widget.name === "independent_artist_tags"
+    )) {
       for (const options of widgetOptionTargets(widget)) options.placeholder = label;
       const renderedElements = [...widgetElements(widget)];
       for (const container of document.querySelectorAll("[node-id][node-type]")) {
@@ -667,12 +692,8 @@ function splitArtistTags(value) {
     .filter(Boolean);
 }
 
-function countPromptArtistTags(value) {
-  const number = "[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?";
-  const weighted = new RegExp(`^\\(\\s*@.+?\\s*:\\s*${number}\\s*\\)$`);
-  return splitArtistTags(value).filter(
-    (part) => /^@.+$/.test(part) || weighted.test(part),
-  ).length;
+function countIndependentArtistTags(value) {
+  return splitArtistTags(value).length;
 }
 
 function countStackNodeArtists(node) {
@@ -684,9 +705,9 @@ function countStackNodeArtists(node) {
   for (let index = 1; index <= count; index += 1) {
     const name = widgetValue(node, `lora_${index}_name`);
     const trigger = widgetValue(node, `lora_${index}_trigger`);
-    artists += String(name ?? "") === ARTIST_TAG_MODE
-      ? splitArtistTags(trigger).length
-      : countPromptArtistTags(trigger);
+    if (String(name ?? "") === ARTIST_TAG_MODE) {
+      artists += splitArtistTags(trigger).length;
+    }
   }
   return artists;
 }
@@ -744,34 +765,26 @@ function stackArtistCountsFromNode(node, visited = new Set()) {
 
 function directSamplerHasMultiArtistTest(node) {
   const count = Math.min(3, Math.max(1, Number.parseInt(widgetValue(node, "lora_count"), 10) || 1));
-  let artists = countPromptArtistTags(widgetValue(node, "positive_prompt"));
+  let artists = countIndependentArtistTags(
+    widgetValue(node, "independent_artist_tags"),
+  );
   for (const slot of ["a", "b", "c"].slice(0, count)) {
     const name = widgetValue(node, `lora_${slot}_name`);
     const trigger = widgetValue(node, `lora_${slot}_trigger`);
-    artists += String(name ?? "") === ARTIST_TAG_MODE
-      ? splitArtistTags(trigger).length
-      : countPromptArtistTags(trigger);
+    if (String(name ?? "") === ARTIST_TAG_MODE) {
+      artists += splitArtistTags(trigger).length;
+    }
   }
   return artists > 1;
 }
 
 function multiPromptHasMultiArtistTest(node) {
-  const promptCount = Math.min(
-    16,
-    Math.max(1, Number.parseInt(widgetValue(node, "prompt_count"), 10) || 1),
-  );
-  const prefixArtists = countPromptArtistTags(widgetValue(node, "prompt_prefix"));
-  const perPrompt = Array.from({ length: promptCount }, (_, index) => (
-    prefixArtists + countPromptArtistTags(widgetValue(node, `positive_prompt_${index + 1}`))
-  ));
   const input = node.inputs?.find((item) => item.name === "lorastacks");
-  const stackCounts = [0];
+  const stackCounts = [];
   for (const source of sourceNodesForInput(node, input)) {
     stackCounts.push(...stackArtistCountsFromNode(source));
   }
-  return perPrompt.some((promptArtists) => (
-    stackCounts.some((stackArtists) => promptArtists + stackArtists > 1)
-  ));
+  return stackCounts.some((stackArtists) => stackArtists > 1);
 }
 
 function registeredNodeAvailable(name) {
@@ -878,13 +891,13 @@ function updateMixerWarning(node, nodeName) {
 function installArtistObservers(node, nodeName) {
   const relevant = (name) => {
     if (nodeName === TARGET_NODE) {
-      return name === "positive_prompt" || name === "lora_count" || /^lora_[abc]_(?:name|trigger)$/.test(name);
+      return name === "independent_artist_tags" || name === "lora_count" || /^lora_[abc]_(?:name|trigger)$/.test(name);
     }
     if (nodeName === STACK_NODE) {
       return name === "lora_count" || /^lora_\d+_(?:name|trigger)$/.test(name);
     }
     if (nodeName === MULTI_PROMPT_NODE) {
-      return name === "prompt_count" || name === "prompt_prefix" || /^positive_prompt_\d+$/.test(name);
+      return false;
     }
     return false;
   };

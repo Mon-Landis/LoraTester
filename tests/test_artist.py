@@ -18,6 +18,7 @@ from lora_tester.artist import (
     AnimaArtistMixerConfig,
     detect_model_family,
     extract_anima_artist_tags,
+    parse_artist_tag_entries,
     route_artist_prompt,
     split_artist_tags,
 )
@@ -80,6 +81,10 @@ class ArtistTests(unittest.TestCase):
         self.assertEqual(
             split_artist_tags(" @first, second\n(@third:1.7) "),
             ("first", "second", "third"),
+        )
+        self.assertEqual(
+            parse_artist_tag_entries("fkey, @wlop\n(@second:0.4)"),
+            (("fkey", 1.0), ("wlop", 1.0), ("second", 0.4)),
         )
 
     def test_custom_template_supports_weight_formatting_and_rejects_bad_fields(self):
@@ -149,7 +154,7 @@ class ArtistTests(unittest.TestCase):
         self.assertEqual(route.mode, "native_prompt_missing_mixer")
         self.assertEqual(route.positive["text"], "@first, (@second:1.4), portrait")
 
-    def test_prompt_artist_combines_with_test_artist_for_mixer_threshold(self):
+    def test_prompt_artist_is_kept_in_base_prompt_and_not_extracted(self):
         with patch(
             "lora_tester.artist._resolve_anima_mixer_nodes",
             return_value=(_FakePack, _FakeMixer),
@@ -159,14 +164,16 @@ class ArtistTests(unittest.TestCase):
                 clip=_Clip(),
                 mixer_base_prompt="@prompt_artist, portrait",
                 fallback_prompt="@test_artist, @prompt_artist, portrait",
-                artist_entries=(("test_artist", 1.0),),
+                artist_entries=(("test_artist", 1.0), ("second", 1.0)),
             )
         self.assertTrue(route.used_external_mixer)
         self.assertEqual(
             _FakePack.calls[0]["artist_chain"],
-            "@test_artist\n@prompt_artist",
+            "@test_artist\n@second",
         )
-        self.assertEqual(_FakePack.calls[0]["base_prompt"], "portrait")
+        self.assertEqual(
+            _FakePack.calls[0]["base_prompt"], "@prompt_artist, portrait"
+        )
 
     def test_loaded_mixer_receives_pack_then_exact_adapter_parameters(self):
         model = _AnimaModel()
@@ -202,8 +209,8 @@ class ArtistTests(unittest.TestCase):
             [
                 {
                     "clip": clip,
-                    "artist_chain": "@first\n(@second:1.4)\n@prompt_artist",
-                    "base_prompt": "lora trigger, portrait",
+                    "artist_chain": "@first\n(@second:1.4)",
+                    "base_prompt": "lora trigger, @prompt_artist, portrait",
                 }
             ],
         )

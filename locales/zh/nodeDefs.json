@@ -21,7 +21,11 @@
       },
       "positive_prompt": {
         "name": "正面提示词",
-        "tooltip": "在节点内编码；当前生效的 LoRA 触发词会按 A、B、C 顺序添加到开头。"
+        "tooltip": "在节点内编码；当前生效的 LoRA 触发词会按 A、B、C 顺序添加到开头，画师 Tag 不会自动抽取。"
+      },
+      "independent_artist_tags": {
+        "name": "独立画师 Tag",
+        "tooltip": "仅解析此处的画师 Tag 并尝试用于 Anima 混合，支持逗号、换行和显式权重格式。"
       },
       "negative_prompt": {
         "name": "负面提示词",
@@ -115,6 +119,10 @@
       "show_lora_details": {
         "name": "显示 LoRA 详情底栏",
         "tooltip": "在对比图底部显示 A/B/C 的原始文件名与配置的最低、最高权重。"
+      },
+      "log_test_details": {
+        "name": "输出测试详情日志",
+        "tooltip": "高级设置：逐个测试格输出使用的 LoRA、画师 Tag、权重、路由和可观测的缓存状态。"
       },
       "max_canvas_megapixels": {
         "name": "最大画布（百万像素）",
@@ -468,6 +476,7 @@
       "denoise": { "name": "降噪强度", "tooltip": "所有对比格共同使用的降噪强度。" },
       "color_mode": { "name": "颜色模式", "tooltip": "选择最终 XY 对比图的配色。" },
       "show_lora_details": { "name": "显示原始 LoRA 底栏", "tooltip": "在底栏中分别列出每个不同的 LoRA 文件、触发词与强度配置。" },
+      "log_test_details": { "name": "输出测试详情日志", "tooltip": "高级设置：逐个测试格输出使用的 LoRA、画师 Tag、权重、路由和可观测的缓存状态。" },
       "control_gap": { "name": "BASE 对照列间距", "tooltip": "BASE 对照列与第一列 LoRA 测试结果之间的水平间距；0 会自动使用至少为图片宽度八分之一的间距。" },
       "max_canvas_megapixels": { "name": "最大画布（百万像素）", "tooltip": "最终 XY 对比图超过该像素数量时中止。" },
       "custom_style": { "name": "自定义样式", "tooltip": "颜色模式为自定义时使用的 LoRA 测试器样式。" },

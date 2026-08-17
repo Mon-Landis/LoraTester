@@ -49,6 +49,12 @@ class _Progress:
 
 
 class StackNodeTests(unittest.TestCase):
+    def test_multi_prompt_input_contract_contains_advanced_log_toggle(self):
+        inputs = MultiPromptSampleNode.INPUT_TYPES()
+        options = inputs["required"]["log_test_details"][1]
+        self.assertTrue(options["default"])
+        self.assertTrue(options["advanced"])
+
     def test_stack_node_builds_requested_entries_and_rejects_blank_active_file(self):
         node = LoraStackNode()
         values = {
@@ -294,8 +300,13 @@ class StackNodeTests(unittest.TestCase):
             ],
         )
 
-    def test_multi_prompt_anima_prompt_artist_joins_stack_artist_in_mixer(self):
-        stack = LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@test_artist", 0.5),))
+    def test_multi_prompt_anima_prompt_artist_stays_in_base_prompt(self):
+        stack = LoraStack(
+            (
+                LoraStackItem(ARTIST_TAG_MODE, "@test_artist", 0.5),
+                LoraStackItem(ARTIST_TAG_MODE, "@second", 1.0),
+            )
+        )
         pack_calls = []
         mixer_calls = []
         sample_calls = []
@@ -357,16 +368,81 @@ class StackNodeTests(unittest.TestCase):
         self.assertEqual(len(pack_calls), 1)
         self.assertEqual(
             pack_calls[0]["artist_chain"],
-            "(@test_artist:0.5)\n@prompt_artist",
+            "(@test_artist:0.5)\n@second",
         )
-        self.assertEqual(pack_calls[0]["base_prompt"], "masterpiece, portrait")
+        self.assertEqual(
+            pack_calls[0]["base_prompt"], "masterpiece, @prompt_artist, portrait"
+        )
         self.assertEqual(len(mixer_calls), 1)
         self.assertIs(sample_calls[0][0], model)
         self.assertEqual(sample_calls[0][1]["text"], "masterpiece, @prompt_artist, portrait")
         self.assertEqual(
             sample_calls[1][0],
-            ("mixed", "(@test_artist:0.5)\n@prompt_artist"),
+            ("mixed", "(@test_artist:0.5)\n@second"),
         )
+
+    def test_multi_prompt_at_lora_trigger_stays_outside_artist_chain(self):
+        stack = LoraStack(
+            (
+                LoraStackItem("A.safetensors", "@lora_trigger", 0.8),
+                LoraStackItem(ARTIST_TAG_MODE, "@artist_one", 1.0),
+                LoraStackItem(ARTIST_TAG_MODE, "@artist_two", 1.0),
+            )
+        )
+        pack_calls = []
+
+        class Pack:
+            def pack(self, **kwargs):
+                pack_calls.append(kwargs)
+                return ({"chain": kwargs["artist_chain"]},)
+
+        class Mixer:
+            def patch(self, **kwargs):
+                return (
+                    kwargs["model"],
+                    {"text": kwargs["artist_pack"]["chain"], "stack": ()},
+                )
+
+        model = SimpleNamespace(
+            model=SimpleNamespace(
+                model_config=SimpleNamespace(unet_config={"image_model": "anima"})
+            )
+        )
+
+        with (
+            patch("lora_tester.artist._resolve_anima_mixer_nodes", return_value=(Pack, Mixer)),
+            patch("lora_tester.nodes._resolve_lora_path", return_value=str(ROOT / "A.safetensors")),
+            patch("lora_tester.nodes._load_lora_file", return_value=("state:A", None)),
+            patch("lora_tester.nodes._apply_lora_to_models", side_effect=lambda model, clip, state, weight, metadata: (model, clip)),
+            patch("lora_tester.nodes._common_ksampler", side_effect=lambda *args, **kwargs: args[8]),
+            patch("lora_tester.nodes._decode_vae", return_value=torch.zeros((1, 8, 10, 3))),
+            patch("lora_tester.nodes._make_progress_bar", return_value=_Progress()),
+            patch("lora_tester.nodes._throw_if_interrupted"),
+        ):
+            MultiPromptSampleNode().sample(
+                model=model,
+                clip=_Clip(),
+                vae=_Vae(),
+                latent_image={"samples": torch.zeros((1, 4, 2, 2))},
+                lorastacks=LoraStackList((stack,)),
+                prompt_count=1,
+                prompt_prefix="",
+                negative_prompt="",
+                seed=1,
+                steps=1,
+                cfg=1.0,
+                sampler_name="sampler",
+                scheduler="scheduler",
+                denoise=1.0,
+                color_mode="black",
+                show_lora_details=False,
+                log_test_details=False,
+                max_canvas_megapixels=10.0,
+                positive_prompt_1="portrait",
+            )
+
+        self.assertEqual(pack_calls[0]["artist_chain"], "@artist_one\n@artist_two")
+        self.assertEqual(pack_calls[0]["base_prompt"], "@lora_trigger, portrait")
 
     def test_multi_prompt_interrupt_clears_run_local_lora_cache(self):
         stack = LoraStack((LoraStackItem("A.safetensors", "alpha", 0.8),))
@@ -411,6 +487,51 @@ class StackNodeTests(unittest.TestCase):
 
         load.assert_called_once()
         self.assertEqual(len(node._lora_cache), 0)
+
+    def test_multi_prompt_log_lists_preflight_weights_and_column_reuse(self):
+        stack = LoraStack((LoraStackItem("A.safetensors", "alpha", 0.8),))
+
+        with (
+            patch("lora_tester.nodes._resolve_lora_path", return_value=str(ROOT / "A.safetensors")),
+            patch("lora_tester.nodes._load_lora_file", return_value=("state:A", None)),
+            patch("lora_tester.nodes._apply_lora_to_models", side_effect=lambda model, clip, state, weight, metadata: (model, clip)),
+            patch("lora_tester.nodes._common_ksampler", side_effect=lambda *args, **kwargs: args[8]),
+            patch("lora_tester.nodes._decode_vae", return_value=torch.zeros((1, 8, 10, 3))),
+            patch("lora_tester.nodes._make_progress_bar", return_value=_Progress()),
+            patch("lora_tester.nodes._throw_if_interrupted"),
+        ):
+            with self.assertLogs("lora_tester.nodes", level="INFO") as captured:
+                MultiPromptSampleNode().sample(
+                    model=(),
+                    clip=_Clip(),
+                    vae=_Vae(),
+                    latent_image={"samples": torch.zeros((1, 4, 2, 2))},
+                    lorastacks=LoraStackList((stack,)),
+                    prompt_count=2,
+                    prompt_prefix="shared",
+                    negative_prompt="",
+                    seed=1,
+                    steps=1,
+                    cfg=1.0,
+                    sampler_name="sampler",
+                    scheduler="scheduler",
+                    denoise=1.0,
+                    color_mode="black",
+                    show_lora_details=False,
+                    log_test_details=True,
+                    max_canvas_megapixels=10.0,
+                    positive_prompt_1="portrait",
+                    positive_prompt_2="landscape",
+                )
+
+        output = "\n".join(captured.output)
+        self.assertIn("Combination test preflight", output)
+        self.assertIn("Model family: danbooru", output)
+        self.assertIn('"A.safetensors" | weight=0.8', output)
+        self.assertIn("cache=run-local:miss", output)
+        self.assertIn("cache=run-local:hit", output)
+        self.assertIn("Patched model: column reuse", output)
+        self.assertIn("Combination image", output)
 
 
 if __name__ == "__main__":

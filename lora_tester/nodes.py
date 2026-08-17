@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import os
 from collections import OrderedDict
@@ -14,16 +15,21 @@ from .artist import (
     ArtistTagTemplate,
     AnimaArtistMixerConfig,
     MODEL_FAMILY_ANIMA,
+    anima_artist_mixer_available,
     artist_template_for_model,
     detect_model_family,
-    extract_anima_artist_tags,
+    parse_artist_tag_entries,
     route_artist_prompt,
     split_artist_tags,
 )
 from .comfy_adapter import pil_to_comfy_image
 from .compositor import LoraComparisonCompositor, image_to_pil
 from .layout import LoraSpec, RenderTask, build_layout
-from .node_contract import COLOR_MODE_INPUT, SHOW_LORA_DETAILS_INPUT
+from .node_contract import (
+    COLOR_MODE_INPUT,
+    LOG_TEST_DETAILS_INPUT,
+    SHOW_LORA_DETAILS_INPUT,
+)
 from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
 from .stack_compositor import LoraStackMatrixCompositor
 from .styles import StyleConfig, available_style_decorators
@@ -33,6 +39,8 @@ MAX_CACHED_LORAS = 3
 MAX_STACK_ITEMS = 16
 MAX_STACK_INPUTS = 16
 DEFAULT_MAX_CANVAS_MEGAPIXELS = 150.0
+
+logger = logging.getLogger(__name__)
 
 
 def _get_lora_names() -> list[str]:
@@ -256,22 +264,14 @@ def _route_prompt_entries(
     suffix_parts: Sequence[str],
     artist_template: ArtistTagTemplate | None,
     mixer_config: AnimaArtistMixerConfig | None,
+    independent_artist_tags: str = "",
 ) -> ArtistPromptRoute:
     if artist_template is not None and not isinstance(artist_template, ArtistTagTemplate):
         raise TypeError("artist_tag_template must come from an Artist Tag Template node")
     template = artist_template or artist_template_for_model(model)
-    is_anima = detect_model_family(model) == MODEL_FAMILY_ANIMA
     fallback_additions: list[str] = []
     lora_additions: list[str] = []
     artist_entries: list[tuple[str, float]] = []
-    mixer_prefix_parts: list[str] = []
-    mixer_suffix_parts: list[str] = []
-    for part in prefix_parts:
-        cleaned, extracted = (
-            extract_anima_artist_tags(part) if is_anima else (str(part), ())
-        )
-        mixer_prefix_parts.append(cleaned)
-        artist_entries.extend(extracted)
     for is_artist, value, weight in entries:
         if math.isclose(float(weight), 0.0, abs_tol=1e-12):
             continue
@@ -283,18 +283,13 @@ def _route_prompt_entries(
         trigger = str(value).strip()
         if trigger:
             fallback_additions.append(trigger)
-            cleaned, extracted = (
-                extract_anima_artist_tags(trigger) if is_anima else (trigger, ())
-            )
-            lora_additions.append(cleaned)
-            artist_entries.extend(extracted)
+            lora_additions.append(trigger)
 
-    for part in suffix_parts:
-        cleaned, extracted = (
-            extract_anima_artist_tags(part) if is_anima else (str(part), ())
-        )
-        mixer_suffix_parts.append(cleaned)
-        artist_entries.extend(extracted)
+    independent_entries = parse_artist_tag_entries(independent_artist_tags)
+    artist_entries.extend(independent_entries)
+    fallback_additions.extend(
+        template.format(tag, weight) for tag, weight in independent_entries
+    )
 
     fallback_prompt = _join_prompt_parts(
         *prefix_parts,
@@ -302,9 +297,9 @@ def _route_prompt_entries(
         *suffix_parts,
     )
     mixer_base_prompt = _join_prompt_parts(
-        *mixer_prefix_parts,
+        *prefix_parts,
         *lora_additions,
-        *mixer_suffix_parts,
+        *suffix_parts,
     )
     return route_artist_prompt(
         model=model,
@@ -315,6 +310,129 @@ def _route_prompt_entries(
         artist_template=template,
         mixer_config=mixer_config,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _CombinationPreflight:
+    model_family: str
+    has_artist_tags: bool
+    has_multi_artist_tests: bool
+    mixer_available: bool
+    mixer_enabled: bool
+    mixer_active: bool
+    mixer_combinations: tuple[str, ...]
+
+
+def _combination_preflight(
+    model: Any,
+    stacks: Sequence[LoraStack],
+    artist_template: ArtistTagTemplate | None,
+    mixer_config: AnimaArtistMixerConfig | None,
+) -> _CombinationPreflight:
+    family = detect_model_family(model)
+    config = mixer_config or AnimaArtistMixerConfig()
+    if not isinstance(config, AnimaArtistMixerConfig):
+        raise TypeError(
+            "anima_mixer_config must come from an Anima Artist Mixer Configuration node"
+        )
+    combinations: list[str] = []
+    has_artist_tags = False
+    for stack in stacks:
+        entries = stack.artist_entries
+        has_artist_tags = has_artist_tags or bool(entries)
+        if len(entries) <= 1:
+            continue
+        template = artist_template or stack.artist_template or artist_template_for_model(model)
+        rendered = " + ".join(template.format(tag, weight) for tag, weight in entries)
+        if rendered not in combinations:
+            combinations.append(rendered)
+    available = anima_artist_mixer_available()
+    enabled = bool(config.enabled and config.strength > 0.0)
+    multi_artist = bool(combinations)
+    return _CombinationPreflight(
+        model_family=family,
+        has_artist_tags=has_artist_tags,
+        has_multi_artist_tests=multi_artist,
+        mixer_available=available,
+        mixer_enabled=enabled,
+        mixer_active=bool(
+            family == MODEL_FAMILY_ANIMA and multi_artist and available and enabled
+        ),
+        mixer_combinations=tuple(combinations if family == MODEL_FAMILY_ANIMA else ()),
+    )
+
+
+def _stack_log_details(stack: LoraStack | None) -> tuple[str, str, str]:
+    if stack is None:
+        return "BASE", "[]", "[]"
+    loras = [
+        f"{item.display_name}@{float(item.strength):g}"
+        for item in stack.items
+        if not item.is_artist_tag
+    ]
+    artists = [
+        f"{tag}@{float(weight):g}" for tag, weight in stack.artist_entries
+    ]
+    return stack.label, f"[{', '.join(loras)}]", f"[{', '.join(artists)}]"
+
+
+def _format_log_weight(value: float) -> str:
+    return f"{float(value):g}"
+
+
+def _log_test_usage(
+    *,
+    label: str,
+    loras: Sequence[tuple[str, float, str, str]],
+    artists: Sequence[tuple[str, float, str]],
+    rendered_tags: Sequence[str],
+    route: ArtistPromptRoute,
+    model_cache: str | None = None,
+) -> None:
+    """Emit one readable, opt-in-by-caller audit record for a comparison cell."""
+    lines = [f"[LoraTester] {label}", f"  Route: {route.mode}"]
+    if model_cache:
+        lines.append(f"  Patched model: {model_cache}")
+    lines.append("  LoRA files:")
+    if loras:
+        for name, weight, cache_status, trigger in loras:
+            trigger_suffix = f' | trigger="{trigger}"' if trigger else ""
+            lines.append(
+                f'    - "{name}" | weight={_format_log_weight(weight)} | '
+                f"cache={cache_status}{trigger_suffix}"
+            )
+    else:
+        lines.append("    - none")
+    lines.append("  Artist tags:")
+    if artists:
+        for index, (tag, weight, cache_status) in enumerate(artists):
+            rendered = rendered_tags[index] if index < len(rendered_tags) else ""
+            rendered_suffix = f' | rendered="{rendered}"' if rendered else ""
+            lines.append(
+                f'    - "{tag}" | weight={_format_log_weight(weight)} | '
+                f"cache={cache_status}{rendered_suffix}"
+            )
+    else:
+        lines.append("    - none")
+    logger.info("%s", "\n".join(lines))
+
+
+def _log_combination_preflight(preflight: _CombinationPreflight) -> None:
+    lines = [
+        "[LoraTester] Combination test preflight",
+        f"  Model family: {preflight.model_family}",
+        f"  Artist tags present: {'yes' if preflight.has_artist_tags else 'no'}",
+        f"  Multi-artist tests: {'yes' if preflight.has_multi_artist_tests else 'no'}",
+        f"  Anima Artist Mixer available: {'yes' if preflight.mixer_available else 'no'}",
+        f"  Anima Artist Mixer enabled: {'yes' if preflight.mixer_enabled else 'no'}",
+        f"  Anima Artist Mixer active: {'yes' if preflight.mixer_active else 'no'}",
+        "  Mixer combinations:",
+    ]
+    if preflight.mixer_combinations:
+        lines.extend(f"    - {combination}" for combination in preflight.mixer_combinations)
+    else:
+        lines.append("    - none")
+    logger.info("%s", "\n".join(lines))
 
 
 def _validate_single_latent(latent_image: dict[str, Any]) -> None:
@@ -459,6 +577,18 @@ class LoraTesterSampler:
                     "STRING",
                     {"default": "", "multiline": True, "dynamicPrompts": True},
                 ),
+                "independent_artist_tags": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": True,
+                        "tooltip": (
+                            "Artist-only tags parsed separately for optional Anima mixing. "
+                            "Normal positive prompts and LoRA triggers are never extracted."
+                        ),
+                    },
+                ),
                 "negative_prompt": (
                     "STRING",
                     {"default": "", "multiline": True, "dynamicPrompts": True},
@@ -507,6 +637,7 @@ class LoraTesterSampler:
                 "lora_c_max_strength": strength_input,
                 "color_mode": COLOR_MODE_INPUT,
                 "show_lora_details": SHOW_LORA_DETAILS_INPUT,
+                "log_test_details": LOG_TEST_DETAILS_INPUT,
                 "max_canvas_megapixels": (
                     "FLOAT",
                     {
@@ -567,6 +698,7 @@ class LoraTesterSampler:
         vae: Any,
         latent_image: dict[str, Any],
         positive_prompt: str,
+        independent_artist_tags: str,
         negative_prompt: str,
         seed: int,
         steps: int,
@@ -589,6 +721,7 @@ class LoraTesterSampler:
         lora_c_max_strength: float,
         color_mode: str,
         show_lora_details: bool,
+        log_test_details: bool = True,
         max_canvas_megapixels: float = DEFAULT_MAX_CANVAS_MEGAPIXELS,
         custom_style: StyleConfig | None = None,
         artist_tag_template: ArtistTagTemplate | None = None,
@@ -606,12 +739,28 @@ class LoraTesterSampler:
         )
         plan = build_layout(specs)
         style = _style_for_mode(color_mode, custom_style)
-        loaded_loras = tuple(
-            None if spec.is_artist_tag else self._load_lora(spec.name) for spec in specs
+        load_results = tuple(
+            (None, False) if spec.is_artist_tag else self._load_lora_with_status(spec.name)
+            for spec in specs
+        )
+        loaded_loras = tuple(result[0] for result in load_results)
+        lora_cache_status = tuple(
+            "run-local:miss" if result[1] is False else "run-local:hit"
+            for result in load_results
         )
         progress = _make_progress_bar(plan.unique_task_count, node_id=unique_id)
 
+        if bool(log_test_details):
+            logger.info(
+                "[LoraTester] Direct test run | model_family=%s | cells=%d | "
+                "artist_mixer_available=%s",
+                detect_model_family(model),
+                plan.unique_task_count,
+                anima_artist_mixer_available(),
+            )
+
         session = None
+        used_lora_names: set[str] = set()
         for index, task in enumerate(plan.tasks, start=1):
             _throw_if_interrupted()
             task_model, task_clip = self._apply_task_loras(
@@ -631,9 +780,46 @@ class LoraTesterSampler:
                 suffix_parts=(positive_prompt,),
                 artist_template=artist_tag_template,
                 mixer_config=anima_mixer_config,
+                independent_artist_tags=independent_artist_tags,
             )
             task_model = route.model
             positive = route.positive
+            active_lora_values: list[tuple[str, float, str, str]] = []
+            for slot_index, (spec, weight) in enumerate(zip(specs, task.weights)):
+                if spec.is_artist_tag or math.isclose(float(weight), 0.0, abs_tol=1e-12):
+                    continue
+                cache_status = lora_cache_status[slot_index]
+                if spec.name in used_lora_names:
+                    cache_status = "run-local:hit"
+                active_lora_values.append(
+                    (spec.name, float(weight), cache_status, spec.trigger_word)
+                )
+                used_lora_names.add(spec.name)
+            active_loras = tuple(active_lora_values)
+            active_artists: list[tuple[str, float, str]] = []
+            for spec, weight in zip(specs, task.weights):
+                if not spec.is_artist_tag or math.isclose(float(weight), 0.0, abs_tol=1e-12):
+                    continue
+                active_artists.extend(
+                    (tag, float(weight), "external:lazy-per-sample" if route.used_external_mixer else "none")
+                    for tag in split_artist_tags(spec.trigger_word)
+                )
+            active_artists.extend(
+                (tag, float(weight), "external:lazy-per-sample" if route.used_external_mixer else "none")
+                for tag, weight in parse_artist_tag_entries(independent_artist_tags)
+            )
+            if bool(log_test_details):
+                _log_test_usage(
+                    label=(
+                        f"Direct test image {index}/{plan.unique_task_count} "
+                        f"| task={task.task_id}"
+                    ),
+                    loras=active_loras,
+                    artists=tuple(active_artists),
+                    rendered_tags=route.rendered_tags,
+                    route=route,
+                    model_cache="recomputed from base model",
+                )
             negative = _encode_prompt(task_clip, negative_prompt)
             sampled = _common_ksampler(
                 task_model,
@@ -692,6 +878,9 @@ class LoraTesterSampler:
         )
 
     def _load_lora(self, name: str) -> _CachedLora:
+        return self._load_lora_with_status(name)[0]
+
+    def _load_lora_with_status(self, name: str) -> tuple[_CachedLora, bool]:
         if not str(name).strip():
             raise ValueError(
                 "No LoRA file is selected. Add a LoRA to ComfyUI's models/loras directory "
@@ -703,7 +892,7 @@ class LoraTesterSampler:
         cached = self._lora_cache.pop(cache_key, None)
         if cached is not None and cached.file_signature == file_signature:
             self._lora_cache[cache_key] = cached
-            return cached
+            return cached, True
 
         state_dict, metadata = _load_lora_file(path)
         cached = _CachedLora(
@@ -715,7 +904,7 @@ class LoraTesterSampler:
         self._lora_cache[cache_key] = cached
         while len(self._lora_cache) > int(getattr(self, "LORA_CACHE_LIMIT", MAX_CACHED_LORAS)):
             self._lora_cache.popitem(last=False)
-        return cached
+        return cached, False
 
     @staticmethod
     def _apply_task_loras(
@@ -1210,6 +1399,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
                 "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "color_mode": COLOR_MODE_INPUT,
                 "show_lora_details": STACK_SHOW_LORA_DETAILS_INPUT,
+                "log_test_details": LOG_TEST_DETAILS_INPUT,
                 "control_gap": (
                     "INT",
                     {
@@ -1279,6 +1469,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
         denoise: float,
         color_mode: str,
         show_lora_details: bool,
+        log_test_details: bool = True,
         control_gap: int = 0,
         max_canvas_megapixels: float = DEFAULT_MAX_CANVAS_MEGAPIXELS,
         custom_style: StyleConfig | None = None,
@@ -1301,6 +1492,14 @@ class MultiPromptSampleNode(LoraTesterSampler):
             prompts.append(prompt)
         style = _style_for_mode(color_mode, custom_style)
         stacks = tuple(lorastacks.stacks)
+        preflight = _combination_preflight(
+            model,
+            stacks,
+            artist_tag_template,
+            anima_mixer_config,
+        )
+        if bool(log_test_details):
+            _log_combination_preflight(preflight)
         total_tasks = len(prompts) * (len(stacks) + 1)
         progress = _make_progress_bar(total_tasks, node_id=unique_id)
         compositor: LoraStackMatrixCompositor | None = None
@@ -1315,6 +1514,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
                 column_clip = clip
                 prompt_entries: tuple[tuple[bool, str, float], ...] = ()
                 stack_template = artist_tag_template
+                column_lora_usage: list[tuple[str, float, str, str]] = []
                 if stack is not None:
                     stack_template = artist_tag_template or stack.artist_template
                     prompt_entries = tuple(
@@ -1324,7 +1524,15 @@ class MultiPromptSampleNode(LoraTesterSampler):
                     for item in stack.items:
                         if item.is_artist_tag:
                             continue
-                        loaded = self._load_lora(item.name)
+                        loaded, cache_hit = self._load_lora_with_status(item.name)
+                        column_lora_usage.append(
+                            (
+                                item.name,
+                                float(item.strength),
+                                "run-local:hit" if cache_hit else "run-local:miss",
+                                item.trigger_word,
+                            )
+                        )
                         column_model, column_clip = _apply_lora_to_models(
                             column_model,
                             column_clip,
@@ -1346,6 +1554,40 @@ class MultiPromptSampleNode(LoraTesterSampler):
                     )
                     task_model = route.model
                     positive = route.positive
+                    stack_label, _, _ = _stack_log_details(stack)
+                    if bool(log_test_details):
+                        artist_cache_status = (
+                            "external:lazy-per-sample"
+                            if route.used_external_mixer
+                            else "none"
+                        )
+                        artist_usage = tuple(
+                            (tag, float(weight), artist_cache_status)
+                            for tag, weight in (stack.artist_entries if stack is not None else ())
+                        )
+                        _log_test_usage(
+                            label=(
+                                f"Combination image {task_index + 1}/{total_tasks} "
+                                f"| prompt_row={row + 1}/{len(prompts)} "
+                                f"| column={column + 1}/{len(stacks) + 1} "
+                                f"| stack={stack_label!r}"
+                            ),
+                            loras=tuple(
+                                (
+                                    name,
+                                    weight,
+                                    "run-local:hit" if row > 0 else cache_status,
+                                    trigger,
+                                )
+                                for name, weight, cache_status, trigger in column_lora_usage
+                            ),
+                            artists=artist_usage,
+                            rendered_tags=route.rendered_tags,
+                            route=route,
+                            model_cache=(
+                                "column build" if row == 0 else "column reuse"
+                            ),
+                        )
                     sampled = _common_ksampler(
                         task_model,
                         int(seed),

@@ -93,20 +93,26 @@ actual = min_strength + (max_strength - min_strength) * multiplier
 | 非 Anima | 使用内置/手动模板原生拼入提示词；即使连接 Mixer 配置也忽略。 |
 | Anima，合计 0 或 1 个画师 | 原生提示词编码，不查询也不调用外部 Mixer。 |
 | Anima，合计至少 2 个画师，外部项目未加载 | 保留原提示词并原生编码；节点界面显示兼容性警告。 |
-| Anima，合计至少 2 个画师，外部项目已加载 | 从基础提示词提取完整的 `@artist` / `(@artist:weight)` 项，与当前测试项画师合并为 `artist_chain`；剩余内容作为 `base_prompt`。先调用 `AnimaArtistPack.pack()`，再把返回值及配置传给 `AnimaArtistAdapterMixer.patch()`，采样使用它返回的 MODEL 与正向 CONDITIONING。 |
+| Anima，合计至少 2 个画师，外部项目已加载 | 仅将画师模式项和直接采样器的“独立画师 Tag”字段加入 `artist_chain`；正向提示词、通用前缀和 LoRA 触发词中的 `@tag` 原样保留在 `base_prompt`。先调用 `AnimaArtistPack.pack()`，再把返回值及配置传给 `AnimaArtistAdapterMixer.patch()`，采样使用它返回的 MODEL 与正向 CONDITIONING。 |
 
-“合计画师数”同时包含：当前测试组合的画师模式项、LoRA 触发词中的完整 Anima 画师项，以及采样器正向提示词中的完整画师项。`Multi Prompt Sample` 还会同时检查通用前缀和当前提示词行。例如测试项 `@test_artist`（权重 `0.25`）加正向提示词 `@prompt_artist, portrait` 时，外部输入为：
+“合计画师数”包含当前测试组合的显式画师模式项，以及直接采样器独立字段中的画师项。普通提示词中的 `@tag` 不再参与计数或自动抽取。例如直接采样器的测试项 `@test_artist`（权重 `0.25`）加独立字段 `@independent_artist` 和正向提示词 `@prompt_artist, portrait` 时，外部输入为：
 
 ```text
 artist_chain:
 (@test_artist:0.25)
-@prompt_artist
+@independent_artist
 
 base_prompt:
-portrait
+@prompt_artist, portrait
 ```
 
-外部项目缺失时不会删除原提示词中的画师项，因此回退不会吞掉用户内容。外部项目存在但模型不是 Anima 时也不会调用。配置节点没有接入外部项目的 `advanced_options`，因此不会开启 Anchor-Q 或跨运行 warm-cache。
+外部项目缺失时不会删除原提示词中的画师项，因此回退不会吞掉用户内容。外部项目存在但模型不是 Anima 时也不会调用。配置节点没有接入外部项目的 `advanced_options`，因此不会开启 Anchor-Q 或跨运行 warm-cache。组合测试器会在开始前输出模型族、画师混合状态、Mixer 可用/启用/生效状态和需要 Mixer 的组合，并在每张图采样前输出当前 Stack、LoRA、画师项和路由模式。
+
+### 测试详情日志
+
+两个采样节点的高级设置中都有 `Log Test Details`（默认开启）。开启后，每个测试格会分行输出：LoRA 文件名与实际权重、画师 Tag 与权重、最终渲染 Tag、原生/Mixer 路由，以及缓存状态。`cache=run-local:miss` 表示本次执行首次从文件加载，`cache=run-local:hit` 表示命中本次执行的 CPU state-dict LRU；`Patched model: column reuse` 表示组合测试器在同一 Stack 列复用了已经应用 LoRA 的 MODEL/CLIP。画师项的 `cache=external:lazy-per-sample` 表示外部 Mixer 会在当前采样步首次需要时建立并复用 embedding，`cache=none` 表示原生提示词编码，不代表跨测试格缓存。关闭开关后不会输出本项目的逐格详情和组合预检日志，但外部节点自身的日志仍由外部项目控制。
+
+直接采样器的独立字段支持逗号、中文逗号或换行分隔，也支持 `fkey`、`@fkey`、`(@fkey:0.5)` 等形式。字段为空时保持旧工作流的原生提示词行为。
 
 ## 缓存与执行顺序
 
@@ -115,6 +121,11 @@ portrait
 - `Multi Prompt Sample` 使用运行内最多 3 项的 CPU LRU，并按 Stack 列执行：同一组合只应用一次 LoRA MODEL/CLIP patch、只编码一次负面提示词，再依次采样该列的所有提示词行。正常结束、异常和用户中断都会清空该 LRU。
 - 外部 Mixer 的 GPU 侧画师 embedding、混合 context 与 Anchor 状态由其 ModelPatcher cleanup/中断路径清理。本项目不复制或延长这些缓存的生命周期。
 - ComfyUI 自身仍可缓存整个未变化节点的输出；直接采样器与 `LoRA Stack` 的 `IS_CHANGED` 还会把当前有效 LoRA 文件 stat 指纹加入输出缓存签名，因此原路径文件被覆盖也会重新执行。本项目不额外缓存最终大图、latent、VAE 解码图、正向 conditioning 或 patched MODEL，避免 CPU/显存泄漏和陈旧内容复用。
+- 单画师 post-Adapter 效果的“单位向量差分乘权重”验证记录在 [`audit/anima_artist_linearity.md`](audit/anima_artist_linearity.md)。该等式对现有 `(@artist:weight)` 语义不成立，因此本版本不实现跨测试格的画师效果缓存。
+
+## 可读审计报告
+
+运行 `python scripts/generate_artist_audit.py` 会使用生产路由函数生成 [`audit/artist_routing_report.md`](audit/artist_routing_report.md) 和对应的 JSON 原始数据。报告覆盖独立字段解析、Anima/Danbooru 模板、Mixer 存在/缺失、普通提示词和 LoRA 触发词不抽取、组合测试预检等分支；它不伪造图片结果，适合审核节点实际会送入的 `artist_chain`、`base_prompt` 和最终路由。
 
 ## 安装、更新与重启
 
