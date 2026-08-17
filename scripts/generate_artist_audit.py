@@ -70,6 +70,7 @@ def _route_case(
     mixer_available: bool,
     template: ArtistTagTemplate | None = None,
     config: AnimaArtistMixerConfig | None = None,
+    use_anima_artist_mixer: bool = True,
 ) -> dict[str, object]:
     _FakePack.calls.clear()
     _FakeMixer.calls.clear()
@@ -86,6 +87,7 @@ def _route_case(
             artist_template=template,
             mixer_config=config,
             independent_artist_tags=independent,
+            use_anima_artist_mixer=use_anima_artist_mixer,
         )
     pack = _FakePack.calls[0] if _FakePack.calls else None
     return {
@@ -95,6 +97,7 @@ def _route_case(
         "test_entries": [list(item) for item in entries],
         "independent_artist_tags": independent,
         "mixer_available": mixer_available,
+        "mixer_switch_enabled": use_anima_artist_mixer,
         "route": route.mode,
         "rendered_tags": list(route.rendered_tags),
         "artist_chain": pack["artist_chain"] if pack else None,
@@ -178,6 +181,14 @@ def build_audit() -> dict[str, object]:
             mixer_available=True,
         ),
         _route_case(
+            "anima_multi_artist_switch_disabled",
+            model=anima,
+            positive="portrait",
+            entries=((True, "first", 1.0), (True, "second", 1.0)),
+            mixer_available=True,
+            use_anima_artist_mixer=False,
+        ),
+        _route_case(
             "danbooru_uses_native_tag_template",
             model=object(),
             positive="@prompt_artist, portrait",
@@ -197,15 +208,16 @@ def build_audit() -> dict[str, object]:
         (LoraStackItem("__lora_tester_artist_tag__", "@first", 1.0),)
     )
     preflight_cases = []
-    for name, model, stacks, available in (
-        ("anima_mixer_present", anima, (two_artists,), True),
-        ("anima_mixer_missing", anima, (two_artists,), False),
-        ("anima_single_artist", anima, (one_artist,), True),
-        ("danbooru_multi_artist", object(), (two_artists,), True),
+    for name, model, stacks, available, use_mixer in (
+        ("anima_mixer_present", anima, (two_artists,), True, True),
+        ("anima_mixer_missing", anima, (two_artists,), False, True),
+        ("anima_switch_disabled", anima, (two_artists,), True, False),
+        ("anima_single_artist", anima, (one_artist,), True, True),
+        ("danbooru_multi_artist", object(), (two_artists,), True, True),
     ):
         with patch("lora_tester.nodes.anima_artist_mixer_available", return_value=available):
             result = _combination_preflight(
-                model, stacks, None, AnimaArtistMixerConfig()
+                model, stacks, None, AnimaArtistMixerConfig(), use_mixer
             )
         preflight_cases.append(
             {
@@ -214,6 +226,7 @@ def build_audit() -> dict[str, object]:
                 "has_artist_tags": result.has_artist_tags,
                 "has_multi_artist_tests": result.has_multi_artist_tests,
                 "mixer_available": result.mixer_available,
+                "mixer_switch_enabled": result.mixer_switch_enabled,
                 "mixer_enabled": result.mixer_enabled,
                 "mixer_active": result.mixer_active,
                 "mixer_combinations": list(result.mixer_combinations),
@@ -259,15 +272,16 @@ def render_markdown(audit: dict[str, object]) -> str:
         "",
         "## Routing Cases",
         "",
-        "| Case | Family | Mixer | Route | Artist chain | Mixer base prompt | Encoded/native result |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| Case | Family | Mixer | Switch | Route | Artist chain | Mixer base prompt | Encoded/native result |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ])
     for case in audit["routing_cases"]:
         lines.append(
             "| " + " | ".join(
                 _cell(case[key])
                 for key in (
-                    "case", "model_family", "mixer_available", "route",
+                    "case", "model_family", "mixer_available",
+                    "mixer_switch_enabled", "route",
                     "artist_chain", "mixer_base_prompt", "encoded_positive",
                 )
             ) + " |"
@@ -276,8 +290,8 @@ def render_markdown(audit: dict[str, object]) -> str:
         "",
         "## Combination Preflight",
         "",
-        "| Case | Family | Artist tags | Multi-artist tests | Available | Enabled | Active | Mixer combinations |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Case | Family | Artist tags | Multi-artist tests | Available | Switch | Enabled | Active | Mixer combinations |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ])
     for case in audit["preflight_cases"]:
         lines.append(
@@ -285,8 +299,9 @@ def render_markdown(audit: dict[str, object]) -> str:
                 _cell(case[key])
                 for key in (
                     "case", "model_family", "has_artist_tags",
-                    "has_multi_artist_tests", "mixer_available", "mixer_enabled",
-                    "mixer_active", "mixer_combinations",
+                    "has_multi_artist_tests", "mixer_available",
+                    "mixer_switch_enabled", "mixer_enabled", "mixer_active",
+                    "mixer_combinations",
                 )
             ) + " |"
         )
@@ -297,6 +312,7 @@ def render_markdown(audit: dict[str, object]) -> str:
         "- `@tag` in a normal positive prompt or LoRA trigger remains ordinary base prompt text.",
         "- Only explicit artist-mode entries and the direct sampler's independent artist field become artist entries.",
         "- Anima uses the optional external Mixer only for a multi-artist test when it is available and enabled.",
+        "- Disabling the sampler's advanced Mixer switch forces native prompt encoding before external-node lookup.",
         "- Non-Anima models use their native artist-tag template and never activate the Anima Mixer.",
     ])
     return "\n".join(lines) + "\n"

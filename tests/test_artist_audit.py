@@ -36,6 +36,13 @@ class ArtistAuditTests(unittest.TestCase):
             "@prompt_artist, portrait",
         )
         self.assertIn("@trigger_artist", cases["anima_lora_trigger_is_not_extracted"]["mixer_base_prompt"])
+        self.assertEqual(
+            cases["anima_multi_artist_switch_disabled"]["route"],
+            "native_prompt_mixer_disabled",
+        )
+        self.assertIsNone(
+            cases["anima_multi_artist_switch_disabled"]["artist_chain"]
+        )
 
     def test_checked_in_audit_is_deterministic(self) -> None:
         audit = build_audit()

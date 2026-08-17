@@ -77,6 +77,16 @@ const TOGGLE_LABELS = {
         label_off: "不输出测试详情日志",
       },
     },
+    use_anima_artist_mixer: {
+      en: {
+        label_on: "use Anima Artist Mixer",
+        label_off: "use native artist tags",
+      },
+      zh: {
+        label_on: "使用 Anima Artist Mixer",
+        label_off: "使用原生画师 Tag",
+      },
+    },
   },
   MultiPromptSample: {
     show_lora_details: {
@@ -99,6 +109,16 @@ const TOGGLE_LABELS = {
         label_off: "不输出测试详情日志",
       },
     },
+    use_anima_artist_mixer: {
+      en: {
+        label_on: "use Anima Artist Mixer",
+        label_off: "use native artist tags",
+      },
+      zh: {
+        label_on: "使用 Anima Artist Mixer",
+        label_off: "使用原生画师 Tag",
+      },
+    },
   },
 };
 
@@ -107,6 +127,7 @@ const INPUT_LABELS = {
     lora_count: { en: "Test Item Count", zh: "测试项数量" },
     independent_artist_tags: { en: "Independent Artist Tags", zh: "独立画师 Tag" },
     log_test_details: { en: "Log Test Details", zh: "输出测试详情日志" },
+    use_anima_artist_mixer: { en: "Use Anima Artist Mixer", zh: "使用 Anima Artist Mixer" },
     artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
     anima_mixer_config: { en: "Anima Mixer Configuration", zh: "Anima Mixer 配置" },
   },
@@ -135,6 +156,7 @@ const INPUT_LABELS = {
     color_mode: { en: "Color Mode", zh: "颜色模式" },
     show_lora_details: { en: "Show Original LoRAs", zh: "显示原始 LoRA 底栏" },
     log_test_details: { en: "Log Test Details", zh: "输出测试详情日志" },
+    use_anima_artist_mixer: { en: "Use Anima Artist Mixer", zh: "使用 Anima Artist Mixer" },
     control_gap: { en: "BASE Control Gap", zh: "BASE 对照列间距" },
     max_canvas_megapixels: { en: "Maximum Canvas (MP)", zh: "最大画布（百万像素）" },
     custom_style: { en: "Custom Style", zh: "自定义样式" },
@@ -778,6 +800,10 @@ function directSamplerHasMultiArtistTest(node) {
   return artists > 1;
 }
 
+function animaArtistMixerEnabled(node) {
+  return widgetValue(node, "use_anima_artist_mixer") !== false;
+}
+
 function multiPromptHasMultiArtistTest(node) {
   const input = node.inputs?.find((item) => item.name === "lorastacks");
   const stackCounts = [];
@@ -848,8 +874,8 @@ function createWarningWidget(node) {
         ctx.fillStyle = "#fff3cf";
         ctx.font = "12px sans-serif";
         const lines = activeLanguage() === "zh"
-          ? ["Anima 多画师测试未检测到 Anima Artist Mixer；", "原生画师串混合效果可能不稳定。"]
-          : ["Anima multi-artist test: Anima Artist Mixer was not found;", "native artist-tag blending may be unstable."];
+          ? ["Anima 多画师测试未检测到 Anima Artist Mixer；", "非 Anima 底模可在高级设置中关闭 Mixer 开关。"]
+          : ["Anima multi-artist test: Anima Artist Mixer was not found;", "disable the advanced Mixer switch for non-Anima models."];
         ctx.fillText(lines[0], 18, y + 20);
         ctx.fillText(lines[1], 18, y + 37);
         ctx.restore();
@@ -869,7 +895,7 @@ function updateMixerWarning(node, nodeName) {
   if (nodeName !== TARGET_NODE && nodeName !== MULTI_PROMPT_NODE) return;
   let widget = node.widgets?.find((item) => item.name === ARTIST_WARNING_WIDGET);
   if (!widget) widget = createWarningWidget(node);
-  const visible = !externalMixerAvailable() && (
+  const visible = animaArtistMixerEnabled(node) && !externalMixerAvailable() && (
     nodeName === TARGET_NODE
       ? directSamplerHasMultiArtistTest(node)
       : multiPromptHasMultiArtistTest(node)
@@ -877,8 +903,8 @@ function updateMixerWarning(node, nodeName) {
   const language = activeLanguage();
   if (widget.element) {
     widget.element.textContent = language === "zh"
-      ? "Anima 多画师测试未检测到 Anima Artist Mixer；原生画师串混合效果可能不稳定，建议安装该项目。"
-      : "Anima multi-artist test: Anima Artist Mixer was not found. Native artist-tag blending may be unstable; installing the mixer is recommended.";
+      ? "Anima 多画师测试未检测到 Anima Artist Mixer；原生画师串混合效果可能不稳定。若不是 Anima 底模，可在高级设置中关闭 Mixer 开关。"
+      : "Anima multi-artist test: Anima Artist Mixer was not found. Native artist-tag blending may be unstable; disable the advanced Mixer switch for non-Anima models.";
   }
   if (widget.__loraTesterWarningVisible === visible) return;
   widget.__loraTesterWarningVisible = visible;
@@ -891,13 +917,13 @@ function updateMixerWarning(node, nodeName) {
 function installArtistObservers(node, nodeName) {
   const relevant = (name) => {
     if (nodeName === TARGET_NODE) {
-      return name === "independent_artist_tags" || name === "lora_count" || /^lora_[abc]_(?:name|trigger)$/.test(name);
+      return name === "independent_artist_tags" || name === "lora_count" || name === "use_anima_artist_mixer" || /^lora_[abc]_(?:name|trigger)$/.test(name);
     }
     if (nodeName === STACK_NODE) {
       return name === "lora_count" || /^lora_\d+_(?:name|trigger)$/.test(name);
     }
     if (nodeName === MULTI_PROMPT_NODE) {
-      return false;
+      return name === "use_anima_artist_mixer";
     }
     return false;
   };

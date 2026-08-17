@@ -81,6 +81,7 @@
       ],
       "independent_artist_tags": "",
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "route": "native_prompt",
       "rendered_tags": [],
       "artist_chain": null,
@@ -107,6 +108,7 @@
       ],
       "independent_artist_tags": "",
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "route": "native_prompt",
       "rendered_tags": [
         "(@test_artist:0.25)"
@@ -130,6 +132,7 @@
       ],
       "independent_artist_tags": "",
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "route": "native_prompt",
       "rendered_tags": [
         "@test_artist"
@@ -153,6 +156,7 @@
       ],
       "independent_artist_tags": "@independent, (@second:0.5)",
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "route": "anima_artist_mixer",
       "rendered_tags": [
         "@test_artist",
@@ -179,6 +183,7 @@
       ],
       "independent_artist_tags": "@independent, (@second:0.5)",
       "mixer_available": false,
+      "mixer_switch_enabled": true,
       "route": "native_prompt_missing_mixer",
       "rendered_tags": [
         "@test_artist",
@@ -209,6 +214,7 @@
       ],
       "independent_artist_tags": "@independent",
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "route": "anima_artist_mixer",
       "rendered_tags": [
         "@test_artist",
@@ -219,6 +225,36 @@
       "encoded_positive": {
         "text": "MIXED",
         "artist_chain": "@test_artist\n@independent"
+      }
+    },
+    {
+      "case": "anima_multi_artist_switch_disabled",
+      "model_family": "anima",
+      "positive_prompt": "portrait",
+      "test_entries": [
+        [
+          true,
+          "first",
+          1.0
+        ],
+        [
+          true,
+          "second",
+          1.0
+        ]
+      ],
+      "independent_artist_tags": "",
+      "mixer_available": true,
+      "mixer_switch_enabled": false,
+      "route": "native_prompt_mixer_disabled",
+      "rendered_tags": [
+        "@first",
+        "@second"
+      ],
+      "artist_chain": null,
+      "mixer_base_prompt": null,
+      "encoded_positive": {
+        "text": "@first, @second, portrait"
       }
     },
     {
@@ -234,6 +270,7 @@
       ],
       "independent_artist_tags": "fkey",
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "route": "native_prompt",
       "rendered_tags": [
         "(artist_name:1.2)",
@@ -253,6 +290,7 @@
       "has_artist_tags": true,
       "has_multi_artist_tests": true,
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "mixer_enabled": true,
       "mixer_active": true,
       "mixer_combinations": [
@@ -265,7 +303,21 @@
       "has_artist_tags": true,
       "has_multi_artist_tests": true,
       "mixer_available": false,
+      "mixer_switch_enabled": true,
       "mixer_enabled": true,
+      "mixer_active": false,
+      "mixer_combinations": [
+        "(@first:0.5) + @second"
+      ]
+    },
+    {
+      "case": "anima_switch_disabled",
+      "model_family": "anima",
+      "has_artist_tags": true,
+      "has_multi_artist_tests": true,
+      "mixer_available": true,
+      "mixer_switch_enabled": false,
+      "mixer_enabled": false,
       "mixer_active": false,
       "mixer_combinations": [
         "(@first:0.5) + @second"
@@ -277,6 +329,7 @@
       "has_artist_tags": true,
       "has_multi_artist_tests": false,
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "mixer_enabled": true,
       "mixer_active": false,
       "mixer_combinations": []
@@ -287,6 +340,7 @@
       "has_artist_tags": true,
       "has_multi_artist_tests": true,
       "mixer_available": true,
+      "mixer_switch_enabled": true,
       "mixer_enabled": true,
       "mixer_active": false,
       "mixer_combinations": []

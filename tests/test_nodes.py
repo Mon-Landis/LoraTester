@@ -19,6 +19,8 @@ from lora_tester.layout import LoraSpec, build_layout
 from lora_tester.nodes import (
     NODE_CLASS_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS,
+    AnimaArtistMixerConfigNode,
+    ArtistTagTemplateNode,
     LoraTesterSampler,
     LoraTesterStyleNode,
     _common_ksampler,
@@ -91,6 +93,7 @@ class NodeTests(unittest.TestCase):
             "color_mode": "black",
             "show_lora_details": True,
             "max_canvas_megapixels": 10.0,
+            "use_anima_artist_mixer": True,
             "unique_id": "test-node",
         }
 
@@ -425,6 +428,65 @@ class NodeTests(unittest.TestCase):
             ("mixed", "(@test_artist:0.25)\n@independent_artist"),
         )
 
+    def test_direct_template_and_mixer_config_inputs_reach_external_nodes(self):
+        pack_calls = []
+        mixer_calls = []
+
+        class Pack:
+            def pack(self, **kwargs):
+                pack_calls.append(kwargs)
+                return (kwargs,)
+
+        class Mixer:
+            def patch(self, **kwargs):
+                mixer_calls.append(kwargs)
+                return kwargs["model"], {"text": "mixed"}
+
+        template = ArtistTagTemplateNode.build_template(
+            "artist::{tag}",
+            "artist::{tag}::{weight:.2f}",
+        )[0]
+        config = AnimaArtistMixerConfigNode.build_config(
+            2.0,
+            False,
+            "shared_base_ids",
+            True,
+            True,
+            0.25,
+        )[0]
+        anima_model = SimpleNamespace(
+            model=SimpleNamespace(
+                model_config=SimpleNamespace(unet_config={"image_model": "anima"})
+            )
+        )
+        with patch(
+            "lora_tester.artist._resolve_anima_mixer_nodes",
+            return_value=(Pack, Mixer),
+        ):
+            self._run_fake_sample(
+                1,
+                {
+                    "model": anima_model,
+                    "log_test_details": False,
+                    "independent_artist_tags": "@independent",
+                    "lora_a_name": ARTIST_TAG_MODE,
+                    "lora_a_trigger": "@test_artist",
+                    "artist_tag_template": template,
+                    "anima_mixer_config": config,
+                },
+            )
+
+        self.assertTrue(pack_calls)
+        self.assertEqual(
+            pack_calls[0]["artist_chain"],
+            "artist::test_artist::0.20\nartist::independent",
+        )
+        self.assertEqual(mixer_calls[0]["strength"], 2.0)
+        self.assertFalse(mixer_calls[0]["normalize_weights"])
+        self.assertEqual(mixer_calls[0]["alignment_mode"], "shared_base_ids")
+        self.assertTrue(mixer_calls[0]["apply_to_uncond"])
+        self.assertEqual(mixer_calls[0]["uncond_strength"], 0.25)
+
     def test_at_lora_trigger_is_never_added_to_direct_artist_chain(self):
         pack_calls = []
 
@@ -513,6 +575,70 @@ class NodeTests(unittest.TestCase):
         self.assertIn("@lora_trigger, portrait", encoded_prompts)
         self.assertIn("@artist_one, portrait", encoded_prompts)
         self.assertIn("@lora_trigger, @artist_one, portrait", encoded_prompts)
+
+    def test_direct_sampler_mixer_matrix_for_extra_artist_tags(self):
+        class AnimaModel(tuple):
+            def __new__(cls, values=()):
+                return tuple.__new__(cls, values)
+
+            def __init__(self, values=()):
+                self.model = SimpleNamespace(
+                    model_config=SimpleNamespace(unet_config={"image_model": "anima"})
+                )
+
+            def __add__(self, value):
+                return AnimaModel(tuple(self) + tuple(value))
+
+        mixer_calls = []
+
+        class Pack:
+            def pack(self, **kwargs):
+                return (kwargs,)
+
+        class Mixer:
+            def patch(self, **kwargs):
+                mixer_calls.append(kwargs)
+                return kwargs["model"], {"text": "mixed"}
+
+        cases = (
+            ("0 extra / artist+LoRA", ("", True), 0),
+            ("0 extra / 2 LoRA", ("", False), 0),
+            ("1 extra / artist+LoRA", ("@extra", True), 20),
+            ("1 extra / 2 LoRA", ("@extra", False), 0),
+            ("2 extra / artist+LoRA", ("@extra_one, @extra_two", True), 25),
+            ("2 extra / 2 LoRA", ("@extra_one, @extra_two", False), 25),
+        )
+        observed = []
+        for label, (independent, has_artist_entry), expected in cases:
+            mixer_calls.clear()
+            overrides = {
+                "model": AnimaModel(),
+                "log_test_details": False,
+                "independent_artist_tags": independent,
+                "lora_a_name": ARTIST_TAG_MODE if has_artist_entry else "A.safetensors",
+                "lora_a_trigger": "@artist_one" if has_artist_entry else "alpha",
+                "lora_b_name": "B.safetensors",
+                "lora_b_trigger": "beta",
+            }
+            with patch(
+                "lora_tester.artist._resolve_anima_mixer_nodes",
+                return_value=(Pack, Mixer),
+            ):
+                self._run_fake_sample(2, overrides)
+            actual = len(mixer_calls)
+            observed.append((label, actual))
+            self.assertEqual(actual, expected, label)
+        self.assertEqual(
+            observed,
+            [
+                ("0 extra / artist+LoRA", 0),
+                ("0 extra / 2 LoRA", 0),
+                ("1 extra / artist+LoRA", 20),
+                ("1 extra / 2 LoRA", 0),
+                ("2 extra / artist+LoRA", 25),
+                ("2 extra / 2 LoRA", 25),
+            ],
+        )
 
     def test_min_strengths_reach_tasks_and_activate_center_triggers(self):
         arguments = self._sample_arguments(3)
@@ -669,6 +795,9 @@ class NodeTests(unittest.TestCase):
         self.assertIn("log_test_details", inputs["required"])
         self.assertTrue(inputs["required"]["log_test_details"][1]["default"])
         self.assertTrue(inputs["required"]["log_test_details"][1]["advanced"])
+        self.assertIn("use_anima_artist_mixer", inputs["required"])
+        self.assertTrue(inputs["required"]["use_anima_artist_mixer"][1]["default"])
+        self.assertTrue(inputs["required"]["use_anima_artist_mixer"][1]["advanced"])
         self.assertEqual(inputs["required"]["lora_count"][1]["default"], 1)
         for field in ("lora_a_min_strength", "lora_b_min_strength", "lora_c_min_strength"):
             self.assertEqual(inputs["required"][field][1]["default"], 0.0)

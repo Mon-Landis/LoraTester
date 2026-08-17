@@ -54,6 +54,9 @@ class StackNodeTests(unittest.TestCase):
         options = inputs["required"]["log_test_details"][1]
         self.assertTrue(options["default"])
         self.assertTrue(options["advanced"])
+        mixer_options = inputs["required"]["use_anima_artist_mixer"][1]
+        self.assertTrue(mixer_options["default"])
+        self.assertTrue(mixer_options["advanced"])
 
     def test_stack_node_builds_requested_entries_and_rejects_blank_active_file(self):
         node = LoraStackNode()
@@ -444,6 +447,64 @@ class StackNodeTests(unittest.TestCase):
         self.assertEqual(pack_calls[0]["artist_chain"], "@artist_one\n@artist_two")
         self.assertEqual(pack_calls[0]["base_prompt"], "@lora_trigger, portrait")
 
+    def test_multi_prompt_disabled_mixer_uses_shared_native_routing(self):
+        stack = LoraStack(
+            (
+                LoraStackItem(ARTIST_TAG_MODE, "@artist_one", 1.0),
+                LoraStackItem(ARTIST_TAG_MODE, "@artist_two", 0.5),
+            )
+        )
+        sample_calls = []
+
+        def sample(model, seed, steps, cfg, sampler, scheduler, positive, negative, latent, denoise, **kwargs):
+            sample_calls.append(positive)
+            return latent
+
+        model = SimpleNamespace(
+            model=SimpleNamespace(
+                model_config=SimpleNamespace(unet_config={"image_model": "anima"})
+            )
+        )
+        with (
+            patch("lora_tester.nodes.anima_artist_mixer_available", return_value=True),
+            patch(
+                "lora_tester.artist._resolve_anima_mixer_nodes",
+                side_effect=AssertionError("Disabled Mixer must not be queried"),
+            ),
+            patch("lora_tester.nodes._common_ksampler", side_effect=sample),
+            patch("lora_tester.nodes._decode_vae", return_value=torch.zeros((1, 8, 10, 3))),
+            patch("lora_tester.nodes._make_progress_bar", return_value=_Progress()),
+            patch("lora_tester.nodes._throw_if_interrupted"),
+        ):
+            MultiPromptSampleNode().sample(
+                model=model,
+                clip=_Clip(),
+                vae=_Vae(),
+                latent_image={"samples": torch.zeros((1, 4, 2, 2))},
+                lorastacks=LoraStackList((stack,)),
+                prompt_count=1,
+                prompt_prefix="masterpiece",
+                negative_prompt="",
+                seed=1,
+                steps=1,
+                cfg=1.0,
+                sampler_name="sampler",
+                scheduler="scheduler",
+                denoise=1.0,
+                color_mode="black",
+                show_lora_details=False,
+                log_test_details=False,
+                use_anima_artist_mixer=False,
+                max_canvas_megapixels=10.0,
+                positive_prompt_1="portrait",
+            )
+
+        self.assertEqual(sample_calls[0]["text"], "masterpiece, portrait")
+        self.assertEqual(
+            sample_calls[1]["text"],
+            "masterpiece, @artist_one, (@artist_two:0.5), portrait",
+        )
+
     def test_multi_prompt_interrupt_clears_run_local_lora_cache(self):
         stack = LoraStack((LoraStackItem("A.safetensors", "alpha", 0.8),))
         node = MultiPromptSampleNode()
@@ -527,6 +588,7 @@ class StackNodeTests(unittest.TestCase):
         output = "\n".join(captured.output)
         self.assertIn("Combination test preflight", output)
         self.assertIn("Model family: danbooru", output)
+        self.assertIn("Anima Artist Mixer switch: on", output)
         self.assertIn('"A.safetensors" | weight=0.8', output)
         self.assertIn("cache=run-local:miss", output)
         self.assertIn("cache=run-local:hit", output)

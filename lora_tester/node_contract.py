@@ -30,6 +30,22 @@ LOG_TEST_DETAILS_INPUT = (
     },
 )
 
+USE_ANIMA_ARTIST_MIXER_FIELD = "use_anima_artist_mixer"
+
+USE_ANIMA_ARTIST_MIXER_INPUT = (
+    "BOOLEAN",
+    {
+        "default": True,
+        "advanced": True,
+        "label_on": "use Anima Artist Mixer",
+        "label_off": "use native artist tags",
+        "tooltip": (
+            "Use the optional Anima Artist Mixer for multi-artist Anima tests. "
+            "Disable for non-Anima models or to force native artist-tag encoding."
+        ),
+    },
+)
+
 COLOR_MODE_INPUT = (
     ["black", "white", "custom"],
     {
@@ -41,6 +57,7 @@ COLOR_MODE_INPUT = (
 FUTURE_NODE_COMPOSITOR_FIELDS = {
     SHOW_LORA_DETAILS_FIELD: SHOW_LORA_DETAILS_INPUT,
     LOG_TEST_DETAILS_FIELD: LOG_TEST_DETAILS_INPUT,
+    USE_ANIMA_ARTIST_MIXER_FIELD: USE_ANIMA_ARTIST_MIXER_INPUT,
     "color_mode": COLOR_MODE_INPUT,
 }
 
@@ -50,6 +67,8 @@ __all__ = [
     "FUTURE_NODE_COMPOSITOR_FIELDS",
     "LOG_TEST_DETAILS_FIELD",
     "LOG_TEST_DETAILS_INPUT",
+    "USE_ANIMA_ARTIST_MIXER_FIELD",
+    "USE_ANIMA_ARTIST_MIXER_INPUT",
     "SHOW_LORA_DETAILS_FIELD",
     "SHOW_LORA_DETAILS_INPUT",
 ]

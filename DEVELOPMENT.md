@@ -75,7 +75,7 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 - 加载已有工作流时按序列化的 `lora_count` 恢复可见分组。
 - 在 Node 2.0 与旧 LiteGraph 的创建、恢复、分页切换生命周期中重复同步动态分组，并保留其他设备上缺失的 LoRA 下拉值。
 - 本地化画师模式占位项，并按 LoRA/画师模式切换触发词与权重字段标题。
-- 直接采样器只从独立画师 Tag 字段和显式画师模式项推导多画师测试；组合采样器只从上游 Stack/Splitter/Lister 推导，普通提示词与 LoRA 触发词不再自动抽取。外部 Mixer 未注册时在采样节点底部显示 Anima 警告。
+- 直接采样器只从独立画师 Tag 字段和显式画师模式项推导多画师测试；组合采样器只从上游 Stack/Splitter/Lister 推导，普通提示词与 LoRA 触发词不再自动抽取。外部 Mixer 未注册且高级 Mixer 开关开启时在采样节点底部显示 Anima 警告；关闭开关必须同时隐藏警告并让后端强制使用原生编码。
 
 前端扩展只改变显示状态和标签，不改变序列化字段值。后续若增加以下能力，再评估引入 Node.js 构建链：
 
@@ -91,7 +91,7 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
 
 LoRA state dict 是 CPU 数据。两个采样节点的运行内 LRU 上限为 3，并以文件 stat 指纹失效，在成功、异常或中断后清空；直接采样器与 Stack 的 `IS_CHANGED` 也把有效文件指纹加入 ComfyUI 输出缓存签名。矩阵采样节点在一次执行内按 Stack 列复用 patch。MODEL/CLIP clone、Mixer GPU 状态及显存调度由 ComfyUI/外部 Mixer 管理，不在本项目中调用 `empty_cache()` 或保存 patched MODEL。
 
-两个采样节点的 `log_test_details` 是默认开启的 advanced BOOLEAN。日志必须由后端按测试格输出实际 LoRA/画师权重和路由；LoRA 的 `run-local:miss/hit` 只反映本节点可观察的 state-dict LRU 查找，组合矩阵的 `column reuse` 反映同一 Stack 列的 patched MODEL/CLIP 复用。外部 Mixer 的 embedding 缓存由它自己的生命周期管理，本节点只能标记 `external:lazy-per-sample`，不得声称跨格命中。
+两个采样节点的 `log_test_details` 与 `use_anima_artist_mixer` 都是默认开启的 advanced BOOLEAN。后者关闭时必须在解析出多画师后、查询外部节点前短路为原生编码；配置节点的 `enabled=false` 或 `strength=0` 具有同样效果。日志必须由后端按测试格输出实际 LoRA/画师权重和路由；LoRA 的 `run-local:miss/hit` 只反映本节点可观察的 state-dict LRU 查找，组合矩阵的 `column reuse` 反映同一 Stack 列的 patched MODEL/CLIP 复用。外部 Mixer 的 embedding 缓存由它自己的生命周期管理，本节点只能标记 `external:lazy-per-sample`，不得声称跨格命中。
 
 不要把现有 `(@artist:weight)` 的 post-Adapter 差分当作可缩放的单位效果；真实 Anima 模型验证记录在 `audit/anima_artist_linearity.md`，当前版本明确不实现这类跨测试格缓存。
 

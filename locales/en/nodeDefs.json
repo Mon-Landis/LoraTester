@@ -124,6 +124,10 @@
         "name": "Log Test Details",
         "tooltip": "Advanced: log every comparison cell with active LoRA files, artist tags, weights, route, and observable cache state."
       },
+      "use_anima_artist_mixer": {
+        "name": "Use Anima Artist Mixer",
+        "tooltip": "Advanced: use the optional Anima Artist Mixer for multi-artist Anima tests; disable to force native artist-tag encoding."
+      },
       "max_canvas_megapixels": {
         "name": "Maximum Canvas (MP)",
         "tooltip": "Stops the run when the final RGB comparison sheet would exceed this pixel count."
@@ -477,6 +481,7 @@
       "color_mode": { "name": "Color Mode", "tooltip": "Color preset for the final XY comparison sheet." },
       "show_lora_details": { "name": "Show Original LoRAs", "tooltip": "Lists each distinct LoRA file, trigger-word, and strength configuration in the footer." },
       "log_test_details": { "name": "Log Test Details", "tooltip": "Advanced: log every comparison cell with active LoRA files, artist tags, weights, route, and observable cache state." },
+      "use_anima_artist_mixer": { "name": "Use Anima Artist Mixer", "tooltip": "Advanced: use the optional Anima Artist Mixer for multi-artist Anima tests; disable to force native artist-tag encoding." },
       "control_gap": { "name": "BASE Control Gap", "tooltip": "Horizontal gap between BASE and the first LoRA test column; 0 automatically uses at least one eighth of the image width." },
       "max_canvas_megapixels": { "name": "Maximum Canvas (MP)", "tooltip": "Stops when the final XY sheet would exceed this pixel count." },
       "custom_style": { "name": "Custom Style", "tooltip": "LoRA Tester style used when Color Mode is Custom." },

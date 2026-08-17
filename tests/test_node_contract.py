@@ -14,6 +14,8 @@ from lora_tester.node_contract import (
     LOG_TEST_DETAILS_FIELD,
     LOG_TEST_DETAILS_INPUT,
     SHOW_LORA_DETAILS_FIELD,
+    USE_ANIMA_ARTIST_MIXER_FIELD,
+    USE_ANIMA_ARTIST_MIXER_INPUT,
 )
 
 
@@ -36,6 +38,17 @@ class NodeContractTests(unittest.TestCase):
         modes, options = FUTURE_NODE_COMPOSITOR_FIELDS["color_mode"]
         self.assertEqual(modes, ["black", "white", "custom"])
         self.assertEqual(options["default"], "black")
+
+    def test_anima_mixer_toggle_is_advanced_and_enabled_by_default(self) -> None:
+        self.assertEqual(USE_ANIMA_ARTIST_MIXER_FIELD, "use_anima_artist_mixer")
+        self.assertIs(
+            FUTURE_NODE_COMPOSITOR_FIELDS[USE_ANIMA_ARTIST_MIXER_FIELD],
+            USE_ANIMA_ARTIST_MIXER_INPUT,
+        )
+        input_type, options = USE_ANIMA_ARTIST_MIXER_INPUT
+        self.assertEqual(input_type, "BOOLEAN")
+        self.assertTrue(options["default"])
+        self.assertTrue(options["advanced"])
 
 
 if __name__ == "__main__":

@@ -92,8 +92,20 @@ actual = min_strength + (max_strength - min_strength) * multiplier
 |---|---|
 | 非 Anima | 使用内置/手动模板原生拼入提示词；即使连接 Mixer 配置也忽略。 |
 | Anima，合计 0 或 1 个画师 | 原生提示词编码，不查询也不调用外部 Mixer。 |
+| Anima，高级设置中的 `Use Anima Artist Mixer` 已关闭 | 强制原生提示词编码；即使存在多个画师且外部项目已加载也不查询、不调用 Mixer。 |
 | Anima，合计至少 2 个画师，外部项目未加载 | 保留原提示词并原生编码；节点界面显示兼容性警告。 |
 | Anima，合计至少 2 个画师，外部项目已加载 | 仅将画师模式项和直接采样器的“独立画师 Tag”字段加入 `artist_chain`；正向提示词、通用前缀和 LoRA 触发词中的 `@tag` 原样保留在 `base_prompt`。先调用 `AnimaArtistPack.pack()`，再把返回值及配置传给 `AnimaArtistAdapterMixer.patch()`，采样使用它返回的 MODEL 与正向 CONDITIONING。 |
+
+直接采样器的双条目布局共有 25 张测试图。使用 Anima、Mixer 已加载且高级开关开启时，实际节点执行测试得到：
+
+| 独立画师 Tag 数 | 测试条目 | Mixer 调用数 |
+|---:|---|---:|
+| 0 | 1 个画师模式 + 1 个 LoRA | 0 / 25 |
+| 0 | 2 个 LoRA | 0 / 25 |
+| 1 | 1 个画师模式 + 1 个 LoRA | 20 / 25，仅画师模式权重非零的图片调用 |
+| 1 | 2 个 LoRA | 0 / 25 |
+| 2 | 1 个画师模式 + 1 个 LoRA | 25 / 25 |
+| 2 | 2 个 LoRA | 25 / 25 |
 
 “合计画师数”包含当前测试组合的显式画师模式项，以及直接采样器独立字段中的画师项。普通提示词中的 `@tag` 不再参与计数或自动抽取。例如直接采样器的测试项 `@test_artist`（权重 `0.25`）加独立字段 `@independent_artist` 和正向提示词 `@prompt_artist, portrait` 时，外部输入为：
 
@@ -106,7 +118,7 @@ base_prompt:
 @prompt_artist, portrait
 ```
 
-外部项目缺失时不会删除原提示词中的画师项，因此回退不会吞掉用户内容。外部项目存在但模型不是 Anima 时也不会调用。配置节点没有接入外部项目的 `advanced_options`，因此不会开启 Anchor-Q 或跨运行 warm-cache。组合测试器会在开始前输出模型族、画师混合状态、Mixer 可用/启用/生效状态和需要 Mixer 的组合，并在每张图采样前输出当前 Stack、LoRA、画师项和路由模式。
+外部项目缺失时不会删除原提示词中的画师项，因此回退不会吞掉用户内容。外部项目存在但模型不是 Anima 时也不会调用。高级 Mixer 开关默认开启；关闭后同时抑制缺失 Mixer 的前端警告并强制后端使用原生编码。配置节点的 `enabled=false` 或 `strength=0` 也会强制原生编码。配置节点没有接入外部项目的 `advanced_options`，因此不会开启 Anchor-Q 或跨运行 warm-cache。组合测试器会在开始前输出模型族、画师混合状态、Mixer 可用/开关/启用/生效状态和需要 Mixer 的组合，并在每张图采样前输出当前 Stack、LoRA、画师项和路由模式。
 
 ### 测试详情日志
 

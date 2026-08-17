@@ -254,6 +254,7 @@ def route_artist_prompt(
     artist_entries: Sequence[tuple[str, float]],
     artist_template: ArtistTagTemplate | None = None,
     mixer_config: AnimaArtistMixerConfig | None = None,
+    use_anima_artist_mixer: bool = True,
 ) -> ArtistPromptRoute:
     template = artist_template or artist_template_for_model(model)
     expanded_entries = tuple(
@@ -270,6 +271,23 @@ def route_artist_prompt(
             mode="native_prompt",
         )
 
+    config = mixer_config or AnimaArtistMixerConfig()
+    if not isinstance(config, AnimaArtistMixerConfig):
+        raise TypeError(
+            "anima_mixer_config must come from an Anima Artist Mixer Configuration node"
+        )
+    if (
+        not bool(use_anima_artist_mixer)
+        or not config.enabled
+        or config.strength <= 0.0
+    ):
+        return ArtistPromptRoute(
+            model=model,
+            positive=_encode_prompt(clip, fallback_prompt),
+            rendered_tags=rendered_tags,
+            mode="native_prompt_mixer_disabled",
+        )
+
     mixer_nodes = _resolve_anima_mixer_nodes()
     if mixer_nodes is None:
         logger.warning(
@@ -283,11 +301,6 @@ def route_artist_prompt(
             mode="native_prompt_missing_mixer",
         )
 
-    config = mixer_config or AnimaArtistMixerConfig()
-    if not isinstance(config, AnimaArtistMixerConfig):
-        raise TypeError(
-            "anima_mixer_config must come from an Anima Artist Mixer Configuration node"
-        )
     pack_class, mixer_class = mixer_nodes
     artist_chain = "\n".join(rendered_tags)
     try:

@@ -82,6 +82,8 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("stackArtistCountsFromNode", source)
         self.assertIn('registeredNodeAvailable("AnimaArtistPack")', source)
         self.assertIn('"AnimaArtistAdapterMixer"', source)
+        self.assertIn('widgetValue(node, "use_anima_artist_mixer") !== false', source)
+        self.assertIn("disable the advanced Mixer switch for non-Anima models", source)
         self.assertIn("updateMixerWarning(node, nodeName)", source)
         self.assertIn("node.addDOMWidget", source)
         self.assertIn("serialize: false", source)
@@ -107,6 +109,7 @@ class FrontendContractTests(unittest.TestCase):
 
         self.assertIn("show_lora_details", source)
         self.assertIn("log_test_details", source)
+        self.assertIn("use_anima_artist_mixer", source)
         self.assertIn("options.label_on", source)
         self.assertIn("options.label_off", source)
         self.assertIn("options.on", source)

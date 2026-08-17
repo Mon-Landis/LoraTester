@@ -29,6 +29,7 @@ from .node_contract import (
     COLOR_MODE_INPUT,
     LOG_TEST_DETAILS_INPUT,
     SHOW_LORA_DETAILS_INPUT,
+    USE_ANIMA_ARTIST_MIXER_INPUT,
 )
 from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
 from .stack_compositor import LoraStackMatrixCompositor
@@ -265,6 +266,7 @@ def _route_prompt_entries(
     artist_template: ArtistTagTemplate | None,
     mixer_config: AnimaArtistMixerConfig | None,
     independent_artist_tags: str = "",
+    use_anima_artist_mixer: bool = True,
 ) -> ArtistPromptRoute:
     if artist_template is not None and not isinstance(artist_template, ArtistTagTemplate):
         raise TypeError("artist_tag_template must come from an Artist Tag Template node")
@@ -309,6 +311,7 @@ def _route_prompt_entries(
         artist_entries=artist_entries,
         artist_template=template,
         mixer_config=mixer_config,
+        use_anima_artist_mixer=use_anima_artist_mixer,
     )
 
 
@@ -318,6 +321,7 @@ class _CombinationPreflight:
     has_artist_tags: bool
     has_multi_artist_tests: bool
     mixer_available: bool
+    mixer_switch_enabled: bool
     mixer_enabled: bool
     mixer_active: bool
     mixer_combinations: tuple[str, ...]
@@ -328,6 +332,7 @@ def _combination_preflight(
     stacks: Sequence[LoraStack],
     artist_template: ArtistTagTemplate | None,
     mixer_config: AnimaArtistMixerConfig | None,
+    use_anima_artist_mixer: bool = True,
 ) -> _CombinationPreflight:
     family = detect_model_family(model)
     config = mixer_config or AnimaArtistMixerConfig()
@@ -347,13 +352,15 @@ def _combination_preflight(
         if rendered not in combinations:
             combinations.append(rendered)
     available = anima_artist_mixer_available()
-    enabled = bool(config.enabled and config.strength > 0.0)
+    switch_enabled = bool(use_anima_artist_mixer)
+    enabled = bool(switch_enabled and config.enabled and config.strength > 0.0)
     multi_artist = bool(combinations)
     return _CombinationPreflight(
         model_family=family,
         has_artist_tags=has_artist_tags,
         has_multi_artist_tests=multi_artist,
         mixer_available=available,
+        mixer_switch_enabled=switch_enabled,
         mixer_enabled=enabled,
         mixer_active=bool(
             family == MODEL_FAMILY_ANIMA and multi_artist and available and enabled
@@ -424,6 +431,7 @@ def _log_combination_preflight(preflight: _CombinationPreflight) -> None:
         f"  Artist tags present: {'yes' if preflight.has_artist_tags else 'no'}",
         f"  Multi-artist tests: {'yes' if preflight.has_multi_artist_tests else 'no'}",
         f"  Anima Artist Mixer available: {'yes' if preflight.mixer_available else 'no'}",
+        f"  Anima Artist Mixer switch: {'on' if preflight.mixer_switch_enabled else 'off'}",
         f"  Anima Artist Mixer enabled: {'yes' if preflight.mixer_enabled else 'no'}",
         f"  Anima Artist Mixer active: {'yes' if preflight.mixer_active else 'no'}",
         "  Mixer combinations:",
@@ -638,6 +646,7 @@ class LoraTesterSampler:
                 "color_mode": COLOR_MODE_INPUT,
                 "show_lora_details": SHOW_LORA_DETAILS_INPUT,
                 "log_test_details": LOG_TEST_DETAILS_INPUT,
+                "use_anima_artist_mixer": USE_ANIMA_ARTIST_MIXER_INPUT,
                 "max_canvas_megapixels": (
                     "FLOAT",
                     {
@@ -722,6 +731,7 @@ class LoraTesterSampler:
         color_mode: str,
         show_lora_details: bool,
         log_test_details: bool = True,
+        use_anima_artist_mixer: bool = True,
         max_canvas_megapixels: float = DEFAULT_MAX_CANVAS_MEGAPIXELS,
         custom_style: StyleConfig | None = None,
         artist_tag_template: ArtistTagTemplate | None = None,
@@ -781,6 +791,7 @@ class LoraTesterSampler:
                 artist_template=artist_tag_template,
                 mixer_config=anima_mixer_config,
                 independent_artist_tags=independent_artist_tags,
+                use_anima_artist_mixer=use_anima_artist_mixer,
             )
             task_model = route.model
             positive = route.positive
@@ -1400,6 +1411,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
                 "color_mode": COLOR_MODE_INPUT,
                 "show_lora_details": STACK_SHOW_LORA_DETAILS_INPUT,
                 "log_test_details": LOG_TEST_DETAILS_INPUT,
+                "use_anima_artist_mixer": USE_ANIMA_ARTIST_MIXER_INPUT,
                 "control_gap": (
                     "INT",
                     {
@@ -1470,6 +1482,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
         color_mode: str,
         show_lora_details: bool,
         log_test_details: bool = True,
+        use_anima_artist_mixer: bool = True,
         control_gap: int = 0,
         max_canvas_megapixels: float = DEFAULT_MAX_CANVAS_MEGAPIXELS,
         custom_style: StyleConfig | None = None,
@@ -1497,6 +1510,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
             stacks,
             artist_tag_template,
             anima_mixer_config,
+            use_anima_artist_mixer,
         )
         if bool(log_test_details):
             _log_combination_preflight(preflight)
@@ -1551,6 +1565,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
                         suffix_parts=(prompt,),
                         artist_template=stack_template,
                         mixer_config=anima_mixer_config,
+                        use_anima_artist_mixer=use_anima_artist_mixer,
                     )
                     task_model = route.model
                     positive = route.positive

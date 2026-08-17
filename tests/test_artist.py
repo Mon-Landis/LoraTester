@@ -141,6 +141,30 @@ class ArtistTests(unittest.TestCase):
                 self.assertEqual(route.mode, "native_prompt")
                 self.assertEqual(route.positive, {"text": "rendered, portrait"})
 
+    def test_disabled_anima_mixer_forces_native_without_lookup(self):
+        cases = (
+            (False, None),
+            (True, AnimaArtistMixerConfig(enabled=False)),
+            (True, AnimaArtistMixerConfig(strength=0.0)),
+        )
+        for use_mixer, config in cases:
+            with self.subTest(use_mixer=use_mixer, config=config):
+                with patch(
+                    "lora_tester.artist._resolve_anima_mixer_nodes",
+                    side_effect=AssertionError("Disabled Mixer must not be queried"),
+                ):
+                    route = route_artist_prompt(
+                        model=_AnimaModel(),
+                        clip=_Clip(),
+                        mixer_base_prompt="portrait",
+                        fallback_prompt="@first, @second, portrait",
+                        artist_entries=(("first", 1.0), ("second", 1.0)),
+                        mixer_config=config,
+                        use_anima_artist_mixer=use_mixer,
+                    )
+                self.assertEqual(route.mode, "native_prompt_mixer_disabled")
+                self.assertEqual(route.positive, {"text": "@first, @second, portrait"})
+
     def test_missing_mixer_falls_back_only_for_multi_artist_anima(self):
         clip = _Clip()
         with patch("lora_tester.artist._resolve_anima_mixer_nodes", return_value=None):

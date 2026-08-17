@@ -20,28 +20,31 @@ This report does not generate images; it records deterministic routing and prefl
 
 ## Routing Cases
 
-| Case | Family | Mixer | Route | Artist chain | Mixer base prompt | Encoded/native result |
-| --- | --- | --- | --- | --- | --- | --- |
-| anima_lora_only_is_native | anima | True | native_prompt | None | None | {'text': '@trigger_artist, portrait'} |
-| anima_single_artist_plus_lora_is_native | anima | True | native_prompt | None | None | {'text': '(@test_artist:0.25), @trigger_artist, portrait'} |
-| anima_prompt_tag_is_base_text | anima | True | native_prompt | None | None | {'text': '@test_artist, @prompt_artist, portrait'} |
-| anima_independent_tags_use_mixer | anima | True | anima_artist_mixer | @test_artist<br>@independent<br>(@second:0.5) | @prompt_artist, portrait | {'text': 'MIXED', 'artist_chain': '@test_artist\n@independent\n(@second:0.5)'} |
-| anima_independent_tags_fallback_without_mixer | anima | False | native_prompt_missing_mixer | None | None | {'text': '@test_artist, @independent, (@second:0.5), @prompt_artist, portrait'} |
-| anima_lora_trigger_is_not_extracted | anima | True | anima_artist_mixer | @test_artist<br>@independent | @trigger_artist, portrait | {'text': 'MIXED', 'artist_chain': '@test_artist\n@independent'} |
-| danbooru_uses_native_tag_template | danbooru | True | native_prompt | None | None | {'text': '(artist_name:1.2), fkey, @prompt_artist, portrait'} |
+| Case | Family | Mixer | Switch | Route | Artist chain | Mixer base prompt | Encoded/native result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| anima_lora_only_is_native | anima | True | True | native_prompt | None | None | {'text': '@trigger_artist, portrait'} |
+| anima_single_artist_plus_lora_is_native | anima | True | True | native_prompt | None | None | {'text': '(@test_artist:0.25), @trigger_artist, portrait'} |
+| anima_prompt_tag_is_base_text | anima | True | True | native_prompt | None | None | {'text': '@test_artist, @prompt_artist, portrait'} |
+| anima_independent_tags_use_mixer | anima | True | True | anima_artist_mixer | @test_artist<br>@independent<br>(@second:0.5) | @prompt_artist, portrait | {'text': 'MIXED', 'artist_chain': '@test_artist\n@independent\n(@second:0.5)'} |
+| anima_independent_tags_fallback_without_mixer | anima | False | True | native_prompt_missing_mixer | None | None | {'text': '@test_artist, @independent, (@second:0.5), @prompt_artist, portrait'} |
+| anima_lora_trigger_is_not_extracted | anima | True | True | anima_artist_mixer | @test_artist<br>@independent | @trigger_artist, portrait | {'text': 'MIXED', 'artist_chain': '@test_artist\n@independent'} |
+| anima_multi_artist_switch_disabled | anima | True | False | native_prompt_mixer_disabled | None | None | {'text': '@first, @second, portrait'} |
+| danbooru_uses_native_tag_template | danbooru | True | True | native_prompt | None | None | {'text': '(artist_name:1.2), fkey, @prompt_artist, portrait'} |
 
 ## Combination Preflight
 
-| Case | Family | Artist tags | Multi-artist tests | Available | Enabled | Active | Mixer combinations |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| anima_mixer_present | anima | True | True | True | True | True | ['(@first:0.5) + @second'] |
-| anima_mixer_missing | anima | True | True | False | True | False | ['(@first:0.5) + @second'] |
-| anima_single_artist | anima | True | False | True | True | False | [] |
-| danbooru_multi_artist | danbooru | True | True | True | True | False | [] |
+| Case | Family | Artist tags | Multi-artist tests | Available | Switch | Enabled | Active | Mixer combinations |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| anima_mixer_present | anima | True | True | True | True | True | True | ['(@first:0.5) + @second'] |
+| anima_mixer_missing | anima | True | True | False | True | True | False | ['(@first:0.5) + @second'] |
+| anima_switch_disabled | anima | True | True | True | False | False | False | ['(@first:0.5) + @second'] |
+| anima_single_artist | anima | True | False | True | True | True | False | [] |
+| danbooru_multi_artist | danbooru | True | True | True | True | True | False | [] |
 
 ## Interpretation
 
 - `@tag` in a normal positive prompt or LoRA trigger remains ordinary base prompt text.
 - Only explicit artist-mode entries and the direct sampler's independent artist field become artist entries.
 - Anima uses the optional external Mixer only for a multi-artist test when it is available and enabled.
+- Disabling the sampler's advanced Mixer switch forces native prompt encoding before external-node lookup.
 - Non-Anima models use their native artist-tag template and never activate the Anima Mixer.
