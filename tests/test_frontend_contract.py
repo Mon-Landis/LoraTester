@@ -121,6 +121,25 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("positive_prompt_", source)
         self.assertIn("LoRA 组合", source)
 
+    def test_xy_frontend_tracks_axis_overrides_warnings_and_all_controls(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn("function setWidgetDisabled(widget, disabled, node = null)", source)
+        self.assertIn('querySelectorAll?.("textarea, input, select, button")', source)
+        self.assertIn("element.inert = disabled ? true", source)
+        self.assertIn("const XY_DOM_OVERRIDES = new Map()", source)
+        self.assertIn("new MutationObserver", source)
+        self.assertIn("xyDomApplyScheduled", source)
+        self.assertIn("function axisMetadata(node, inputName)", source)
+        self.assertIn("function updateXyAxisState(node)", source)
+        self.assertIn("function installXySourceObservers(node, nodeName)", source)
+        self.assertIn('querySelector(selector)', source)
+        self.assertIn("const originalConnectionsChange = node.onConnectionsChange", source)
+        self.assertIn("const XY_WARNING_WIDGET =", source)
+        self.assertIn("Large XY queue", source)
+        self.assertIn("X and Y both modify", source)
+        self.assertIn("refreshReactiveCollection(node, \"inputs\")", source)
+        self.assertIn("refreshReactiveCollection(node, \"outputs\")", source)
+
     def test_english_and_chinese_locales_cover_all_nodes(self) -> None:
         with (
             patch("lora_tester.nodes._get_lora_names", return_value=["A.safetensors"]),
@@ -154,6 +173,8 @@ class FrontendContractTests(unittest.TestCase):
                     (locale_root / "nodeDefs.json").read_text(encoding="utf-8")
                 )
                 self.assertIn("Lora Tester", main["nodeCategories"])
+                self.assertIn("Axes", main["nodeCategories"])
+                self.assertIn("Deprecated", main["nodeCategories"])
                 self.assertEqual(
                     set(node_defs),
                     set(NODE_CLASS_MAPPINGS),

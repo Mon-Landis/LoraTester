@@ -5,8 +5,16 @@ const STACK_NODE = "LoraStack";
 const STACK_SPLITTER_NODE = "LoraStackSplitter";
 const STACK_LISTER_NODE = "LoraStackLister";
 const MULTI_PROMPT_NODE = "MultiPromptSample";
+const XY_SAMPLER_NODE = "LoraTesterXYSampler";
+const MULTI_PROMPT_INPUT_NODE = "LoraTesterMultiPromptInput";
+const GLOBAL_PROMPT_APPEND_NODE = "LoraTesterGlobalPromptAppend";
+const PROMPT_AXIS_NODE = "LoraTesterPromptAxis";
+const LORA_STACK_AXIS_NODE = "LoraTesterLoraStackAxis";
+const SEED_LIST_NODE = "LoraTesterSeedList";
+const SEED_AXIS_NODE = "LoraTesterSeedAxis";
 const ARTIST_TAG_MODE = "__lora_tester_artist_tag__";
 const ARTIST_WARNING_WIDGET = "lora_tester_anima_mixer_warning";
+const XY_WARNING_WIDGET = "lora_tester_xy_warning";
 const MAX_STACK_INPUTS = 16;
 const MULTI_PROMPT_MIN_WIDTH = 480;
 const HIDDEN_WIDGET_TYPE = "hidden";
@@ -19,6 +27,14 @@ const ARTIST_OBSERVER = Symbol("loraTesterArtistObserver");
 const ARTIST_CONNECTION_OBSERVER = Symbol("loraTesterArtistConnectionObserver");
 const ARTIST_WIDGET_CHANGE_OBSERVER = Symbol("loraTesterArtistWidgetChangeObserver");
 const GRAPH_UI_SCHEDULED = Symbol("loraTesterGraphUiScheduled");
+const SEED_MODE_OBSERVER = Symbol("loraTesterSeedModeObserver");
+const DISABLED_STATE = Symbol("loraTesterDisabledState");
+const DISABLED_ELEMENT_STATE = Symbol("loraTesterDisabledElementState");
+const XY_OBSERVER = Symbol("loraTesterXyObserver");
+const XY_SOURCE_OBSERVER = Symbol("loraTesterXySourceObserver");
+const XY_DOM_OVERRIDES = new Map();
+let xyDomObserver = null;
+let xyDomApplyScheduled = false;
 
 const OPTION_LABELS = {
   LoraTesterSampler: {
@@ -39,6 +55,32 @@ const OPTION_LABELS = {
       black: { en: "Black background / white text", zh: "黑底白字" },
       white: { en: "White background / black text", zh: "白底黑字" },
       custom: { en: "Custom style", zh: "自定义样式" },
+    },
+  },
+  LoraTesterXYSampler: {
+    color_mode: {
+      black: { en: "Black background / white text", zh: "黑底白字" },
+      white: { en: "White background / black text", zh: "白底黑字" },
+      custom: { en: "Custom style", zh: "自定义样式" },
+    },
+  },
+  LoraTesterMultiPromptInput: {
+    separator_mode: {
+      blank_lines: { en: "Blank lines", zh: "空行分隔" },
+      lines: { en: "Every line", zh: "每行一个" },
+      custom: { en: "Custom separator", zh: "自定义分隔符" },
+    },
+  },
+  LoraTesterGlobalPromptAppend: {
+    position: {
+      before: { en: "Before each prompt", zh: "追加到前方" },
+      after: { en: "After each prompt", zh: "追加到后方" },
+    },
+  },
+  LoraTesterSeedList: {
+    mode: {
+      list: { en: "Explicit list", zh: "指定列表" },
+      random: { en: "Deterministic random", zh: "确定性随机生成" },
     },
   },
   LoraTesterStyle: {
@@ -120,6 +162,20 @@ const TOGGLE_LABELS = {
       },
     },
   },
+  LoraTesterXYSampler: {
+    show_axis_details: {
+      en: { label_on: "show axis details", label_off: "hide axis details" },
+      zh: { label_on: "显示轴详情区", label_off: "隐藏轴详情区" },
+    },
+    log_test_details: {
+      en: { label_on: "log test details", label_off: "hide test details from log" },
+      zh: { label_on: "输出测试详情日志", label_off: "不输出测试详情日志" },
+    },
+    use_anima_artist_mixer: {
+      en: { label_on: "use Anima Artist Mixer", label_off: "use native artist tags" },
+      zh: { label_on: "使用 Anima Artist Mixer", label_off: "使用原生画师 Tag" },
+    },
+  },
 };
 
 const INPUT_LABELS = {
@@ -164,6 +220,61 @@ const INPUT_LABELS = {
     artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
     anima_mixer_config: { en: "Anima Mixer Configuration", zh: "Anima Mixer 配置" },
   },
+  LoraTesterXYSampler: {
+    model: { en: "Base Model", zh: "基础模型" },
+    clip: { en: "CLIP", zh: "CLIP" },
+    vae: { en: "VAE", zh: "VAE" },
+    latent_image: { en: "Latent", zh: "潜空间图像" },
+    x_axis: { en: "X Axis", zh: "X 轴" },
+    y_axis: { en: "Y Axis", zh: "Y 轴" },
+    positive_prompt: { en: "Base Positive Prompt", zh: "基础正面提示词" },
+    negative_prompt: { en: "Negative Prompt", zh: "负面提示词" },
+    seed: { en: "Base Seed", zh: "基础种子" },
+    steps: { en: "Base Steps", zh: "基础步数" },
+    cfg: { en: "Base CFG", zh: "基础 CFG" },
+    sampler_name: { en: "Base Sampler", zh: "基础采样器" },
+    scheduler: { en: "Base Scheduler", zh: "基础调度器" },
+    denoise: { en: "Base Denoise", zh: "基础降噪强度" },
+    color_mode: { en: "Color Mode", zh: "颜色模式" },
+    show_axis_details: { en: "Show Axis Details", zh: "显示轴详情区" },
+    log_test_details: { en: "Log Test Details", zh: "输出测试详情日志" },
+    use_anima_artist_mixer: { en: "Use Anima Artist Mixer", zh: "使用 Anima Artist Mixer" },
+    max_canvas_megapixels: { en: "Maximum Canvas (MP)", zh: "最大画布（百万像素）" },
+    extra_footer_text: { en: "Extra Footer Text", zh: "额外底部信息" },
+    custom_style: { en: "Custom Style", zh: "自定义样式" },
+    artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
+    anima_mixer_config: { en: "Anima Mixer Configuration", zh: "Anima Mixer 配置" },
+  },
+  LoraTesterMultiPromptInput: {
+    multi_prompt_text: { en: "Multi Prompt Text", zh: "长多提示词输入" },
+    separator_mode: { en: "Separator Mode", zh: "分隔模式" },
+    custom_separator: { en: "Custom Separator", zh: "自定义分隔符" },
+  },
+  LoraTesterGlobalPromptAppend: {
+    prompt_list: { en: "Prompt List", zh: "提示词列表" },
+    addition: { en: "Global Addition", zh: "全局追加内容" },
+    position: { en: "Append Position", zh: "追加位置" },
+    independent_artist_tags: { en: "Independent Artist Tags", zh: "独立画师 Tag" },
+  },
+  LoraTesterPromptAxis: {
+    prompt_list: { en: "Prompt List", zh: "提示词列表" },
+    axis_title: { en: "Axis Title", zh: "轴标题" },
+  },
+  LoraTesterLoraStackAxis: {
+    lorastacks: { en: "LoRA Stack List", zh: "LoRA 组合列表" },
+    include_base: { en: "Include BASE", zh: "包含 BASE 基线" },
+    axis_title: { en: "Axis Title", zh: "轴标题" },
+  },
+  LoraTesterSeedList: {
+    mode: { en: "Seed Source", zh: "种子来源" },
+    seed_text: { en: "Seed List", zh: "种子列表" },
+    random_count: { en: "Random Count", zh: "随机种子数量" },
+    random_source_seed: { en: "Generator Seed", zh: "生成器种子" },
+  },
+  LoraTesterSeedAxis: {
+    seed_list: { en: "Seed List", zh: "种子列表" },
+    axis_title: { en: "Axis Title", zh: "轴标题" },
+  },
 };
 
 const ARTIST_MODE_OPTION_LABELS = {
@@ -182,6 +293,28 @@ const OUTPUT_LABELS = {
   },
   MultiPromptSample: {
     comparison_sheet: { en: "Comparison Sheet", zh: "XY 对比图" },
+  },
+  LoraTesterXYSampler: {
+    comparison_sheet: { en: "Comparison Sheet", zh: "XY 对比图" },
+    raw_images: { en: "Raw Images", zh: "原始图片序列" },
+  },
+  LoraTesterMultiPromptInput: {
+    prompt_list: { en: "Prompt List", zh: "提示词列表" },
+  },
+  LoraTesterGlobalPromptAppend: {
+    prompt_list: { en: "Prompt List", zh: "提示词列表" },
+  },
+  LoraTesterPromptAxis: {
+    y_axis: { en: "Prompt Axis", zh: "提示词轴" },
+  },
+  LoraTesterLoraStackAxis: {
+    x_axis: { en: "LoRA Stack Axis", zh: "LoRA 组合轴" },
+  },
+  LoraTesterSeedList: {
+    seed_list: { en: "Seed List", zh: "种子列表" },
+  },
+  LoraTesterSeedAxis: {
+    seed_axis: { en: "Seed Axis", zh: "种子轴" },
   },
 };
 
@@ -339,22 +472,32 @@ function localizedInputLabel(nodeName, inputName) {
 }
 
 function installNodeLabels(node, nodeName) {
+  let changed = false;
   for (const widget of node.widgets ?? []) {
     const label = localizedInputLabel(nodeName, String(widget.name ?? ""));
     if (!label) continue;
-    widget.label = label;
-    if ((
+    changed = setWidgetLabel(widget, label) || changed;
+    const isPromptTextWidget = (
       nodeName === MULTI_PROMPT_NODE &&
       /^(?:prompt_prefix|independent_artist_tags|negative_prompt|positive_prompt_\d+)$/.test(widget.name)
     ) || (
       nodeName === TARGET_NODE && widget.name === "independent_artist_tags"
-    )) {
+    ) || (
+      nodeName === MULTI_PROMPT_INPUT_NODE && widget.name === "multi_prompt_text"
+    ) || (
+      nodeName === GLOBAL_PROMPT_APPEND_NODE &&
+      /^(?:addition|independent_artist_tags)$/.test(widget.name)
+    ) || (
+      nodeName === XY_SAMPLER_NODE &&
+      /^(?:positive_prompt|negative_prompt)$/.test(widget.name)
+    );
+    if (isPromptTextWidget) {
       for (const options of widgetOptionTargets(widget)) options.placeholder = label;
       const renderedElements = [...widgetElements(widget)];
       for (const container of document.querySelectorAll("[node-id][node-type]")) {
         if (
           container.getAttribute("node-id") !== String(node.id) ||
-          container.getAttribute("node-type") !== MULTI_PROMPT_NODE ||
+          container.getAttribute("node-type") !== nodeName ||
           container.querySelector("label")?.textContent?.trim() !== label
         ) {
           continue;
@@ -373,13 +516,14 @@ function installNodeLabels(node, nodeName) {
   }
   for (const input of node.inputs ?? []) {
     const label = localizedInputLabel(nodeName, String(input.name ?? ""));
-    if (label) input.label = label;
+    if (label) changed = setWidgetLabel(input, label) || changed;
   }
   for (const output of node.outputs ?? []) {
     const labels = OUTPUT_LABELS[nodeName]?.[String(output.name ?? "")];
     const label = labels?.[activeLanguage()] ?? labels?.en;
-    if (label) output.label = label;
+    if (label) changed = setWidgetLabel(output, label) || changed;
   }
+  return changed;
 }
 
 function setWidgetLabel(widget, label) {
@@ -547,6 +691,91 @@ function setWidgetVisible(widget, visible) {
   widgetElements(widget).forEach((element) => setElementVisible(element, false));
 }
 
+function setDomElementDisabled(element, disabled) {
+  const elementState = element[DISABLED_ELEMENT_STATE] ?? {
+    opacity: element.style.opacity,
+    pointerEvents: element.style.pointerEvents,
+    inert: element.inert,
+    ariaDisabled: element.getAttribute?.("aria-disabled"),
+  };
+  element[DISABLED_ELEMENT_STATE] = elementState;
+  const controls = element.matches?.("textarea, input, select, button")
+    ? [element]
+    : [...(element.querySelectorAll?.("textarea, input, select, button") ?? [])];
+  for (const control of controls) {
+    const controlState = control[DISABLED_ELEMENT_STATE] ?? {
+      disabled: control.disabled,
+    };
+    control[DISABLED_ELEMENT_STATE] = controlState;
+    control.disabled = disabled ? true : controlState.disabled;
+  }
+  element.style.opacity = disabled ? "0.58" : elementState.opacity;
+  element.style.pointerEvents = disabled ? "none" : elementState.pointerEvents;
+  element.inert = disabled ? true : elementState.inert;
+  if (disabled) element.setAttribute?.("aria-disabled", "true");
+  else if (elementState.ariaDisabled == null) element.removeAttribute?.("aria-disabled");
+  else element.setAttribute?.("aria-disabled", elementState.ariaDisabled);
+}
+
+function xyDomSelector(nodeId, widgetName) {
+  const escape = globalThis.CSS?.escape ?? ((value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
+  return `[node-id="${escape(nodeId)}"] [aria-label="${escape(widgetName)}"]`;
+}
+
+function applyXyDomOverrides() {
+  if (typeof document === "undefined") return;
+  for (const { nodeId, widgetName } of XY_DOM_OVERRIDES.values()) {
+    document.querySelectorAll(xyDomSelector(nodeId, widgetName)).forEach(
+      (element) => setDomElementDisabled(element, true),
+    );
+  }
+}
+
+function setXyDomOverride(node, widgetName, disabled) {
+  if (typeof document === "undefined" || node?.id == null || !widgetName) return;
+  const key = `${node.id}:${widgetName}`;
+  const elements = document.querySelectorAll(xyDomSelector(node.id, widgetName));
+  elements.forEach((element) => setDomElementDisabled(element, disabled));
+  if (disabled) XY_DOM_OVERRIDES.set(key, { nodeId: node.id, widgetName });
+  else XY_DOM_OVERRIDES.delete(key);
+  if (!xyDomObserver && typeof MutationObserver !== "undefined") {
+    xyDomObserver = new MutationObserver(() => {
+      if (xyDomApplyScheduled) return;
+      xyDomApplyScheduled = true;
+      queueMicrotask(() => {
+        xyDomApplyScheduled = false;
+        applyXyDomOverrides();
+      });
+    });
+    xyDomObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
+}
+
+function setWidgetDisabled(widget, disabled, node = null) {
+  if (!widget) return;
+  const state = widget[DISABLED_STATE] ?? {
+    widgetDisabled: widget.disabled,
+    optionDisabled: widget.options?.disabled,
+    stateOptionDisabled: widget._state?.options?.disabled,
+  };
+  widget[DISABLED_STATE] = state;
+  widget.disabled = disabled ? true : state.widgetDisabled;
+  widget.options ??= {};
+  for (const options of widgetOptionTargets(widget)) {
+    if (disabled) options.disabled = true;
+    else if (options === widget._state?.options) {
+      if (state.stateOptionDisabled === undefined) delete options.disabled;
+      else options.disabled = state.stateOptionDisabled;
+    } else if (state.optionDisabled === undefined) delete options.disabled;
+    else options.disabled = state.optionDisabled;
+  }
+  const elements = new Set(widgetElements(widget));
+  for (const element of elements) {
+    setDomElementDisabled(element, disabled);
+  }
+  setXyDomOverride(node, widget?.name, disabled);
+}
+
 function refreshReactiveCollection(node, property) {
   const collection = node[property];
   if (!Array.isArray(collection)) return;
@@ -658,6 +887,39 @@ function installMultiPromptLayout(node) {
   node.setSize?.([MULTI_PROMPT_MIN_WIDTH, height]);
 }
 
+function updateSeedMode(node, value) {
+  const randomMode = String(value) === "random";
+  setWidgetVisible(node.widgets?.find((widget) => widget.name === "seed_text"), !randomMode);
+  setWidgetVisible(node.widgets?.find((widget) => widget.name === "random_count"), randomMode);
+  setWidgetVisible(node.widgets?.find((widget) => widget.name === "random_source_seed"), randomMode);
+  refreshReactiveCollection(node, "widgets");
+  node.graph?.incrementVersion?.();
+  resizeNodeToWidgets(node);
+}
+
+function installSeedMode(node) {
+  const modeWidget = node.widgets?.find((widget) => widget.name === "mode");
+  if (!modeWidget) return;
+  updateSeedMode(node, modeWidget.value);
+  if (modeWidget[SEED_MODE_OBSERVER]) return;
+  modeWidget[SEED_MODE_OBSERVER] = true;
+  const originalCallback = modeWidget.callback;
+  modeWidget.callback = function (value, ...args) {
+    const result = originalCallback?.apply(this, [value, ...args]);
+    updateSeedMode(node, value);
+    refreshWidgetViews(node);
+    return result;
+  };
+  const originalWidgetChanged = node.onWidgetChanged;
+  node.onWidgetChanged = function (...args) {
+    const result = originalWidgetChanged?.apply(this, args);
+    if (String(args[0] ?? "") === "mode") {
+      queueMicrotask(() => updateSeedMode(this, widgetValue(this, "mode")));
+    }
+    return result;
+  };
+}
+
 function inputIsConnected(input) {
   return input?.link != null || (Array.isArray(input?.linkIds) && input.linkIds.length > 0);
 }
@@ -705,7 +967,17 @@ function installDynamicStackList(node) {
 }
 
 function widgetValue(node, name) {
-  return node.widgets?.find((widget) => widget.name === name)?.value;
+  const widget = node.widgets?.find((item) => item.name === name);
+  if (typeof document !== "undefined" && node?.id != null) {
+    const escape = globalThis.CSS?.escape ?? ((value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
+    const selector = `[node-id="${escape(node.id)}"] [aria-label="${escape(name)}"]`;
+    const element = document.querySelector(selector);
+    const input = element?.matches?.("input, textarea, select")
+      ? element
+      : element?.querySelector?.("input, textarea, select");
+    if (input && typeof input.value === "string") return input.value;
+  }
+  return widget?.value;
 }
 
 function splitArtistTags(value) {
@@ -765,6 +1037,216 @@ function sourceNodesForInput(node, input) {
     if (source) sources.push(source);
   }
   return sources;
+}
+
+function firstSourceForInput(node, name) {
+  const input = node?.inputs?.find((item) => item.name === name);
+  return sourceNodesForInput(node, input)[0] ?? null;
+}
+
+function promptCountFromSource(node, visited = new Set()) {
+  if (!node || visited.has(node) || visited.size > 32) return null;
+  visited.add(node);
+  const name = nodeNameForUi(node);
+  if (name === MULTI_PROMPT_INPUT_NODE) {
+    const text = String(widgetValue(node, "multi_prompt_text") ?? "").replace(/\r\n?/g, "\n").trim();
+    if (!text) return 0;
+    const mode = String(widgetValue(node, "separator_mode") ?? "blank_lines");
+    if (mode === "lines") return text.split("\n").filter((value) => value.trim()).length;
+    if (mode === "custom") {
+      const separator = String(widgetValue(node, "custom_separator") ?? "---");
+      return separator ? text.split(separator).filter((value) => value.trim()).length : null;
+    }
+    return text.split(/\n[ \t]*\n+/).filter((value) => value.trim()).length;
+  }
+  for (const input of node.inputs ?? []) {
+    for (const source of sourceNodesForInput(node, input)) {
+      const count = promptCountFromSource(source, visited);
+      if (count != null) return count;
+    }
+  }
+  return null;
+}
+
+function seedCountFromAxis(node) {
+  const seedList = firstSourceForInput(node, "seed_list");
+  if (!seedList || nodeNameForUi(seedList) !== SEED_LIST_NODE) return null;
+  if (String(widgetValue(seedList, "mode") ?? "list") === "random") {
+    return Math.max(1, Number.parseInt(widgetValue(seedList, "random_count"), 10) || 1);
+  }
+  return String(widgetValue(seedList, "seed_text") ?? "")
+    .split(/[,，;；\s]+/)
+    .filter(Boolean).length;
+}
+
+function loraStackCountFromAxis(node) {
+  const source = firstSourceForInput(node, "lorastacks");
+  if (!source) return null;
+  const sourceName = nodeNameForUi(source);
+  let count = null;
+  if (sourceName === STACK_LISTER_NODE) {
+    count = (source.inputs ?? []).filter(inputIsConnected).length;
+  } else if (sourceName === STACK_SPLITTER_NODE) {
+    const stack = firstSourceForInput(source, "lora_stack");
+    if (stack && nodeNameForUi(stack) === STACK_NODE) {
+      const stackCount = Math.max(1, Number.parseInt(widgetValue(stack, "lora_count"), 10) || 1);
+      count = (2 ** Math.min(stackCount, 16)) - 1;
+    }
+  }
+  if (count == null) return null;
+  return count + (widgetValue(node, "include_base") === false ? 0 : 1);
+}
+
+function axisMetadata(node, inputName) {
+  const source = firstSourceForInput(node, inputName);
+  if (!source) return { parameters: new Set(), count: null };
+  const sourceName = nodeNameForUi(source);
+  if (sourceName === SEED_AXIS_NODE) {
+    return { parameters: new Set(["seed"]), count: seedCountFromAxis(source) };
+  }
+  if (sourceName === PROMPT_AXIS_NODE) {
+    return {
+      parameters: new Set(["prompt"]),
+      count: promptCountFromSource(firstSourceForInput(source, "prompt_list")),
+    };
+  }
+  if (sourceName === LORA_STACK_AXIS_NODE) {
+    return { parameters: new Set(["lora_stack"]), count: loraStackCountFromAxis(source) };
+  }
+  return { parameters: new Set(), count: null };
+}
+
+function createXyWarningWidget(node) {
+  const element = document.createElement("div");
+  element.setAttribute("role", "alert");
+  Object.assign(element.style, {
+    boxSizing: "border-box",
+    width: "100%",
+    minHeight: "40px",
+    padding: "8px 10px",
+    borderLeft: "3px solid #f0785a",
+    background: "rgba(48, 30, 27, 0.96)",
+    color: "#ffe9df",
+    fontSize: "12px",
+    lineHeight: "1.35",
+    whiteSpace: "normal",
+  });
+  let widget;
+  if (typeof node.addDOMWidget === "function") {
+    widget = node.addDOMWidget(XY_WARNING_WIDGET, "lora-tester-warning", element, {
+      serialize: false,
+      getMinHeight: () => (widget?.__loraTesterWarningVisible ? 44 : 0),
+      getMaxHeight: () => (widget?.__loraTesterWarningVisible ? 90 : 0),
+    });
+  } else {
+    widget = {
+      name: XY_WARNING_WIDGET,
+      type: "lora-tester-warning",
+      element,
+      options: { serialize: false },
+      computeSize: (width) => [width, 48],
+      draw() {},
+    };
+    node.addCustomWidget?.(widget);
+  }
+  widget.options ??= {};
+  widget.options.serialize = false;
+  widget.serialize = false;
+  return widget;
+}
+
+function updateXyAxisState(node) {
+  const x = axisMetadata(node, "x_axis");
+  const y = axisMetadata(node, "y_axis");
+  const assigned = new Set([...x.parameters, ...y.parameters]);
+  const widgetByParameter = {
+    prompt: "positive_prompt",
+    seed: "seed",
+    steps: "steps",
+    cfg: "cfg",
+    sampler_name: "sampler_name",
+    scheduler: "scheduler",
+    denoise: "denoise",
+  };
+  for (const [parameter, widgetName] of Object.entries(widgetByParameter)) {
+    setWidgetDisabled(
+      node.widgets?.find((widget) => widget.name === widgetName),
+      assigned.has(parameter),
+      node,
+    );
+  }
+
+  const conflicts = [...x.parameters].filter((parameter) => y.parameters.has(parameter));
+  const cellCount = x.count != null && y.count != null ? x.count * y.count : null;
+  let warning = "";
+  if (conflicts.length) {
+    warning = activeLanguage() === "zh"
+      ? `X/Y 轴同时修改了相同参数：${conflicts.join(", ")}。执行前必须移除其中一项。`
+      : `X and Y both modify: ${conflicts.join(", ")}. Remove the duplicate axis parameter before execution.`;
+  } else if ((x.count ?? 0) > 32 || (y.count ?? 0) > 32 || (cellCount ?? 0) > 128) {
+    warning = activeLanguage() === "zh"
+      ? `大型 XY 队列：${x.count ?? "?"} × ${y.count ?? "?"}。采样时间、显存与原始 IMAGE 内存占用会明显增加。`
+      : `Large XY queue: ${x.count ?? "?"} x ${y.count ?? "?"}. Sampling time and IMAGE memory will increase substantially.`;
+  }
+  let widget = node.widgets?.find((item) => item.name === XY_WARNING_WIDGET);
+  if (!widget) widget = createXyWarningWidget(node);
+  widget.element.textContent = warning;
+  widget.element.title = warning;
+  const visible = Boolean(warning);
+  widget.__loraTesterWarningVisible = visible;
+  setWidgetVisible(widget, visible);
+  refreshReactiveCollection(node, "widgets");
+  node.graph?.incrementVersion?.();
+  resizeNodeToWidgets(node);
+}
+
+function installXyObservers(node) {
+  if (node[XY_OBSERVER]) {
+    updateXyAxisState(node);
+    return;
+  }
+  node[XY_OBSERVER] = true;
+  const originalConnectionsChange = node.onConnectionsChange;
+  node.onConnectionsChange = function (...args) {
+    const result = originalConnectionsChange?.apply(this, args);
+    scheduleGraphNodeUi(this.graph ?? app.graph);
+    return result;
+  };
+  updateXyAxisState(node);
+}
+
+function installXySourceObservers(node, nodeName) {
+  if (node[XY_SOURCE_OBSERVER]) return;
+  const relevantNames = nodeName === MULTI_PROMPT_INPUT_NODE
+    ? new Set(["multi_prompt_text", "separator_mode", "custom_separator"])
+    : nodeName === SEED_LIST_NODE
+      ? new Set(["mode", "seed_text", "random_count", "random_source_seed"])
+      : null;
+  if (!relevantNames) return;
+  node[XY_SOURCE_OBSERVER] = true;
+  for (const widget of node.widgets ?? []) {
+    if (!relevantNames.has(String(widget.name ?? ""))) continue;
+    const originalCallback = widget.callback;
+    widget.callback = function (value, ...args) {
+      const result = originalCallback?.apply(this, [value, ...args]);
+      scheduleGraphNodeUi(node.graph ?? app.graph);
+      return result;
+    };
+  }
+  const originalWidgetChanged = node.onWidgetChanged;
+  node.onWidgetChanged = function (...args) {
+    const result = originalWidgetChanged?.apply(this, args);
+    if (relevantNames.has(String(args[0] ?? ""))) {
+      scheduleGraphNodeUi(this.graph ?? app.graph);
+    }
+    return result;
+  };
+  const originalConnectionsChange = node.onConnectionsChange;
+  node.onConnectionsChange = function (...args) {
+    const result = originalConnectionsChange?.apply(this, args);
+    scheduleGraphNodeUi(this.graph ?? app.graph);
+    return result;
+  };
 }
 
 function stackArtistCountsFromNode(node, visited = new Set()) {
@@ -982,6 +1464,13 @@ function supportsNodeUi(nodeName) {
     nodeName === STACK_SPLITTER_NODE ||
     nodeName === STACK_LISTER_NODE ||
     nodeName === MULTI_PROMPT_NODE ||
+    nodeName === XY_SAMPLER_NODE ||
+    nodeName === MULTI_PROMPT_INPUT_NODE ||
+    nodeName === GLOBAL_PROMPT_APPEND_NODE ||
+    nodeName === PROMPT_AXIS_NODE ||
+    nodeName === LORA_STACK_AXIS_NODE ||
+    nodeName === SEED_LIST_NODE ||
+    nodeName === SEED_AXIS_NODE ||
     nodeName in OPTION_LABELS ||
     nodeName in INPUT_LABELS ||
     nodeName in OUTPUT_LABELS
@@ -992,7 +1481,7 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
   if (!supportsNodeUi(nodeName)) return;
   preserveUnavailableLoraValues(node);
   installWidgetTranslations(node, nodeName);
-  installNodeLabels(node, nodeName);
+  const labelsChanged = installNodeLabels(node, nodeName);
   if (nodeName === TARGET_NODE) installDynamicLoraCount(node);
   if (nodeName === STACK_NODE) {
     installDynamicCount(node, "lora_count", STACK_ITEM_GROUPS, 16);
@@ -1001,11 +1490,25 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
     installMultiPromptLayout(node);
     installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
   }
+  if (nodeName === MULTI_PROMPT_INPUT_NODE || nodeName === GLOBAL_PROMPT_APPEND_NODE) {
+    installMultiPromptLayout(node);
+  }
+  if (nodeName === SEED_LIST_NODE) installSeedMode(node);
+  installXySourceObservers(node, nodeName);
+  if (nodeName === XY_SAMPLER_NODE) installXyObservers(node);
   if (nodeName === STACK_LISTER_NODE) installDynamicStackList(node);
   const artistLabelsChanged = (
     nodeName === TARGET_NODE || nodeName === STACK_NODE
   ) && artistModeLabels(node, nodeName);
-  if (artistLabelsChanged) refreshReactiveCollection(node, "widgets");
+  if (artistLabelsChanged || labelsChanged) {
+    refreshReactiveCollection(node, "widgets");
+    if (labelsChanged) {
+      refreshReactiveCollection(node, "inputs");
+      refreshReactiveCollection(node, "outputs");
+      node.graph?.incrementVersion?.();
+      node.setDirtyCanvas?.(true, true);
+    }
+  }
   if ([TARGET_NODE, STACK_NODE, MULTI_PROMPT_NODE].includes(nodeName)) {
     installArtistObservers(node, nodeName);
   }
@@ -1053,13 +1556,18 @@ app.registerExtension({
     const hasDynamicStackCount = nodeData.name === STACK_NODE;
     const hasDynamicPromptCount = nodeData.name === MULTI_PROMPT_NODE;
     const hasDynamicStackList = nodeData.name === STACK_LISTER_NODE;
+    const hasSeedMode = nodeData.name === SEED_LIST_NODE;
+    const hasLongPromptLayout = [MULTI_PROMPT_INPUT_NODE, GLOBAL_PROMPT_APPEND_NODE].includes(
+      nodeData.name,
+    );
+    const hasXyObserver = nodeData.name === XY_SAMPLER_NODE;
     const hasWidgetTranslations = nodeData.name in OPTION_LABELS;
     const hasNodeLabels =
       nodeData.name in INPUT_LABELS ||
       nodeData.name in OUTPUT_LABELS ||
       nodeData.name === STACK_LISTER_NODE ||
       nodeData.name === STACK_SPLITTER_NODE;
-    if (!hasDynamicLoraCount && !hasDynamicStackCount && !hasDynamicPromptCount && !hasDynamicStackList && !hasWidgetTranslations && !hasNodeLabels) return;
+    if (!hasDynamicLoraCount && !hasDynamicStackCount && !hasDynamicPromptCount && !hasDynamicStackList && !hasSeedMode && !hasLongPromptLayout && !hasXyObserver && !hasWidgetTranslations && !hasNodeLabels) return;
 
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function (...args) {

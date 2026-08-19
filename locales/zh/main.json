@@ -2,6 +2,11 @@
   "nodeCategories": {
     "Lora Tester": "LoRA 测试器",
     "Stacks": "组合工具",
-    "Lora Tester/Stacks": "LoRA 测试器/组合工具"
+    "Axes": "轴构造",
+    "Deprecated": "已过时",
+    "Lora Tester/Stacks": "LoRA 测试器/组合工具",
+    "Lora Tester/XY": "LoRA 测试器/XY 测试",
+    "Lora Tester/XY/Axes": "LoRA 测试器/XY 轴构造",
+    "Lora Tester/Deprecated": "LoRA 测试器/已过时"
   }
 }

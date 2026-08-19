@@ -312,28 +312,30 @@ class LoraStackMatrixSession:
         if key in self._submitted and not replace_existing:
             raise ValueError(f"Matrix cell has already been submitted: {key}")
         prepared = self._prepare_image(image)
-        rect = self.geometry.cell(row, column)
-        self._canvas.paste(prepared, (rect[0], rect[1]))
-        self._draw_image_frame(row, column, rect)
-        if artist_mixer:
-            self._draw_artist_mixer_label(row, column)
-        self._submitted.add(key)
+        try:
+            rect = self.geometry.cell(row, column)
+            self._canvas.paste(prepared, (rect[0], rect[1]))
+            self._draw_image_frame(row, column, rect)
+            if artist_mixer:
+                self._draw_artist_mixer_label(row, column)
+            self._submitted.add(key)
+        finally:
+            prepared.close()
 
     def finalize(self, *, strict: bool = True) -> Image.Image:
         if strict and len(self._submitted) != self.expected_count:
             raise ValueError(f"Composition is missing {self.expected_count - len(self._submitted)} image(s)")
-        result = self._canvas.copy()
         decorator = get_style_decorator(self.style.decorator)
         decorator.draw_foreground(
             DecorationContext(
-                canvas=result,
-                draw=ImageDraw.Draw(result),
+                canvas=self._canvas,
+                draw=self._draw,
                 plan=self.compositor,
                 geometry=self.geometry,
                 style=self.style,
             )
         )
-        return result
+        return self._canvas
 
     def _create_canvas(self) -> Image.Image:
         canvas = Image.new("RGB", self.geometry.canvas_size, self.style.background_color)
@@ -351,20 +353,38 @@ class LoraStackMatrixSession:
         else:
             image = image_to_pil(source, alpha_background=self.style.background_color)
         target = self.geometry.canvas_size
-        if self.style.background_fit == "stretch":
-            fitted = image.resize(target, Image.Resampling.LANCZOS)
-        elif self.style.background_fit == "cover":
-            fitted = ImageOps.fit(image, target, method=Image.Resampling.LANCZOS)
-        elif self.style.background_fit == "contain":
-            fitted = Image.new("RGB", target, self.style.background_color)
-            contained = ImageOps.contain(image, target, method=Image.Resampling.LANCZOS)
-            fitted.paste(contained, ((target[0] - contained.width) // 2, (target[1] - contained.height) // 2))
-        else:
-            fitted = Image.new("RGB", target, self.style.background_color)
-            for y in range(0, target[1], image.height):
-                for x in range(0, target[0], image.width):
-                    fitted.paste(image, (x, y))
-        return Image.blend(canvas, fitted, float(self.style.background_opacity))
+        fitted = None
+        mask = None
+        try:
+            if self.style.background_fit == "stretch":
+                fitted = image.resize(target, Image.Resampling.LANCZOS)
+            elif self.style.background_fit == "cover":
+                fitted = ImageOps.fit(image, target, method=Image.Resampling.LANCZOS)
+            elif self.style.background_fit == "contain":
+                fitted = Image.new("RGB", target, self.style.background_color)
+                contained = ImageOps.contain(image, target, method=Image.Resampling.LANCZOS)
+                try:
+                    fitted.paste(contained, ((target[0] - contained.width) // 2, (target[1] - contained.height) // 2))
+                finally:
+                    contained.close()
+            else:
+                fitted = Image.new("RGB", target, self.style.background_color)
+                for y in range(0, target[1], image.height):
+                    for x in range(0, target[0], image.width):
+                        fitted.paste(image, (x, y))
+            opacity = float(self.style.background_opacity)
+            if opacity >= 1.0:
+                canvas.paste(fitted, (0, 0))
+            else:
+                mask = Image.new("L", target, round(opacity * 255))
+                canvas.paste(fitted, (0, 0), mask)
+            return canvas
+        finally:
+            image.close()
+            if fitted is not None:
+                fitted.close()
+            if mask is not None:
+                mask.close()
 
     def _draw_template(self) -> None:
         decorator = get_style_decorator(self.style.decorator)

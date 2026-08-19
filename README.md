@@ -23,27 +23,36 @@
 - 逐张解码并提交给合成器，不在内存中同时保留 69 张源图。
 - 可用 `LoRA Stack` 保存多组 LoRA 文件、触发词和强度，并用 `LoRA Stack Splitter` 生成全部非空组合。
 - 可用动态增长的 `LoRA Stack Lister` 合并多个独立 Stack；连接一个输入后自动显示下一个输入槽。
-- `Style Combination Tester` 以 Prompt 为 Y 轴、LoRA/画师组合为 X 轴生成比较矩阵；左侧固定显示 `Prompt 1 / Prompt 2 / ...`，顶部显示 `BASE / A / B / A+B / ...`，底栏分别列出不同的 LoRA 文件、触发词、画师 Tag 与强度配置。同一文件使用不同强度或触发词时会分配不同字母，不会合并。BASE 与第一列效果图默认至少间隔单图宽度的 `1/8`，也可用 `control_gap` 显式覆盖。
+- `Style Combination Tester` 以 Prompt 为 Y 轴、LoRA/画师组合为 X 轴生成比较矩阵；左侧固定显示 `Prompt 1 / Prompt 2 / ...`，顶部显示 `BASE / A / B / A+B / ...`，底栏分别列出不同的 LoRA 文件、触发词、画师 Tag 与强度配置。同一 LoRA/画师源在不同权重下共享源代号，具体权重仍显示在列标签与详情表中。BASE 与第一列效果图默认至少间隔单图宽度的 `1/8`，也可用 `control_gap` 显式覆盖。
 - LoRA 文件下拉框提供稳定的“画师 Tag 模式”占位项；选择后，该项不加载 LoRA，触发词字段改为画师 Tag，强度字段改为画师权重。旧工作流仍保存原有字段和值。
 - Node 2.0 与旧 LiteGraph 共用一套动态布局：打开工作流、分页切回、缩小后再增大数量时都会重新同步可见项；其他设备缺少已保存 LoRA 时，下拉框仍可打开并保留缺失值供替换。
 - 隐藏槽位中的跨设备缺失 LoRA 不会阻断低数量工作流：后端只校验当前 `lora_count` 内的槽位，隐藏值仍保存在工作流中供以后替换；当前数量内的缺失 LoRA 仍会明确报错。
+- 通用 `XY Test Sampler` 以两个 `XY_AXIS` 输入驱动任意轴组合；每个轴的数据明确为三层队列 `groups -> entries -> parameters`，条目同时保存采样参数、短标签和底部详情信息。当前已提供提示词轴、LoRA/画师 Stack 轴和种子轴。
+- 优先场景“提示词 Y 轴 + 种子 X 轴”直接输出完整 XY 图表；采样器还提供 `raw_images` 原始图片序列输出，顺序为行优先 `(y, x)`，与拼接图互不冲突。
+- 两轴不能同时修改同一个采样参数。冲突会在后端加载模型前拒绝；前端已知的提示词、种子、步数、CFG、采样器、调度器和降噪轴会把对应基础控件置为禁用并提示来源。
+- 轴元素过多或 latent 空间过大时，后端会记录内存/耗时风险警告；前端可推断轴数量时会显示队列规模警告。最终画布仍受 `max_canvas_megapixels` 保护。
+- `extra_footer_text` 为可选高级输入，非空时在所有轴详情之后显示 `NOTES` 区域；详情区支持多组分类表格和纯文字块。
 
 ## ComfyUI 节点
 
-插件注册八个节点，位于 `Lora Tester`、`Stacks` 与 `Artist Tags` 子分类：
+插件注册现有节点与通用 XY 节点，位于 `Lora Tester`、`Lora Tester/XY`、`Lora Tester/XY/Axes`、`Stacks`、`Artist Tags` 与 `Lora Tester/Deprecated` 子分类：
 
 - `Style Component Tester`：主采样与拼图节点。`lora_count` 默认为 1，可选 1–3；分别执行 5、25、69 次采样。
 - `LoRA Tester Style`：可选样式节点。只有主节点的 `color_mode` 为 `custom` 时使用，可配置背景颜色或单张背景 `IMAGE`、文字与边框颜色、A/B/C 功能色、间距、字体和装饰器。
 - `LoRA Stack`：最多配置 16 组 LoRA 文件、触发词和强度，输出 `LORA_STACK`；所有启用项都必须选择文件。
 - `LoRA Stack Splitter`：将一个 Stack 拆成所有非空组合并输出 `LORA_STACK_LIST`。例如 ABC 会得到 A、B、C、AB、AC、BC、ABC。
 - `LoRA Stack Lister`：按连接顺序合并多个 `LORA_STACK`，动态显示最多 16 个输入槽。
-- `Style Combination Tester`：最多使用 16 行正面提示词，与 `LORA_STACK_LIST` 组成 XY 比较矩阵，并保留无 LoRA/画师组合的 BASE 对照列；“独立画师 Tag”会应用到 BASE 和所有 Stack 测试格。
+- `XY Test Sampler`：接收 `MODEL / CLIP / VAE / LATENT`、`x_axis / y_axis` 和基础采样参数，按两轴笛卡尔积采样，输出 `comparison_sheet` 与 `raw_images`。`extra_footer_text` 可在底部追加 NOTES。
+- `Multi Prompt Input` -> `Global Prompt Append` -> `Prompt Axis`：将长多提示词输入拆分，统一追加文本和独立画师 Tag，再构造提示词轴。普通提示词中的 `@` 永远不会自动进入画师链。
+- `LoRA Stack Axis`：将 `LORA_STACK_LIST` 构造成 X 轴，BASE 可单独分组；同一 LoRA 文件在不同权重/触发词配置下共享源代号，详情表保留完整配置。
+- `Seed List / Random Seeds` -> `Seed Axis`：接受显式种子列表或确定性随机种子生成，并可接入 X 或 Y 轴。
+- `Style Combination Tester`：旧的提示词水平测试节点，已移入 `Lora Tester/Deprecated` 并标记 `DEPRECATED = True`；它仍保留原节点键和输入，内部改走通用 XY 采样核心。
 - `Artist Tag Template`：输出 `ARTIST_TAG_TEMPLATE`，用两条表达式分别定义权重为 1 和非 1 时的画师 Tag 写法。
 - `Anima Artist Mixer Configuration`：输出 `ANIMA_ARTIST_MIXER_CONFIG`；默认参数按参考工作流设为 `1.6 / true / base_anchored / true / false / 0.0`。
 
 `Style Component Tester` 会根据 `lora_count` 自动调整 LoRA/画师配置区：1 只显示 A，2 显示 A/B，3 显示 A/B/C。`LoRA Stack` 和 `Style Combination Tester` 也会按数量隐藏未启用的配置组；`LoRA Stack Lister` 会在连接后显示下一个输入槽。隐藏只影响界面和节点高度，不会清空已保存的值。插件通过 ComfyUI 原生 `locales` 机制为原有采样和样式节点提供 English 与简体中文翻译；前端扩展另为枚举值、详情开关和动态输入提供显示逻辑，但序列化值保持不变。
 
-主节点只接受 batch size 为 1 的 latent，并输出一张 `IMAGE`。`max_canvas_megapixels` 默认为 150，可在高级选项中调整；它只限制最终画布，不改变生成图。三 LoRA 输出张量很大，调整上限前应先确认系统内存足够。
+旧专用节点只接受 batch size 为 1 的 latent 并输出一张 `IMAGE`。通用 XY 节点同样要求单 latent，但输出两张互不冲突的结果：带标注的 `comparison_sheet` 与原始单格图片批次 `raw_images`。`max_canvas_megapixels` 默认为 150，可在高级选项中调整；它只限制最终画布，不改变生成图。轴数量和 latent 空间越大，原始批次占用的 CPU 内存越高，应先确认系统内存足够。
 
 ## 节点输入与权重规则
 

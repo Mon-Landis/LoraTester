@@ -495,5 +495,98 @@
         "tooltip": "按提示词行与 LoRA 组合列拼合的最终图片。"
       }
     }
+  },
+  "LoraTesterXYSampler": {
+    "display_name": "XY 测试采样器",
+    "description": "采样两个可扩展轴的全部组合，并同时输出带标注的对比图与原始解码图片序列。",
+    "inputs": {
+      "model": { "name": "基础模型", "tooltip": "整轮 XY 测试复用的基础 MODEL。" },
+      "clip": { "name": "CLIP", "tooltip": "用于提示词编码与可选 LoRA 二次处理的基础 CLIP。" },
+      "vae": { "name": "VAE", "tooltip": "解码每个采样结果。" },
+      "latent_image": { "name": "潜空间图像", "tooltip": "所有 XY 测试格复用的单张 latent 尺寸与批次。" },
+      "x_axis": { "name": "X 轴", "tooltip": "渲染为图片列的轴条目。" },
+      "y_axis": { "name": "Y 轴", "tooltip": "渲染为图片行的轴条目。" },
+      "positive_prompt": { "name": "基础正面提示词", "tooltip": "两轴均未提供提示词时使用的默认正面提示词。" },
+      "negative_prompt": { "name": "负面提示词", "tooltip": "所有 XY 测试格共用的负面提示词。" },
+      "seed": { "name": "基础种子", "tooltip": "两轴均未提供种子时使用的默认值。" },
+      "steps": { "name": "基础步数", "tooltip": "两轴均未提供步数时使用的默认值。" },
+      "cfg": { "name": "基础 CFG", "tooltip": "两轴均未提供 CFG 时使用的默认值。" },
+      "sampler_name": { "name": "基础采样器", "tooltip": "两轴均未提供采样器时使用的默认值。" },
+      "scheduler": { "name": "基础调度器", "tooltip": "两轴均未提供调度器时使用的默认值。" },
+      "denoise": { "name": "基础降噪强度", "tooltip": "两轴均未提供降噪强度时使用的默认值。" },
+      "color_mode": { "name": "颜色模式", "tooltip": "最终 XY 对比图的配色预设。" },
+      "show_axis_details": { "name": "显示轴详情区", "tooltip": "在网格下方渲染按分类组织的表格与纯文字详情。" },
+      "log_test_details": { "name": "输出测试详情日志", "tooltip": "逐格输出解析后的参数、LoRA、画师 Tag 与路由。" },
+      "use_anima_artist_mixer": { "name": "使用 Anima Artist Mixer", "tooltip": "对符合条件的 Anima 多画师测试格使用可选外部 Mixer。" },
+      "max_canvas_megapixels": { "name": "最大画布（百万像素）", "tooltip": "带标注对比图超过该像素数量时在分配前中止。" },
+      "extra_footer_text": { "name": "额外底部信息", "tooltip": "可选文本，显示在轴详情区下方的 NOTES 区域。" },
+      "custom_style": { "name": "自定义样式", "tooltip": "颜色模式为自定义时使用的 LoRA 测试器样式。" },
+      "artist_tag_template": { "name": "画师 Tag 模板", "tooltip": "覆盖模型内置和组合自带的画师 Tag 语法。" },
+      "anima_mixer_config": { "name": "Anima Mixer 配置", "tooltip": "符合条件的 Anima 多画师测试格使用的可选配置。" }
+    },
+    "outputs": {
+      "0": { "name": "XY 对比图", "tooltip": "按照 X/Y 轴排列并标注的解码图片。" },
+      "1": { "name": "原始图片序列", "tooltip": "不含图表标注、按行优先顺序排列的全部单格 IMAGE 批次。" }
+    }
+  },
+  "LoraTesterMultiPromptInput": {
+    "display_name": "长多提示词输入",
+    "description": "将一个长文本解析为有序提示词列表。",
+    "inputs": {
+      "multi_prompt_text": { "name": "长多提示词输入", "tooltip": "包含全部正面提示词的长文本。" },
+      "separator_mode": { "name": "分隔模式", "tooltip": "按空行、每行或自定义分隔符拆分提示词。", "values": { "blank_lines": "空行分隔", "lines": "每行一个", "custom": "自定义分隔符" } },
+      "custom_separator": { "name": "自定义分隔符", "tooltip": "自定义模式下用于拆分提示词的文本。" }
+    },
+    "outputs": { "0": { "name": "提示词列表", "tooltip": "可继续进行全局编辑或构造轴的结构化正面提示词。" } }
+  },
+  "LoraTesterGlobalPromptAppend": {
+    "display_name": "全局提示词追加",
+    "description": "在每条提示词前方或后方追加共用文本，同时独立保存显式画师 Tag。",
+    "inputs": {
+      "prompt_list": { "name": "提示词列表", "tooltip": "需要更新的结构化提示词。" },
+      "addition": { "name": "全局追加内容", "tooltip": "追加到每条正面提示词的文本。" },
+      "position": { "name": "追加位置", "tooltip": "将共用文本放在每条提示词的前方或后方。", "values": { "before": "追加到前方", "after": "追加到后方" } },
+      "independent_artist_tags": { "name": "独立画师 Tag", "tooltip": "仅此字段独立参与 Anima Mixer 路由；普通提示词中的 @ 文本保持原样。" }
+    },
+    "outputs": { "0": { "name": "提示词列表", "tooltip": "完成全局追加的结构化提示词列表。" } }
+  },
+  "LoraTesterPromptAxis": {
+    "display_name": "提示词轴",
+    "description": "将结构化提示词列表转换为 XY 轴。",
+    "inputs": {
+      "prompt_list": { "name": "提示词列表", "tooltip": "用于构造轴的提示词条目。" },
+      "axis_title": { "name": "轴标题", "tooltip": "显示在提示词轴旁的短标题。" }
+    },
+    "outputs": { "0": { "name": "提示词轴", "tooltip": "包含标签、采样参数与详情文字的提示词轴。" } }
+  },
+  "LoraTesterLoraStackAxis": {
+    "display_name": "LoRA 组合轴",
+    "description": "将 LoRA 与画师 Tag 组合转换为带分组和分类详情表格的 XY 轴。",
+    "inputs": {
+      "lorastacks": { "name": "LoRA 组合列表", "tooltip": "需要放置到该轴上的 LoRA 与画师配置。" },
+      "include_base": { "name": "包含 BASE 基线", "tooltip": "将 BASE 放在独立分组中，并与测试配置显示可见间隔。" },
+      "axis_title": { "name": "轴标题", "tooltip": "显示在组合轴旁的短标题。" }
+    },
+    "outputs": { "0": { "name": "LoRA 组合轴", "tooltip": "可接入 XY 采样器任一轴输入的分组 LoRA/画师配置。" } }
+  },
+  "LoraTesterSeedList": {
+    "display_name": "种子列表 / 随机种子生成",
+    "description": "构造指定种子列表或确定性的随机种子序列。",
+    "inputs": {
+      "mode": { "name": "种子来源", "tooltip": "使用指定列表或确定性随机生成。", "values": { "list": "指定列表", "random": "确定性随机生成" } },
+      "seed_text": { "name": "种子列表", "tooltip": "使用逗号、空格或换行分隔的十进制种子。" },
+      "random_count": { "name": "随机种子数量", "tooltip": "随机模式下生成的种子数量。" },
+      "random_source_seed": { "name": "生成器种子", "tooltip": "以确定性方式控制随机种子序列。" }
+    },
+    "outputs": { "0": { "name": "种子列表", "tooltip": "可接入种子轴节点的有序种子。" } }
+  },
+  "LoraTesterSeedAxis": {
+    "display_name": "种子轴",
+    "description": "将有序种子列表转换为 XY 轴。",
+    "inputs": {
+      "seed_list": { "name": "种子列表", "tooltip": "用于构造轴的指定或生成种子。" },
+      "axis_title": { "name": "轴标题", "tooltip": "显示在种子轴旁的短标题。" }
+    },
+    "outputs": { "0": { "name": "种子轴", "tooltip": "可接入 XY 采样器任一轴输入的种子值。" } }
   }
 }

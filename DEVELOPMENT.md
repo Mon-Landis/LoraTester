@@ -46,7 +46,23 @@ D:\ComfyUI\ComfyUI_windows_portable\ComfyUI\custom_nodes\LoraTester
   -> D:\ComfyUI\LoraTester
 ```
 
-根 `__init__.py` 当前注册八个节点：`LoraTesterSampler`（显示名 `Style Component Tester`）、`LoraTesterStyle`、`ArtistTagTemplate`、`AnimaArtistMixerConfig`、`LoraStack`、`LoraStackSplitter`、`LoraStackLister` 与 `MultiPromptSample`（显示名 `Style Combination Tester`）。注册键和类名保持稳定，显示名变更不会改变已保存工作流。
+根 `__init__.py` 当前注册原有节点与通用 XY 节点：`LoraTesterSampler`、`LoraTesterStyle`、`ArtistTagTemplate`、`AnimaArtistMixerConfig`、`LoraStack`、`LoraStackSplitter`、`LoraStackLister`、`MultiPromptSample`，以及 `LoraTesterXYSampler`、`LoraTesterMultiPromptInput`、`LoraTesterGlobalPromptAppend`、`LoraTesterPromptAxis`、`LoraTesterLoraStackAxis`、`LoraTesterSeedList`、`LoraTesterSeedAxis`。注册键和类名保持稳定；`MultiPromptSample` 仅移入 `Lora Tester/Deprecated` 并设置 `DEPRECATED = True`，旧工作流仍可加载。
+
+## 通用 XY 契约
+
+`lora_tester.xy` 是轴生产者与采样器之间的稳定边界。`XYAxis.data` 明确暴露三层队列：
+
+```text
+groups -> entries -> parameters
+```
+
+`AxisEntry` 还包含短标签和详情标签，`DetailBlock` 支持 `table`（表头 + 行）或 `text`（多行文字）。合成器只读取这些展示元数据，不理解 LoRA、提示词或种子的采样语义；参数语义由 `register_xy_parameter_handler()` 注册表处理。新增轴类型只需生成 `AxisEntry` / `AxisParameter`，无需重写笛卡尔积、采样分组或拼图逻辑。
+
+采样器在执行前计算两轴的参数名交集；例如 X 和 Y 同时包含 `seed`、`prompt` 或 `lora_stack` 会明确报错。基础采样控件仍保留为无轴输入时的 fallback；已连接的 Prompt/Seed/LoRA/Steps/CFG/Sampler/Scheduler/Denoise 轴会在前端禁用对应控件，并在无法解析轴来源时保留后端校验。
+
+`XYTestSampler` 按影响 MODEL/CLIP 的 LoRA Stack 签名分组执行，组内复用 patched model/CLIP，轴参数仍逐格解析。返回的 `raw_images` 是行优先的 `[N,H,W,C]` ComfyUI IMAGE 批次；拼图画布只保留一张目标 RGB 图，不在提交后保存源图，也不在 `finalize()` 复制整张画布。
+
+`extra_footer_text` 非空时追加一个 `NOTES` 文字详情块。`max_canvas_megapixels` 保护最终画布；latent 空间或轴规模异常时，后端会先记录风险警告，前端在可推断来源时显示非阻断警告。
 
 ## 稳定节点字段
 

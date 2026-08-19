@@ -7,7 +7,7 @@ from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any
+from typing import Any, Callable
 
 from .artist import (
     ARTIST_TAG_MODE,
@@ -32,8 +32,20 @@ from .node_contract import (
     USE_ANIMA_ARTIST_MIXER_INPUT,
 )
 from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
-from .stack_compositor import LoraStackMatrixCompositor
 from .styles import StyleConfig, available_style_decorators
+from .xy import (
+    MAX_AXIS_ENTRIES,
+    MAX_SEED,
+    PromptEntry,
+    PromptList,
+    SeedList,
+    XYAxis,
+    build_lora_stack_axis,
+    build_prompt_axis,
+    build_seed_axis,
+    merge_axis_parameters,
+)
+from .xy_compositor import XYMatrixCompositor
 
 
 MAX_CACHED_LORAS = 3
@@ -42,6 +54,83 @@ MAX_STACK_INPUTS = 16
 DEFAULT_MAX_CANVAS_MEGAPIXELS = 150.0
 
 logger = logging.getLogger(__name__)
+
+
+XYParameterHandler = Callable[[dict[str, Any], Any], None]
+_XY_PARAMETER_HANDLERS: dict[str, XYParameterHandler] = {}
+
+
+def register_xy_parameter_handler(
+    name: str,
+    handler: XYParameterHandler,
+    *,
+    replace_existing: bool = False,
+) -> None:
+    """Register how one axis parameter overrides a sampler configuration."""
+
+    key = str(name).strip()
+    if not key:
+        raise ValueError("XY parameter handler name cannot be empty")
+    if not callable(handler):
+        raise TypeError("XY parameter handler must be callable")
+    if key in _XY_PARAMETER_HANDLERS and not replace_existing:
+        raise ValueError(f"XY parameter handler is already registered: {key}")
+    _XY_PARAMETER_HANDLERS[key] = handler
+
+
+def _set_int_parameter(name: str, minimum: int, maximum: int) -> XYParameterHandler:
+    def apply(values: dict[str, Any], raw: Any) -> None:
+        value = int(raw)
+        if not minimum <= value <= maximum:
+            raise ValueError(f"XY parameter {name} must be between {minimum} and {maximum}")
+        values[name] = value
+
+    return apply
+
+
+def _set_float_parameter(name: str, minimum: float, maximum: float) -> XYParameterHandler:
+    def apply(values: dict[str, Any], raw: Any) -> None:
+        value = float(raw)
+        if not math.isfinite(value) or not minimum <= value <= maximum:
+            raise ValueError(f"XY parameter {name} must be between {minimum:g} and {maximum:g}")
+        values[name] = value
+
+    return apply
+
+
+def _set_choice_parameter(name: str) -> XYParameterHandler:
+    def apply(values: dict[str, Any], raw: Any) -> None:
+        value = str(raw).strip()
+        if not value:
+            raise ValueError(f"XY parameter {name} cannot be empty")
+        values[name] = value
+
+    return apply
+
+
+def _set_prompt_parameter(values: dict[str, Any], raw: Any) -> None:
+    if not isinstance(raw, PromptEntry):
+        raise TypeError("XY prompt parameters must come from a Prompt Axis node")
+    values["positive_prompt"] = raw.prompt
+    values["prompt_prefix"] = raw.prefix
+    values["prompt_suffix"] = raw.suffix
+    values["independent_artist_tags"] = raw.independent_artist_tags
+
+
+def _set_lora_stack_parameter(values: dict[str, Any], raw: Any) -> None:
+    if not isinstance(raw, LoraStack):
+        raise TypeError("XY LoRA parameters must come from a LoRA Stack Axis node")
+    values["lora_stack"] = raw
+
+
+register_xy_parameter_handler("prompt", _set_prompt_parameter)
+register_xy_parameter_handler("seed", _set_int_parameter("seed", 0, MAX_SEED))
+register_xy_parameter_handler("steps", _set_int_parameter("steps", 1, 10000))
+register_xy_parameter_handler("cfg", _set_float_parameter("cfg", 0.0, 100.0))
+register_xy_parameter_handler("denoise", _set_float_parameter("denoise", 0.0, 1.0))
+register_xy_parameter_handler("sampler_name", _set_choice_parameter("sampler_name"))
+register_xy_parameter_handler("scheduler", _set_choice_parameter("scheduler"))
+register_xy_parameter_handler("lora_stack", _set_lora_stack_parameter)
 
 
 def _get_lora_names() -> list[str]:
@@ -1083,6 +1172,694 @@ class LoraTesterSampler:
         return task_model, task_clip
 
 
+def _resolve_xy_values(
+    base_values: dict[str, Any],
+    x_entry: Any,
+    y_entry: Any,
+) -> dict[str, Any]:
+    values = dict(base_values)
+    for name, raw in merge_axis_parameters(x_entry, y_entry).items():
+        try:
+            handler = _XY_PARAMETER_HANDLERS[name]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unsupported XY parameter {name!r}; register a parameter handler before sampling"
+            ) from exc
+        handler(values, raw)
+    return values
+
+
+def _validate_xy_axis_conflicts(x_axis: XYAxis, y_axis: XYAxis) -> None:
+    conflicts = sorted(x_axis.parameter_names & y_axis.parameter_names)
+    if conflicts:
+        joined = ", ".join(repr(value) for value in conflicts)
+        raise ValueError(
+            "X and Y axes cannot both modify the same sampling parameter: " + joined
+        )
+
+
+def _warn_xy_scale(
+    latent_image: dict[str, Any],
+    x_axis: XYAxis,
+    y_axis: XYAxis,
+    max_canvas_megapixels: float,
+) -> None:
+    cell_count = len(x_axis.entries) * len(y_axis.entries)
+    if len(x_axis.entries) > 32 or len(y_axis.entries) > 32 or cell_count > 128:
+        logger.warning(
+            "[LoraTester] XY axis contains %d x %d = %d cells; large axes increase "
+            "sampling time and raw IMAGE memory.",
+            len(x_axis.entries),
+            len(y_axis.entries),
+            cell_count,
+        )
+    samples = latent_image.get("samples") if isinstance(latent_image, dict) else None
+    shape = getattr(samples, "shape", ())
+    if len(shape) < 4:
+        return
+    latent_area = int(shape[-1]) * int(shape[-2])
+    # SD-family latent pixels generally decode to 8x8 image pixels. This is an
+    # intentionally conservative preflight estimate; the compositor remains the
+    # final authority once the VAE returns the real image dimensions.
+    estimated_pixels = cell_count * latent_area * 64
+    configured_limit = max(1, round(float(max_canvas_megapixels) * 1_000_000))
+    if estimated_pixels > configured_limit:
+        logger.warning(
+            "[LoraTester] XY preflight estimates %d image pixels before labels "
+            "for %d cells, above the configured %d-pixel canvas limit; sampling may be rejected.",
+            estimated_pixels,
+            cell_count,
+            configured_limit,
+        )
+    if latent_area > 512 * 512:
+        logger.warning(
+            "[LoraTester] Latent spatial area %d is unusually large; XY decoding "
+            "can consume substantial CPU RAM and VRAM.",
+            latent_area,
+        )
+
+
+def _xy_stack_key(stack: LoraStack | None) -> tuple[Any, ...]:
+    if stack is None:
+        return ()
+    return (stack.signature(), stack.artist_template)
+
+
+def _xy_mixer_labels_possible(
+    model: Any,
+    tasks: Sequence[tuple[int, int, dict[str, Any]]],
+    mixer_config: AnimaArtistMixerConfig | None,
+    use_anima_artist_mixer: bool,
+) -> bool:
+    if detect_model_family(model) != MODEL_FAMILY_ANIMA or not bool(use_anima_artist_mixer):
+        return False
+    config = mixer_config or AnimaArtistMixerConfig()
+    if not config.enabled or config.strength <= 0.0 or not anima_artist_mixer_available():
+        return False
+    for _, _, values in tasks:
+        stack = values.get("lora_stack")
+        stack_artists = stack.artist_entries if isinstance(stack, LoraStack) else ()
+        if len((*stack_artists, *parse_artist_tag_entries(values.get("independent_artist_tags", "")))) > 1:
+            return True
+    return False
+
+
+def _raw_batch_slot(decoded: Any, raw_batch: Any, index: int, total: int) -> Any:
+    shape = getattr(decoded, "shape", None)
+    if shape is None or len(shape) != 4 or int(shape[0]) != 1:
+        raise ValueError(
+            "XY sampler requires VAE decode to return one IMAGE per cell with shape [1,H,W,C]"
+        )
+    if raw_batch is None:
+        try:
+            raw_batch = decoded.detach().new_empty((int(total), *tuple(shape[1:])))
+        except AttributeError:
+            raw_batch = decoded.new_empty((int(total), *tuple(shape[1:])))
+    raw_batch[index].copy_(decoded[0])
+    return raw_batch
+
+
+class XYTestSampler(LoraTesterSampler):
+    """Generic XY sampler; axis producers define data and presentation metadata."""
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "clip": ("CLIP",),
+                "vae": ("VAE",),
+                "latent_image": ("LATENT",),
+                "x_axis": ("XY_AXIS", {"tooltip": "Axis rendered as image columns."}),
+                "y_axis": ("XY_AXIS", {"tooltip": "Axis rendered as image rows."}),
+                "positive_prompt": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": True,
+                        "tooltip": "Base positive prompt. A Prompt Axis entry overrides this value.",
+                    },
+                ),
+                "negative_prompt": (
+                    "STRING",
+                    {"default": "", "multiline": True, "dynamicPrompts": True},
+                ),
+                "seed": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": MAX_SEED,
+                        "control_after_generate": True,
+                    },
+                ),
+                "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
+                "cfg": (
+                    "FLOAT",
+                    {"default": 8.0, "min": 0.0, "max": 100.0, "step": 0.1, "round": 0.01},
+                ),
+                "sampler_name": (_get_sampler_names(),),
+                "scheduler": (_get_scheduler_names(),),
+                "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "color_mode": COLOR_MODE_INPUT,
+                "show_axis_details": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": "Render categorized axis detail tables and text below the XY grid.",
+                    },
+                ),
+                "log_test_details": LOG_TEST_DETAILS_INPUT,
+                "use_anima_artist_mixer": USE_ANIMA_ARTIST_MIXER_INPUT,
+                "max_canvas_megapixels": (
+                    "FLOAT",
+                    {
+                        "default": DEFAULT_MAX_CANVAS_MEGAPIXELS,
+                        "min": 1.0,
+                        "max": 1000.0,
+                        "step": 1.0,
+                        "advanced": True,
+                        "tooltip": "Stops when the labeled XY sheet would exceed this size.",
+                    },
+                ),
+                "extra_footer_text": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": True,
+                        "advanced": True,
+                        "tooltip": "Optional text rendered as a final NOTES section below all axis details.",
+                    },
+                ),
+            },
+            "optional": {
+                "custom_style": ("LORA_TESTER_STYLE", {"tooltip": "Used when Color Mode is custom."}),
+                "artist_tag_template": (
+                    "ARTIST_TAG_TEMPLATE",
+                    {"tooltip": "Overrides model-specific and stack-specific artist syntax."},
+                ),
+                "anima_mixer_config": (
+                    "ANIMA_ARTIST_MIXER_CONFIG",
+                    {"tooltip": "Optional settings for multi-artist Anima cells."},
+                ),
+            },
+            "hidden": {"unique_id": "UNIQUE_ID"},
+        }
+
+    RETURN_TYPES = ("IMAGE", "IMAGE")
+    RETURN_NAMES = ("comparison_sheet", "raw_images")
+    OUTPUT_TOOLTIPS = (
+        "Labeled XY comparison sheet.",
+        "Every decoded cell as a row-major IMAGE batch, independent of sheet layout.",
+    )
+    FUNCTION = "sample"
+    CATEGORY = "Lora Tester/XY"
+    DESCRIPTION = (
+        "Samples every combination of two extensible axes and returns both a labeled sheet "
+        "and the original decoded image sequence."
+    )
+
+    @classmethod
+    def IS_CHANGED(cls, **values: Any) -> Any:
+        # Axis producers carry file fingerprints and deterministic random seeds in their
+        # serialized values.  Keep this node cacheable without guessing their internals.
+        return tuple(
+            (key, repr(values[key]))
+            for key in sorted(values)
+            if key not in {"unique_id", "custom_style"}
+        )
+
+    def sample(
+        self,
+        model: Any,
+        clip: Any,
+        vae: Any,
+        latent_image: dict[str, Any],
+        x_axis: XYAxis,
+        y_axis: XYAxis,
+        positive_prompt: str,
+        negative_prompt: str,
+        seed: int,
+        steps: int,
+        cfg: float,
+        sampler_name: str,
+        scheduler: str,
+        denoise: float,
+        color_mode: str,
+        show_axis_details: bool,
+        log_test_details: bool = True,
+        use_anima_artist_mixer: bool = True,
+        max_canvas_megapixels: float = DEFAULT_MAX_CANVAS_MEGAPIXELS,
+        extra_footer_text: str = "",
+        custom_style: StyleConfig | None = None,
+        artist_tag_template: ArtistTagTemplate | None = None,
+        anima_mixer_config: AnimaArtistMixerConfig | None = None,
+        unique_id: Any = None,
+    ) -> tuple[Any, Any]:
+        return self._sample_xy(
+            model=model,
+            clip=clip,
+            vae=vae,
+            latent_image=latent_image,
+            x_axis=x_axis,
+            y_axis=y_axis,
+            positive_prompt=positive_prompt,
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            cfg=cfg,
+            sampler_name=sampler_name,
+            scheduler=scheduler,
+            denoise=denoise,
+            color_mode=color_mode,
+            show_axis_details=show_axis_details,
+            log_test_details=log_test_details,
+            use_anima_artist_mixer=use_anima_artist_mixer,
+            max_canvas_megapixels=max_canvas_megapixels,
+            extra_footer_text=extra_footer_text,
+            custom_style=custom_style,
+            artist_tag_template=artist_tag_template,
+            anima_mixer_config=anima_mixer_config,
+            unique_id=unique_id,
+            return_raw=True,
+            log_label="XY image",
+        )
+
+    def _sample_xy(
+        self,
+        *,
+        model: Any,
+        clip: Any,
+        vae: Any,
+        latent_image: dict[str, Any],
+        x_axis: XYAxis,
+        y_axis: XYAxis,
+        positive_prompt: str,
+        negative_prompt: str,
+        seed: int,
+        steps: int,
+        cfg: float,
+        sampler_name: str,
+        scheduler: str,
+        denoise: float,
+        color_mode: str,
+        show_axis_details: bool,
+        log_test_details: bool,
+        use_anima_artist_mixer: bool,
+        max_canvas_megapixels: float,
+        extra_footer_text: str,
+        custom_style: StyleConfig | None,
+        artist_tag_template: ArtistTagTemplate | None,
+        anima_mixer_config: AnimaArtistMixerConfig | None,
+        unique_id: Any,
+        return_raw: bool,
+        log_label: str,
+        x_group_gap: int | None = None,
+    ) -> tuple[Any, Any]:
+        _validate_single_latent(latent_image)
+        if not isinstance(x_axis, XYAxis) or not isinstance(y_axis, XYAxis):
+            raise TypeError("x_axis and y_axis must come from XY Axis nodes")
+        _validate_xy_axis_conflicts(x_axis, y_axis)
+        _warn_xy_scale(latent_image, x_axis, y_axis, max_canvas_megapixels)
+        style = _style_for_mode(color_mode, custom_style)
+        base_values = {
+            "positive_prompt": str(positive_prompt).strip(),
+            "prompt_prefix": "",
+            "prompt_suffix": "",
+            "independent_artist_tags": "",
+            "lora_stack": None,
+            "seed": int(seed),
+            "steps": int(steps),
+            "cfg": float(cfg),
+            "sampler_name": str(sampler_name),
+            "scheduler": str(scheduler),
+            "denoise": float(denoise),
+        }
+        _set_int_parameter("seed", 0, MAX_SEED)(base_values, seed)
+        _set_int_parameter("steps", 1, 10000)(base_values, steps)
+        _set_float_parameter("cfg", 0.0, 100.0)(base_values, cfg)
+        _set_float_parameter("denoise", 0.0, 1.0)(base_values, denoise)
+        tasks: list[tuple[int, int, dict[str, Any]]] = []
+        for row, y_entry in enumerate(y_axis.entries):
+            for column, x_entry in enumerate(x_axis.entries):
+                tasks.append((row, column, _resolve_xy_values(base_values, x_entry, y_entry)))
+        if not tasks:
+            raise ValueError("XY axes must produce at least one sampling cell")
+
+        groups: dict[tuple[Any, ...], tuple[LoraStack | None, list[tuple[int, int, dict[str, Any]]]]] = {}
+        for task in tasks:
+            stack = task[2].get("lora_stack")
+            if stack is not None and not isinstance(stack, LoraStack):
+                raise TypeError("lora_stack axis values must be LoraStack instances")
+            key = _xy_stack_key(stack)
+            if key not in groups:
+                groups[key] = (stack, [])
+            groups[key][1].append(task)
+
+        stacks = tuple(
+            stack for stack, _ in groups.values() if isinstance(stack, LoraStack)
+        )
+        independent_values = "\n".join(
+            values.get("independent_artist_tags", "")
+            for _, _, values in tasks
+            if values.get("independent_artist_tags", "")
+        )
+        preflight = _combination_preflight(
+            model,
+            stacks,
+            artist_tag_template,
+            anima_mixer_config,
+            use_anima_artist_mixer,
+            independent_values,
+        )
+        if bool(log_test_details):
+            _log_combination_preflight(preflight)
+
+        total_tasks = len(tasks)
+        progress = _make_progress_bar(total_tasks, node_id=unique_id)
+        compositor: XYMatrixCompositor | None = None
+        session = None
+        raw_batch = None
+        task_index = 0
+        self._lora_cache.clear()
+        try:
+            for stack, group_tasks in groups.values():
+                column_model = model
+                column_clip = clip
+                column_lora_usage: list[tuple[str, float, str, str]] = []
+                prompt_entries: tuple[tuple[bool, str, float], ...] = ()
+                stack_template = artist_tag_template
+                negative = None
+                try:
+                    if stack is not None:
+                        stack_template = artist_tag_template or stack.artist_template
+                        prompt_entries = tuple(
+                            (item.is_artist_tag, item.trigger_word, float(item.strength))
+                            for item in stack.items
+                        )
+                        for item in stack.items:
+                            if item.is_artist_tag:
+                                continue
+                            loaded, cache_hit = self._load_lora_with_status(item.name)
+                            column_lora_usage.append(
+                                (
+                                    item.name,
+                                    float(item.strength),
+                                    "run-local:hit" if cache_hit else "run-local:miss",
+                                    item.trigger_word,
+                                )
+                            )
+                            column_model, column_clip = _apply_lora_to_models(
+                                column_model,
+                                column_clip,
+                                loaded.state_dict,
+                                float(item.strength),
+                                loaded.metadata,
+                            )
+                    negative = _encode_prompt(column_clip, negative_prompt)
+                    for group_task_index, (row, column, values) in enumerate(group_tasks):
+                        _throw_if_interrupted()
+                        task_model = task_clip = route = positive = sampled = decoded = None
+                        try:
+                            task_model = column_model
+                            task_clip = column_clip
+                            route = _route_prompt_entries(
+                                model=column_model,
+                                clip=column_clip,
+                                prefix_parts=(values.get("prompt_prefix", ""),),
+                                entries=prompt_entries,
+                                suffix_parts=(values.get("positive_prompt", ""), values.get("prompt_suffix", "")),
+                                artist_template=stack_template,
+                                mixer_config=anima_mixer_config,
+                                independent_artist_tags=values.get("independent_artist_tags", ""),
+                                use_anima_artist_mixer=use_anima_artist_mixer,
+                            )
+                            task_model = route.model
+                            positive = route.positive
+                            if bool(log_test_details):
+                                artists = (
+                                    *(stack.artist_entries if stack is not None else ()),
+                                    *parse_artist_tag_entries(values.get("independent_artist_tags", "")),
+                                )
+                                artist_cache = "external:lazy-per-sample" if route.used_external_mixer else "none"
+                                _log_test_usage(
+                                    label=f"{log_label} {task_index + 1}/{total_tasks} | row={row + 1} | column={column + 1}",
+                                    loras=tuple(
+                                        (
+                                            name,
+                                            weight,
+                                            "run-local:hit" if group_task_index else status,
+                                            trigger,
+                                        )
+                                        for name, weight, status, trigger in column_lora_usage
+                                    ),
+                                    artists=tuple((tag, float(weight), artist_cache) for tag, weight in artists),
+                                    rendered_tags=route.rendered_tags,
+                                    route=route,
+                                    model_cache=(
+                                        "column reuse" if group_task_index else "column build"
+                                    ),
+                                )
+                            sampled = _common_ksampler(
+                                task_model,
+                                int(values["seed"]),
+                                int(values["steps"]),
+                                float(values["cfg"]),
+                                values["sampler_name"],
+                                values["scheduler"],
+                                positive,
+                                negative,
+                                latent_image,
+                                float(values["denoise"]),
+                                progress=progress,
+                                completed_tasks=task_index,
+                                total_tasks=total_tasks,
+                            )
+                            decoded = _decode_vae(vae, sampled)
+                            shape = getattr(decoded, "shape", None)
+                            if shape is None or len(shape) != 4 or int(shape[0]) != 1:
+                                raise ValueError("VAE decode must return shape [1,H,W,C] for each XY cell")
+                            if compositor is None:
+                                compositor = XYMatrixCompositor(
+                                    x_axis,
+                                    y_axis,
+                                    int(shape[-2]),
+                                    int(shape[-3]),
+                                    style=style,
+                                    show_details=bool(show_axis_details),
+                                    image_fit="strict",
+                                    max_canvas_pixels=max(1, round(float(max_canvas_megapixels) * 1_000_000)),
+                                    reserve_artist_mixer_labels=preflight.mixer_active,
+                                    extra_detail_text=extra_footer_text,
+                                    x_group_gap=x_group_gap,
+                                )
+                                session = compositor.start()
+                            session.submit(decoded, coordinate=(row, column), artist_mixer=route.used_external_mixer)
+                            if return_raw:
+                                raw_batch = _raw_batch_slot(
+                                    decoded,
+                                    raw_batch,
+                                    row * len(x_axis.entries) + column,
+                                    total_tasks,
+                                )
+                            task_index += 1
+                            progress.update_absolute(task_index, total_tasks)
+                        finally:
+                            if task_model is not column_model:
+                                _release_temporary_model(task_model, column_model)
+                            if task_clip is not column_clip:
+                                _release_temporary_model(task_clip, column_clip)
+                            task_model = task_clip = route = positive = sampled = decoded = None
+                finally:
+                    if stack is not None:
+                        _release_temporary_model(column_model, model)
+                        _release_temporary_model(column_clip, clip)
+                    column_model = column_clip = negative = None
+        finally:
+            self._lora_cache.clear()
+        if session is None:
+            raise RuntimeError("XY sampler generated no images")
+        sheet_pil = session.finalize(strict=True)
+        try:
+            sheet = pil_to_comfy_image(sheet_pil)
+        finally:
+            sheet_pil.close()
+        return sheet, raw_batch
+
+
+class MultiPromptInputNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "multi_prompt_text": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": True,
+                        "tooltip": "One prompt per blank line, line, or custom separator.",
+                    },
+                ),
+                "separator_mode": (
+                    ["blank_lines", "lines", "custom"],
+                    {"default": "blank_lines", "tooltip": "How the long prompt input is split."},
+                ),
+                "custom_separator": (
+                    "STRING",
+                    {"default": "---", "multiline": False, "tooltip": "Separator used in custom mode."},
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("LORA_TESTER_PROMPT_LIST",)
+    RETURN_NAMES = ("prompt_list",)
+    OUTPUT_TOOLTIPS = ("Structured positive prompts ready for a Prompt Axis node.",)
+    FUNCTION = "build_prompts"
+    CATEGORY = "Lora Tester/XY/Axes"
+    DESCRIPTION = "Parses one long text input into an ordered prompt list."
+
+    @staticmethod
+    def build_prompts(multi_prompt_text: str, separator_mode: str, custom_separator: str) -> tuple[PromptList]:
+        return (PromptList.parse(multi_prompt_text, separator_mode=separator_mode, custom_separator=custom_separator),)
+
+
+class GlobalPromptAppendNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "prompt_list": ("LORA_TESTER_PROMPT_LIST",),
+                "addition": ("STRING", {"default": "", "multiline": True, "dynamicPrompts": True}),
+                "position": (["before", "after"], {"default": "before"}),
+                "independent_artist_tags": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": True,
+                        "tooltip": "Artist-only tags kept separate from ordinary prompts and LoRA triggers.",
+                    },
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("LORA_TESTER_PROMPT_LIST",)
+    RETURN_NAMES = ("prompt_list",)
+    OUTPUT_TOOLTIPS = ("Prompt list with global text and independent artist tags applied.",)
+    FUNCTION = "append_prompt"
+    CATEGORY = "Lora Tester/XY/Axes"
+    DESCRIPTION = "Adds shared prompt text before or after every prompt without parsing ordinary @ text as artists."
+
+    @staticmethod
+    def append_prompt(
+        prompt_list: PromptList,
+        addition: str,
+        position: str,
+        independent_artist_tags: str,
+    ) -> tuple[PromptList]:
+        if not isinstance(prompt_list, PromptList):
+            raise TypeError("prompt_list must come from a Multi Prompt Input node")
+        return (prompt_list.append_global(addition, position=position, independent_artist_tags=independent_artist_tags),)
+
+
+class PromptAxisNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "prompt_list": ("LORA_TESTER_PROMPT_LIST",),
+                "axis_title": ("STRING", {"default": "PROMPT", "multiline": False}),
+            }
+        }
+
+    RETURN_TYPES = ("XY_AXIS",)
+    RETURN_NAMES = ("y_axis",)
+    OUTPUT_TOOLTIPS = ("Prompt entries as a grouped XY axis.",)
+    FUNCTION = "build_axis"
+    CATEGORY = "Lora Tester/XY/Axes"
+    DESCRIPTION = "Converts structured prompts into an XY axis with readable prompt detail text."
+
+    @staticmethod
+    def build_axis(prompt_list: PromptList, axis_title: str) -> tuple[XYAxis]:
+        return (build_prompt_axis(prompt_list, title=axis_title.strip() or "PROMPT"),)
+
+
+class LoraStackAxisNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "lorastacks": ("LORA_STACK_LIST",),
+                "include_base": ("BOOLEAN", {"default": True, "tooltip": "Keep BASE in its own separated group."}),
+                "axis_title": ("STRING", {"default": "STYLE", "multiline": False}),
+            }
+        }
+
+    RETURN_TYPES = ("XY_AXIS",)
+    RETURN_NAMES = ("x_axis",)
+    OUTPUT_TOOLTIPS = ("LoRA/artist stack configurations as a grouped XY axis.",)
+    FUNCTION = "build_axis"
+    CATEGORY = "Lora Tester/XY/Axes"
+    DESCRIPTION = "Converts LoRA and artist-tag stacks into an X axis with grouped BASE separation and categorized tables."
+
+    @staticmethod
+    def build_axis(lorastacks: LoraStackList, include_base: bool, axis_title: str) -> tuple[XYAxis]:
+        return (build_lora_stack_axis(lorastacks, include_base=include_base, title=axis_title.strip() or "STYLE"),)
+
+
+class SeedListNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "mode": (["list", "random"], {"default": "list"}),
+                "seed_text": ("STRING", {"default": "0", "multiline": False, "tooltip": "Comma/space separated decimal seeds in list mode."}),
+                "random_count": ("INT", {"default": 4, "min": 1, "max": MAX_AXIS_ENTRIES, "step": 1}),
+                "random_source_seed": ("INT", {"default": 0, "min": 0, "max": MAX_SEED}),
+            }
+        }
+
+    RETURN_TYPES = ("LORA_TESTER_SEED_LIST",)
+    RETURN_NAMES = ("seed_list",)
+    OUTPUT_TOOLTIPS = ("Ordered explicit or deterministic random seeds.",)
+    FUNCTION = "build_seeds"
+    CATEGORY = "Lora Tester/XY/Axes"
+    DESCRIPTION = "Builds a seed list from explicit values or a deterministic random generator."
+
+    @staticmethod
+    def build_seeds(mode: str, seed_text: str, random_count: int, random_source_seed: int) -> tuple[SeedList]:
+        if mode == "list":
+            return (SeedList.parse(seed_text),)
+        if mode == "random":
+            return (SeedList.random(random_count, random_source_seed),)
+        raise ValueError("mode must be list or random")
+
+
+class SeedAxisNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "seed_list": ("LORA_TESTER_SEED_LIST",),
+                "axis_title": ("STRING", {"default": "SEED", "multiline": False}),
+            }
+        }
+
+    RETURN_TYPES = ("XY_AXIS",)
+    RETURN_NAMES = ("seed_axis",)
+    OUTPUT_TOOLTIPS = ("Seeds as an XY axis, ready for either sampler socket.",)
+    FUNCTION = "build_axis"
+    CATEGORY = "Lora Tester/XY/Axes"
+    DESCRIPTION = "Converts a seed list into an XY axis."
+
+    @staticmethod
+    def build_axis(seed_list: SeedList, axis_title: str) -> tuple[XYAxis]:
+        return (build_seed_axis(seed_list, title=axis_title.strip() or "SEED"),)
+
+
 class LoraTesterStyleNode:
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
@@ -1531,6 +2308,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
     """Sample a prompt-by-stack matrix while reusing one seed per run."""
 
     LORA_CACHE_LIMIT = MAX_CACHED_LORAS
+    DEPRECATED = True
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
@@ -1661,7 +2439,7 @@ class MultiPromptSampleNode(LoraTesterSampler):
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("comparison_sheet",)
     FUNCTION = "sample"
-    CATEGORY = "Lora Tester"
+    CATEGORY = "Lora Tester/Deprecated"
     DESCRIPTION = "Samples multiple positive prompt rows against LoRA stacks and builds an XY comparison sheet."
 
     def sample(
@@ -1693,191 +2471,56 @@ class MultiPromptSampleNode(LoraTesterSampler):
         unique_id: Any = None,
         **values: Any,
     ) -> tuple[Any]:
-        _validate_single_latent(latent_image)
         if not isinstance(lorastacks, LoraStackList):
             raise TypeError("lorastacks must be a LoRA Stack List")
         count = int(prompt_count)
         if not 1 <= count <= MAX_STACK_ITEMS:
             raise ValueError(f"prompt_count must be between 1 and {MAX_STACK_ITEMS}")
-        prompts = []
+        prompts: list[PromptEntry] = []
         for index in range(1, count + 1):
             prompt = str(values.get(f"positive_prompt_{index}", "")).strip()
             if not prompt:
                 raise ValueError(f"Positive prompt row {index} cannot be empty")
-            prompts.append(prompt)
-        style = _style_for_mode(color_mode, custom_style)
-        stacks = tuple(lorastacks.stacks)
-        preflight = _combination_preflight(
-            model,
-            stacks,
-            artist_tag_template,
-            anima_mixer_config,
-            use_anima_artist_mixer,
-            independent_artist_tags,
+            prompts.append(
+                PromptEntry(
+                    prompt=prompt,
+                    prefix=str(prompt_prefix).strip(),
+                    independent_artist_tags=str(independent_artist_tags).strip(),
+                )
+            )
+        x_axis = build_lora_stack_axis(lorastacks, include_base=True, title="STYLE")
+        y_axis = build_prompt_axis(PromptList(tuple(prompts)), title="PROMPT")
+        sampler = XYTestSampler()
+        sheet, _ = sampler._sample_xy(
+            model=model,
+            clip=clip,
+            vae=vae,
+            latent_image=latent_image,
+            x_axis=x_axis,
+            y_axis=y_axis,
+            positive_prompt="",
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            cfg=cfg,
+            sampler_name=sampler_name,
+            scheduler=scheduler,
+            denoise=denoise,
+            color_mode=color_mode,
+            show_axis_details=show_lora_details,
+            log_test_details=log_test_details,
+            use_anima_artist_mixer=use_anima_artist_mixer,
+            max_canvas_megapixels=max_canvas_megapixels,
+            extra_footer_text="",
+            custom_style=custom_style,
+            artist_tag_template=artist_tag_template,
+            anima_mixer_config=anima_mixer_config,
+            unique_id=unique_id,
+            return_raw=False,
+            log_label="Combination image",
+            x_group_gap=control_gap,
         )
-        if bool(log_test_details):
-            _log_combination_preflight(preflight)
-        total_tasks = len(prompts) * (len(stacks) + 1)
-        progress = _make_progress_bar(total_tasks, node_id=unique_id)
-        compositor: LoraStackMatrixCompositor | None = None
-        session = None
-        task_index = 0
-        self._lora_cache.clear()
-        try:
-            # Column-major execution reuses one patched model, CLIP, and negative
-            # conditioning across every prompt row while preserving output coordinates.
-            for column, stack in enumerate((None, *stacks)):
-                column_model = model
-                column_clip = clip
-                prompt_entries: tuple[tuple[bool, str, float], ...] = ()
-                stack_template = artist_tag_template
-                column_lora_usage: list[tuple[str, float, str, str]] = []
-                negative = None
-                try:
-                    if stack is not None:
-                        stack_template = artist_tag_template or stack.artist_template
-                        prompt_entries = tuple(
-                            (item.is_artist_tag, item.trigger_word, float(item.strength))
-                            for item in stack.items
-                        )
-                        for item in stack.items:
-                            if item.is_artist_tag:
-                                continue
-                            loaded, cache_hit = self._load_lora_with_status(item.name)
-                            column_lora_usage.append(
-                                (
-                                    item.name,
-                                    float(item.strength),
-                                    "run-local:hit" if cache_hit else "run-local:miss",
-                                    item.trigger_word,
-                                )
-                            )
-                            column_model, column_clip = _apply_lora_to_models(
-                                column_model,
-                                column_clip,
-                                loaded.state_dict,
-                                float(item.strength),
-                                loaded.metadata,
-                            )
-                    negative = _encode_prompt(column_clip, negative_prompt)
-                    for row, prompt in enumerate(prompts):
-                        _throw_if_interrupted()
-                        task_model = task_clip = route = positive = sampled = decoded = decoded_image = None
-                        try:
-                            task_model = column_model
-                            task_clip = column_clip
-                            route = _route_prompt_entries(
-                                model=column_model,
-                                clip=column_clip,
-                                prefix_parts=(prompt_prefix,),
-                                entries=prompt_entries,
-                                suffix_parts=(prompt,),
-                                artist_template=stack_template,
-                                mixer_config=anima_mixer_config,
-                                independent_artist_tags=independent_artist_tags,
-                                use_anima_artist_mixer=use_anima_artist_mixer,
-                            )
-                            task_model = route.model
-                            positive = route.positive
-                            stack_label, _, _ = _stack_log_details(stack)
-                            if bool(log_test_details):
-                                artist_cache_status = (
-                                    "external:lazy-per-sample"
-                                    if route.used_external_mixer
-                                    else "none"
-                                )
-                                artist_entries = (
-                                    *(stack.artist_entries if stack is not None else ()),
-                                    *parse_artist_tag_entries(independent_artist_tags),
-                                )
-                                artist_usage = tuple(
-                                    (tag, float(weight), artist_cache_status)
-                                    for tag, weight in artist_entries
-                                )
-                                _log_test_usage(
-                                    label=(
-                                        f"Combination image {task_index + 1}/{total_tasks} "
-                                        f"| prompt_row={row + 1}/{len(prompts)} "
-                                        f"| column={column + 1}/{len(stacks) + 1} "
-                                        f"| stack={stack_label!r}"
-                                    ),
-                                    loras=tuple(
-                                        (
-                                            name,
-                                            weight,
-                                            "run-local:hit" if row > 0 else cache_status,
-                                            trigger,
-                                        )
-                                        for name, weight, cache_status, trigger in column_lora_usage
-                                    ),
-                                    artists=artist_usage,
-                                    rendered_tags=route.rendered_tags,
-                                    route=route,
-                                    model_cache=(
-                                        "column build" if row == 0 else "column reuse"
-                                    ),
-                                )
-                            sampled = _common_ksampler(
-                                task_model,
-                                int(seed),
-                                int(steps),
-                                float(cfg),
-                                sampler_name,
-                                scheduler,
-                                positive,
-                                negative,
-                                latent_image,
-                                float(denoise),
-                                progress=progress,
-                                completed_tasks=task_index,
-                                total_tasks=total_tasks,
-                            )
-                            decoded = _decode_vae(vae, sampled)
-                            decoded_image = image_to_pil(decoded)
-                            if compositor is None:
-                                compositor = LoraStackMatrixCompositor(
-                                    stacks,
-                                    prompts,
-                                    decoded_image.width,
-                                    decoded_image.height,
-                                    style=style,
-                                    show_stack_details=bool(show_lora_details),
-                                    image_fit="strict",
-                                    max_canvas_pixels=max(
-                                        1,
-                                        round(float(max_canvas_megapixels) * 1_000_000),
-                                    ),
-                                    control_gap=int(control_gap) or None,
-                                    reserve_artist_mixer_labels=preflight.mixer_active,
-                                )
-                                session = compositor.start()
-                            session.submit(
-                                decoded_image,
-                                coordinate=(row, column),
-                                artist_mixer=route.used_external_mixer,
-                            )
-                            task_index += 1
-                            progress.update_absolute(task_index, total_tasks)
-                        finally:
-                            if task_model is not column_model:
-                                _release_temporary_model(task_model, column_model)
-                            # The route currently leaves CLIP unchanged, but keep
-                            # this cleanup explicit for future mixer implementations.
-                            if task_clip is not column_clip:
-                                _release_temporary_model(task_clip, column_clip)
-                            task_model = task_clip = route = positive = sampled = decoded = decoded_image = None
-                finally:
-                    if stack is not None:
-                        _release_temporary_model(column_model, model)
-                        _release_temporary_model(column_clip, clip)
-                    column_model = column_clip = negative = None
-        finally:
-            # LoRA state dicts are CPU tensors. Keep only a tiny run-local LRU and
-            # release it on success, error, or user interruption.
-            self._lora_cache.clear()
-        if session is None:
-            raise RuntimeError("Style Combination Tester generated no images")
-        return (pil_to_comfy_image(session.finalize(strict=True)),)
+        return (sheet,)
 
 
 NODE_CLASS_MAPPINGS = {
@@ -1889,6 +2532,13 @@ NODE_CLASS_MAPPINGS = {
     "LoraStackSplitter": LoraStackSplitterNode,
     "LoraStackLister": LoraStackListerNode,
     "MultiPromptSample": MultiPromptSampleNode,
+    "LoraTesterXYSampler": XYTestSampler,
+    "LoraTesterMultiPromptInput": MultiPromptInputNode,
+    "LoraTesterGlobalPromptAppend": GlobalPromptAppendNode,
+    "LoraTesterPromptAxis": PromptAxisNode,
+    "LoraTesterLoraStackAxis": LoraStackAxisNode,
+    "LoraTesterSeedList": SeedListNode,
+    "LoraTesterSeedAxis": SeedAxisNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1900,6 +2550,13 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LoraStackSplitter": "LoRA Stack Splitter",
     "LoraStackLister": "LoRA Stack Lister",
     "MultiPromptSample": "Style Combination Tester",
+    "LoraTesterXYSampler": "XY Test Sampler",
+    "LoraTesterMultiPromptInput": "Multi Prompt Input",
+    "LoraTesterGlobalPromptAppend": "Global Prompt Append",
+    "LoraTesterPromptAxis": "Prompt Axis",
+    "LoraTesterLoraStackAxis": "LoRA Stack Axis",
+    "LoraTesterSeedList": "Seed List / Random Seeds",
+    "LoraTesterSeedAxis": "Seed Axis",
 }
 
 
@@ -1912,7 +2569,15 @@ __all__ = [
     "LoraStackSplitterNode",
     "LoraStackListerNode",
     "MultiPromptSampleNode",
+    "XYTestSampler",
+    "MultiPromptInputNode",
+    "GlobalPromptAppendNode",
+    "PromptAxisNode",
+    "LoraStackAxisNode",
+    "SeedListNode",
+    "SeedAxisNode",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
     "compose_positive_prompt",
+    "register_xy_parameter_handler",
 ]

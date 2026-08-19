@@ -587,15 +587,18 @@ class CompositionSession:
                 raise ValueError(f"Render task has already been submitted: {task.task_id}")
 
             prepared = self._prepare_image(image)
-            for coordinate in self.plan.placements_for(task.task_id):
-                geometry = self.geometry.cell(coordinate)
-                self._canvas.paste(prepared, (geometry.image_rect[0], geometry.image_rect[1]))
-                self._draw_image_frame(task, geometry.image_rect)
-                self._draw_special_cell_label(task, coordinate)
-                if artist_mixer:
-                    self._draw_artist_mixer_label(coordinate)
-            self._submitted.add(task.task_id)
-            return task
+            try:
+                for coordinate in self.plan.placements_for(task.task_id):
+                    geometry = self.geometry.cell(coordinate)
+                    self._canvas.paste(prepared, (geometry.image_rect[0], geometry.image_rect[1]))
+                    self._draw_image_frame(task, geometry.image_rect)
+                    self._draw_special_cell_label(task, coordinate)
+                    if artist_mixer:
+                        self._draw_artist_mixer_label(coordinate)
+                self._submitted.add(task.task_id)
+                return task
+            finally:
+                prepared.close()
 
     def finalize(self, *, strict: bool = True) -> Image.Image:
         with self._lock:
@@ -606,28 +609,40 @@ class CompositionSession:
                 raise ValueError(
                     f"Composition is missing {len(missing)} render task(s): {preview}{suffix}"
                 )
-            result = self._canvas.copy()
             decorator = get_style_decorator(self.style.decorator)
             decorator.draw_foreground(
                 DecorationContext(
-                    canvas=result,
-                    draw=ImageDraw.Draw(result),
+                    canvas=self._canvas,
+                    draw=self._draw,
                     plan=self.plan,
                     geometry=self.geometry,
                     style=self.style,
                 )
             )
-            return result
+            return self._canvas
 
     def _create_canvas(self) -> Image.Image:
         canvas = Image.new("RGB", self.geometry.canvas_size, self.style.background_color)
         if self.style.background_image is None or self.style.background_opacity <= 0.0:
             return canvas
         source = self._load_background(self.style.background_image)
-        fitted = self._fit_background(source, canvas.size, self.style.background_fit)
-        if self.style.background_opacity >= 1.0:
-            return fitted
-        return Image.blend(canvas, fitted, self.style.background_opacity)
+        fitted = None
+        mask = None
+        try:
+            fitted = self._fit_background(source, canvas.size, self.style.background_fit)
+            opacity = float(self.style.background_opacity)
+            if opacity >= 1.0:
+                canvas.paste(fitted, (0, 0))
+            else:
+                mask = Image.new("L", canvas.size, round(opacity * 255))
+                canvas.paste(fitted, (0, 0), mask)
+            return canvas
+        finally:
+            source.close()
+            if fitted is not None:
+                fitted.close()
+            if mask is not None:
+                mask.close()
 
     def _draw_template(self) -> None:
         decorator = get_style_decorator(self.style.decorator)

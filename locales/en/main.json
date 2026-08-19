@@ -2,6 +2,11 @@
   "nodeCategories": {
     "Lora Tester": "LoRA Tester",
     "Stacks": "Stacks",
-    "Lora Tester/Stacks": "LoRA Tester/Stacks"
+    "Axes": "Axes",
+    "Deprecated": "Deprecated",
+    "Lora Tester/Stacks": "LoRA Tester/Stacks",
+    "Lora Tester/XY": "LoRA Tester/XY Testing",
+    "Lora Tester/XY/Axes": "LoRA Tester/XY Axes",
+    "Lora Tester/Deprecated": "LoRA Tester/Deprecated"
   }
 }

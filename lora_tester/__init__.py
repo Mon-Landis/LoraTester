@@ -29,6 +29,14 @@ from .nodes import (
     LoraTesterSampler,
     LoraTesterStyleNode,
     MultiPromptSampleNode,
+    XYTestSampler,
+    MultiPromptInputNode,
+    GlobalPromptAppendNode,
+    PromptAxisNode,
+    LoraStackAxisNode,
+    SeedListNode,
+    SeedAxisNode,
+    register_xy_parameter_handler,
 )
 from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
 from .stack_compositor import LoraStackMatrixCompositor, LoraStackMatrixSession
@@ -37,6 +45,20 @@ from .styles import (
     available_style_decorators,
     register_style_decorator,
 )
+from .xy import (
+    AxisEntry,
+    AxisParameter,
+    DetailBlock,
+    PromptEntry,
+    PromptList,
+    SeedList,
+    XYAxis,
+    build_lora_stack_axis,
+    build_prompt_axis,
+    build_seed_axis,
+    merge_axis_parameters,
+)
+from .xy_compositor import XYMatrixCompositor, XYMatrixSession
 
 
 __all__ = [
@@ -65,6 +87,14 @@ __all__ = [
     "LoraStackMatrixCompositor",
     "LoraStackMatrixSession",
     "MultiPromptSampleNode",
+    "XYTestSampler",
+    "MultiPromptInputNode",
+    "GlobalPromptAppendNode",
+    "PromptAxisNode",
+    "LoraStackAxisNode",
+    "SeedListNode",
+    "SeedAxisNode",
+    "register_xy_parameter_handler",
     "RenderTask",
     "StyleConfig",
     "available_style_decorators",
@@ -77,4 +107,17 @@ __all__ = [
     "register_style_decorator",
     "split_lora_stack",
     "submit_comfy_batch",
+    "AxisEntry",
+    "AxisParameter",
+    "DetailBlock",
+    "PromptEntry",
+    "PromptList",
+    "SeedList",
+    "XYAxis",
+    "XYMatrixCompositor",
+    "XYMatrixSession",
+    "build_lora_stack_axis",
+    "build_prompt_axis",
+    "build_seed_axis",
+    "merge_axis_parameters",
 ]
