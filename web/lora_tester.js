@@ -65,13 +65,6 @@ const OPTION_LABELS = {
       custom: { en: "Custom style", zh: "自定义样式" },
     },
   },
-  LoraTesterMultiPromptInput: {
-    separator_mode: {
-      blank_lines: { en: "Blank lines", zh: "空行分隔" },
-      lines: { en: "Every line", zh: "每行一个" },
-      custom: { en: "Custom separator", zh: "自定义分隔符" },
-    },
-  },
   LoraTesterGlobalPromptAppend: {
     position: {
       before: { en: "Before each prompt", zh: "追加到前方" },
@@ -247,9 +240,7 @@ const INPUT_LABELS = {
     anima_mixer_config: { en: "Anima Mixer Configuration", zh: "Anima Mixer 配置" },
   },
   LoraTesterMultiPromptInput: {
-    multi_prompt_text: { en: "Multi Prompt Text", zh: "长多提示词输入" },
-    separator_mode: { en: "Separator Mode", zh: "分隔模式" },
-    custom_separator: { en: "Custom Separator", zh: "自定义分隔符" },
+    prompt_count: { en: "Prompt Count", zh: "提示词数量" },
   },
   LoraTesterGlobalPromptAppend: {
     prompt_list: { en: "Prompt List", zh: "提示词列表" },
@@ -478,6 +469,10 @@ function localizedInputLabel(nodeName, inputName) {
     match = /^positive_prompt_(\d+)$/.exec(inputName);
     if (match) return language === "zh" ? `正面提示词 ${match[1]}` : `Positive Prompt ${match[1]}`;
   }
+  if (nodeName === MULTI_PROMPT_INPUT_NODE) {
+    match = /^positive_prompt_(\d+)$/.exec(inputName);
+    if (match) return language === "zh" ? `提示词 ${match[1]}` : `Prompt ${match[1]}`;
+  }
   return null;
 }
 
@@ -491,9 +486,9 @@ function installNodeLabels(node, nodeName) {
       nodeName === MULTI_PROMPT_NODE &&
       /^(?:prompt_prefix|independent_artist_tags|negative_prompt|positive_prompt_\d+)$/.test(widget.name)
     ) || (
-      nodeName === TARGET_NODE && widget.name === "independent_artist_tags"
+      nodeName === MULTI_PROMPT_INPUT_NODE && /^positive_prompt_\d+$/.test(widget.name)
     ) || (
-      nodeName === MULTI_PROMPT_INPUT_NODE && widget.name === "multi_prompt_text"
+      nodeName === TARGET_NODE && widget.name === "independent_artist_tags"
     ) || (
       nodeName === GLOBAL_PROMPT_APPEND_NODE &&
       /^(?:addition|independent_artist_tags)$/.test(widget.name)
@@ -1062,15 +1057,7 @@ function promptCountFromSource(node, visited = new Set()) {
   visited.add(node);
   const name = nodeNameForUi(node);
   if (name === MULTI_PROMPT_INPUT_NODE) {
-    const text = String(widgetValue(node, "multi_prompt_text") ?? "").replace(/\r\n?/g, "\n").trim();
-    if (!text) return 0;
-    const mode = String(widgetValue(node, "separator_mode") ?? "blank_lines");
-    if (mode === "lines") return text.split("\n").filter((value) => value.trim()).length;
-    if (mode === "custom") {
-      const separator = String(widgetValue(node, "custom_separator") ?? "---");
-      return separator ? text.split(separator).filter((value) => value.trim()).length : null;
-    }
-    return text.split(/\n[ \t]*\n+/).filter((value) => value.trim()).length;
+    return Math.max(1, Number.parseInt(widgetValue(node, "prompt_count"), 10) || 1);
   }
   for (const input of node.inputs ?? []) {
     for (const source of sourceNodesForInput(node, input)) {
@@ -1278,7 +1265,10 @@ function installXyObservers(node) {
 function installXySourceObservers(node, nodeName) {
   if (node[XY_SOURCE_OBSERVER]) return;
   const relevantNames = nodeName === MULTI_PROMPT_INPUT_NODE
-    ? new Set(["multi_prompt_text", "separator_mode", "custom_separator"])
+    ? new Set([
+        "prompt_count",
+        ...Array.from({ length: 16 }, (_, index) => `positive_prompt_${index + 1}`),
+      ])
     : nodeName === SEED_LIST_NODE
       ? new Set(["mode", "seed_text", "random_count", "random_source_seed"])
       : nodeName === AXIS_COMPOSER_NODE
@@ -1555,6 +1545,9 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
   }
   if (nodeName === MULTI_PROMPT_INPUT_NODE || nodeName === GLOBAL_PROMPT_APPEND_NODE) {
     installMultiPromptLayout(node);
+  }
+  if (nodeName === MULTI_PROMPT_INPUT_NODE) {
+    installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
   }
   if (nodeName === SEED_LIST_NODE) installSeedMode(node);
   installXySourceObservers(node, nodeName);

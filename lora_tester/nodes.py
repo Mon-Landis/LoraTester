@@ -1692,38 +1692,50 @@ class XYTestSampler(LoraTesterSampler):
 class MultiPromptInputNode:
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
-        return {
-            "required": {
-                "multi_prompt_text": (
-                    "STRING",
-                    {
-                        "default": "",
-                        "multiline": True,
-                        "dynamicPrompts": True,
-                        "tooltip": "One prompt per blank line, line, or custom separator.",
-                    },
-                ),
-                "separator_mode": (
-                    ["blank_lines", "lines", "custom"],
-                    {"default": "blank_lines", "tooltip": "How the long prompt input is split."},
-                ),
-                "custom_separator": (
-                    "STRING",
-                    {"default": "---", "multiline": False, "tooltip": "Separator used in custom mode."},
-                ),
-            }
+        required: dict[str, tuple[str, dict[str, Any]]] = {
+            "prompt_count": (
+                "INT",
+                {
+                    "default": 1,
+                    "min": 1,
+                    "max": MAX_STACK_ITEMS,
+                    "step": 1,
+                    "tooltip": "Number of prompt input rows.",
+                },
+            )
         }
+        for index in range(1, MAX_STACK_ITEMS + 1):
+            required[f"positive_prompt_{index}"] = (
+                "STRING",
+                {
+                    "default": "",
+                    "multiline": True,
+                    "dynamicPrompts": True,
+                    "tooltip": f"Positive prompt row {index}.",
+                },
+            )
+        return {"required": required}
 
     RETURN_TYPES = ("LORA_TESTER_PROMPT_LIST",)
     RETURN_NAMES = ("prompt_list",)
     OUTPUT_TOOLTIPS = ("Structured positive prompts ready for a Prompt Axis node.",)
     FUNCTION = "build_prompts"
     CATEGORY = "Lora Tester/XY/Prompt"
-    DESCRIPTION = "Parses one long text input into an ordered prompt list."
+    DESCRIPTION = "Builds an ordered prompt list from separate input rows."
 
     @staticmethod
-    def build_prompts(multi_prompt_text: str, separator_mode: str, custom_separator: str) -> tuple[PromptList]:
-        return (PromptList.parse(multi_prompt_text, separator_mode=separator_mode, custom_separator=custom_separator),)
+    def build_prompts(prompt_count: int, positive_prompt_1: str, **values: Any) -> tuple[PromptList]:
+        count = int(prompt_count)
+        if not 1 <= count <= MAX_STACK_ITEMS:
+            raise ValueError(f"prompt_count must be between 1 and {MAX_STACK_ITEMS}")
+        prompts = []
+        prompt_values = {"positive_prompt_1": positive_prompt_1, **values}
+        for index in range(1, count + 1):
+            prompt = str(prompt_values.get(f"positive_prompt_{index}", "")).strip()
+            if not prompt:
+                raise ValueError(f"Positive prompt row {index} cannot be empty")
+            prompts.append(PromptEntry(prompt))
+        return (PromptList(tuple(prompts)),)
 
 
 class GlobalPromptAppendNode:

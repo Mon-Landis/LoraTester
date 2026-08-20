@@ -85,9 +85,9 @@ class XYModelTests(unittest.TestCase):
 
     def test_prompt_nodes_expose_the_requested_chain(self) -> None:
         prompt_list = MultiPromptInputNode.build_prompts(
-            "portrait\nlandscape",
-            "lines",
-            "---",
+            prompt_count=2,
+            positive_prompt_1="portrait",
+            positive_prompt_2="landscape",
         )[0]
         result = GlobalPromptAppendNode.append_prompt(
             prompt_list,
@@ -100,6 +100,21 @@ class XYModelTests(unittest.TestCase):
             ["portrait, masterpiece", "landscape, masterpiece"],
         )
         self.assertEqual(result.entries[1].independent_artist_tags, "@artist")
+
+    def test_multi_prompt_input_uses_separate_rows(self) -> None:
+        inputs = MultiPromptInputNode.INPUT_TYPES()["required"]
+        self.assertIn("prompt_count", inputs)
+        self.assertEqual(inputs["prompt_count"][0], "INT")
+        self.assertEqual(
+            {name for name in inputs if name.startswith("positive_prompt_")},
+            {f"positive_prompt_{index}" for index in range(1, 17)},
+        )
+        with self.assertRaisesRegex(ValueError, "row 2"):
+            MultiPromptInputNode.build_prompts(
+                prompt_count=2,
+                positive_prompt_1="portrait",
+                positive_prompt_2="",
+            )
 
     def test_axis_composer_accepts_all_raw_axis_sources(self) -> None:
         prompt_axis = AxisComposerNode.compose_axis(

@@ -530,12 +530,26 @@
     }
   },
   "LoraTesterMultiPromptInput": {
-    "display_name": "长多提示词输入",
-    "description": "将一个长文本解析为有序提示词列表。",
+    "display_name": "多提示词输入",
+    "description": "通过独立输入框构造有序提示词列表。",
     "inputs": {
-      "multi_prompt_text": { "name": "长多提示词输入", "tooltip": "包含全部正面提示词的长文本。" },
-      "separator_mode": { "name": "分隔模式", "tooltip": "按空行、每行或自定义分隔符拆分提示词。", "values": { "blank_lines": "空行分隔", "lines": "每行一个", "custom": "自定义分隔符" } },
-      "custom_separator": { "name": "自定义分隔符", "tooltip": "自定义模式下用于拆分提示词的文本。" }
+      "prompt_count": { "name": "提示词数量", "tooltip": "提示词输入框的数量。" },
+      "positive_prompt_1": { "name": "提示词 1", "tooltip": "第 1 个正面提示词输入框。" },
+      "positive_prompt_2": { "name": "提示词 2", "tooltip": "第 2 个正面提示词输入框。" },
+      "positive_prompt_3": { "name": "提示词 3", "tooltip": "第 3 个正面提示词输入框。" },
+      "positive_prompt_4": { "name": "提示词 4", "tooltip": "第 4 个正面提示词输入框。" },
+      "positive_prompt_5": { "name": "提示词 5", "tooltip": "第 5 个正面提示词输入框。" },
+      "positive_prompt_6": { "name": "提示词 6", "tooltip": "第 6 个正面提示词输入框。" },
+      "positive_prompt_7": { "name": "提示词 7", "tooltip": "第 7 个正面提示词输入框。" },
+      "positive_prompt_8": { "name": "提示词 8", "tooltip": "第 8 个正面提示词输入框。" },
+      "positive_prompt_9": { "name": "提示词 9", "tooltip": "第 9 个正面提示词输入框。" },
+      "positive_prompt_10": { "name": "提示词 10", "tooltip": "第 10 个正面提示词输入框。" },
+      "positive_prompt_11": { "name": "提示词 11", "tooltip": "第 11 个正面提示词输入框。" },
+      "positive_prompt_12": { "name": "提示词 12", "tooltip": "第 12 个正面提示词输入框。" },
+      "positive_prompt_13": { "name": "提示词 13", "tooltip": "第 13 个正面提示词输入框。" },
+      "positive_prompt_14": { "name": "提示词 14", "tooltip": "第 14 个正面提示词输入框。" },
+      "positive_prompt_15": { "name": "提示词 15", "tooltip": "第 15 个正面提示词输入框。" },
+      "positive_prompt_16": { "name": "提示词 16", "tooltip": "第 16 个正面提示词输入框。" }
     },
     "outputs": { "0": { "name": "提示词列表", "tooltip": "可继续进行全局编辑或构造轴的结构化正面提示词。" } }
   },

@@ -126,6 +126,8 @@ groups -> entries -> parameters
 
 `AxisComposerNode` 是原始轴源的通用转换入口，当前支持 `PromptList`、`LoraStack`、`LoraStackList`、`SeedList` 和完整 `XYAxis`。完整轴进入合成器后只允许更改整轴总标题，不提供单条目后处理。`concatenate_axes()` 以完整分组为单位拼接轴，`cross_merge_axes()` 以笛卡尔积合并条目并调用参数冲突检查；两者是后续“轴拼接/轴交叉合并”节点的内部设计边界，当前不注册为前端节点。
 
+`MultiPromptInputNode` 使用 `prompt_count` 与 `positive_prompt_1...positive_prompt_16` 构造列表。前端只显示当前数量范围内的输入框；后端要求每个启用行非空。不要把分隔符解析重新放回节点契约，长文本拆分如有需要应在独立预处理节点中完成。
+
 ### 参数处理注册表
 
 `nodes.py` 中的 `register_xy_parameter_handler(name, handler)` 把轴数据映射为每格采样配置。内置名称为：

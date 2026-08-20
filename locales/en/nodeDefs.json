@@ -531,11 +531,25 @@
   },
   "LoraTesterMultiPromptInput": {
     "display_name": "Multi Prompt Input",
-    "description": "Parses one long text input into an ordered prompt list.",
+    "description": "Builds an ordered prompt list from separate input rows.",
     "inputs": {
-      "multi_prompt_text": { "name": "Multi Prompt Text", "tooltip": "Long text containing all positive prompts." },
-      "separator_mode": { "name": "Separator Mode", "tooltip": "Splits prompts by blank lines, every line, or a custom separator.", "values": { "blank_lines": "Blank lines", "lines": "Every line", "custom": "Custom separator" } },
-      "custom_separator": { "name": "Custom Separator", "tooltip": "Text used to split prompts in Custom mode." }
+      "prompt_count": { "name": "Prompt Count", "tooltip": "Number of prompt input rows." },
+      "positive_prompt_1": { "name": "Prompt 1", "tooltip": "Positive prompt row 1." },
+      "positive_prompt_2": { "name": "Prompt 2", "tooltip": "Positive prompt row 2." },
+      "positive_prompt_3": { "name": "Prompt 3", "tooltip": "Positive prompt row 3." },
+      "positive_prompt_4": { "name": "Prompt 4", "tooltip": "Positive prompt row 4." },
+      "positive_prompt_5": { "name": "Prompt 5", "tooltip": "Positive prompt row 5." },
+      "positive_prompt_6": { "name": "Prompt 6", "tooltip": "Positive prompt row 6." },
+      "positive_prompt_7": { "name": "Prompt 7", "tooltip": "Positive prompt row 7." },
+      "positive_prompt_8": { "name": "Prompt 8", "tooltip": "Positive prompt row 8." },
+      "positive_prompt_9": { "name": "Prompt 9", "tooltip": "Positive prompt row 9." },
+      "positive_prompt_10": { "name": "Prompt 10", "tooltip": "Positive prompt row 10." },
+      "positive_prompt_11": { "name": "Prompt 11", "tooltip": "Positive prompt row 11." },
+      "positive_prompt_12": { "name": "Prompt 12", "tooltip": "Positive prompt row 12." },
+      "positive_prompt_13": { "name": "Prompt 13", "tooltip": "Positive prompt row 13." },
+      "positive_prompt_14": { "name": "Prompt 14", "tooltip": "Positive prompt row 14." },
+      "positive_prompt_15": { "name": "Prompt 15", "tooltip": "Positive prompt row 15." },
+      "positive_prompt_16": { "name": "Prompt 16", "tooltip": "Positive prompt row 16." }
     },
     "outputs": { "0": { "name": "Prompt List", "tooltip": "Structured positive prompts for further global editing or axis construction." } }
   },

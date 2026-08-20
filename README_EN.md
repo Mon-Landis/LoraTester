@@ -72,7 +72,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | Category | Node | Purpose |
 |---|---|---|
 | `Lora Tester/XY` | `XY Test Sampler` | Samples the Cartesian product of two axes and returns a sheet plus the original image batch. |
-| `Lora Tester/XY/Prompt` | `Multi Prompt Input` | Parses prompts by blank lines, individual lines, or a custom separator. |
+| `Lora Tester/XY/Prompt` | `Multi Prompt Input` | Builds a prompt list from a count control and separate input rows. |
 | `Lora Tester/XY/Prompt` | `Global Prompt Append` | Adds shared text before/after every prompt and appends independent artist tags. |
 | `Lora Tester/XY/Prompt` | `Prompt Axis` | Directly converts a prompt list into an orientation-neutral `XY_AXIS`. |
 | `Lora Tester/XY/Style` | `Style Stack` | Configures up to 16 LoRA or artist-tag style entries. |

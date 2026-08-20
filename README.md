@@ -72,7 +72,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | 分类 | 节点 | 用途 |
 |---|---|---|
 | `Lora Tester/XY` | `XY Test Sampler` | 对两个轴做笛卡尔积采样，输出拼接图与原始图片批次。 |
-| `Lora Tester/XY/Prompt` | `Multi Prompt Input` | 按空行、单行或自定义分隔符解析多提示词。 |
+| `Lora Tester/XY/Prompt` | `Multi Prompt Input` | 通过数量控制和独立输入框构造多提示词列表。 |
 | `Lora Tester/XY/Prompt` | `Global Prompt Append` | 为全部提示词统一前置/后置文本，并追加独立画师 Tag。 |
 | `Lora Tester/XY/Prompt` | `Prompt Axis` | 将提示词列表直接转换为方向无关的 `XY_AXIS`。 |
 | `Lora Tester/XY/Style` | `Style Stack` | 配置最多 16 个 LoRA 或画师 Tag 风格项。 |
