@@ -1718,7 +1718,7 @@ class MultiPromptInputNode:
     RETURN_NAMES = ("prompt_list",)
     OUTPUT_TOOLTIPS = ("Structured positive prompts ready for a Prompt Axis node.",)
     FUNCTION = "build_prompts"
-    CATEGORY = "Lora Tester/XY/Axes"
+    CATEGORY = "Lora Tester/XY/Prompt"
     DESCRIPTION = "Parses one long text input into an ordered prompt list."
 
     @staticmethod
@@ -1750,7 +1750,7 @@ class GlobalPromptAppendNode:
     RETURN_NAMES = ("prompt_list",)
     OUTPUT_TOOLTIPS = ("Prompt list with global text and independent artist tags applied.",)
     FUNCTION = "append_prompt"
-    CATEGORY = "Lora Tester/XY/Axes"
+    CATEGORY = "Lora Tester/XY/Prompt"
     DESCRIPTION = "Adds shared prompt text before or after every prompt without parsing ordinary @ text as artists."
 
     @staticmethod
@@ -1771,15 +1771,15 @@ class PromptAxisNode:
         return {
             "required": {
                 "prompt_list": ("LORA_TESTER_PROMPT_LIST",),
-                "axis_title": ("STRING", {"default": "PROMPT", "multiline": False}),
+                "axis_title": ("STRING", {"default": "PROMPT", "multiline": False, "tooltip": "Overall axis heading; row/column labels come from individual entries."}),
             }
         }
 
     RETURN_TYPES = ("XY_AXIS",)
-    RETURN_NAMES = ("y_axis",)
+    RETURN_NAMES = ("axis",)
     OUTPUT_TOOLTIPS = ("Prompt entries as a grouped XY axis.",)
     FUNCTION = "build_axis"
-    CATEGORY = "Lora Tester/XY/Axes"
+    CATEGORY = "Lora Tester/XY/Prompt"
     DESCRIPTION = "Converts structured prompts into an XY axis with readable prompt detail text."
 
     @staticmethod
@@ -1794,15 +1794,15 @@ class LoraStackAxisNode:
             "required": {
                 "lorastacks": ("LORA_STACK_LIST",),
                 "include_base": ("BOOLEAN", {"default": True, "tooltip": "Keep BASE in its own separated group."}),
-                "axis_title": ("STRING", {"default": "STYLE", "multiline": False}),
+                "axis_title": ("STRING", {"default": "STYLE", "multiline": False, "tooltip": "Overall axis heading; row/column labels come from individual entries."}),
             }
         }
 
     RETURN_TYPES = ("XY_AXIS",)
-    RETURN_NAMES = ("x_axis",)
+    RETURN_NAMES = ("axis",)
     OUTPUT_TOOLTIPS = ("LoRA/artist stack configurations as a grouped XY axis.",)
     FUNCTION = "build_axis"
-    CATEGORY = "Lora Tester/XY/Axes"
+    CATEGORY = "Lora Tester/XY/Style"
     DESCRIPTION = "Converts LoRA and artist-tag stacks into an X axis with grouped BASE separation and categorized tables."
 
     @staticmethod
@@ -1826,7 +1826,7 @@ class SeedListNode:
     RETURN_NAMES = ("seed_list",)
     OUTPUT_TOOLTIPS = ("Ordered explicit or deterministic random seeds.",)
     FUNCTION = "build_seeds"
-    CATEGORY = "Lora Tester/XY/Axes"
+    CATEGORY = "Lora Tester/XY/Seed"
     DESCRIPTION = "Builds a seed list from explicit values or a deterministic random generator."
 
     @staticmethod
@@ -1844,20 +1844,96 @@ class SeedAxisNode:
         return {
             "required": {
                 "seed_list": ("LORA_TESTER_SEED_LIST",),
-                "axis_title": ("STRING", {"default": "SEED", "multiline": False}),
+                "axis_title": ("STRING", {"default": "SEED", "multiline": False, "tooltip": "Overall axis heading; row/column labels come from individual entries."}),
             }
         }
 
     RETURN_TYPES = ("XY_AXIS",)
-    RETURN_NAMES = ("seed_axis",)
+    RETURN_NAMES = ("axis",)
     OUTPUT_TOOLTIPS = ("Seeds as an XY axis, ready for either sampler socket.",)
     FUNCTION = "build_axis"
-    CATEGORY = "Lora Tester/XY/Axes"
+    CATEGORY = "Lora Tester/XY/Seed"
     DESCRIPTION = "Converts a seed list into an XY axis."
 
     @staticmethod
     def build_axis(seed_list: SeedList, axis_title: str) -> tuple[XYAxis]:
         return (build_seed_axis(seed_list, title=axis_title.strip() or "SEED"),)
+
+
+class AxisComposerNode:
+    """Convert any supported raw axis source into one orientation-neutral XY axis."""
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "axis_title": (
+                    "STRING",
+                    {
+                        "default": "AXIS",
+                        "multiline": False,
+                        "tooltip": "Overall title rendered beside the axis; entry labels come from each source item.",
+                    },
+                ),
+                "include_base": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": "For a style stack source, place BASE in its own group.",
+                    },
+                ),
+            },
+            "optional": {
+                "source": (
+                    "*",
+                    {
+                        "forceInput": True,
+                        "tooltip": "Connect one prompt list, style stack/list, or seed list source.",
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("XY_AXIS",)
+    RETURN_NAMES = ("axis",)
+    OUTPUT_TOOLTIPS = ("A grouped, orientation-neutral XY axis.",)
+    FUNCTION = "compose_axis"
+    CATEGORY = "Lora Tester/XY/Axis"
+    DESCRIPTION = "Converts one supported prompt, style, or seed source into an axis that can be connected to X or Y."
+
+    @staticmethod
+    def compose_axis(
+        axis_title: str,
+        include_base: bool,
+        source: Any = None,
+    ) -> tuple[XYAxis]:
+        if isinstance(source, XYAxis):
+            axis = XYAxis(
+                title=axis_title.strip() or source.title,
+                groups=source.groups,
+                detail_blocks=source.detail_blocks,
+            )
+        elif isinstance(source, PromptList):
+            axis = build_prompt_axis(source, title=axis_title.strip() or "AXIS")
+        elif isinstance(source, LoraStackList):
+            axis = build_lora_stack_axis(
+                source,
+                include_base=bool(include_base),
+                title=axis_title.strip() or "AXIS",
+            )
+        elif isinstance(source, LoraStack):
+            axis = build_lora_stack_axis(
+                LoraStackList((source,)),
+                include_base=bool(include_base),
+                title=axis_title.strip() or "AXIS",
+            )
+        elif isinstance(source, SeedList):
+            axis = build_seed_axis(source, title=axis_title.strip() or "AXIS")
+        else:
+            raise TypeError(
+                "Axis Composer expects a PromptList, LoraStack, LoraStackList, SeedList, or XYAxis source"
+            )
+        return (axis,)
 
 
 class LoraTesterStyleNode:
@@ -2176,7 +2252,7 @@ class LoraStackNode:
     RETURN_TYPES = ("LORA_STACK",)
     RETURN_NAMES = ("lora_stack",)
     FUNCTION = "build_stack"
-    CATEGORY = "Lora Tester/Stacks"
+    CATEGORY = "Lora Tester/XY/Style"
     DESCRIPTION = "Builds an ordered stack of LoRA files and artist tags."
 
     @classmethod
@@ -2263,7 +2339,7 @@ class LoraStackSplitterNode:
     RETURN_TYPES = ("LORA_STACK_LIST",)
     RETURN_NAMES = ("lora_stack_list",)
     FUNCTION = "split_stack"
-    CATEGORY = "Lora Tester/Stacks"
+    CATEGORY = "Lora Tester/XY/Style"
     DESCRIPTION = "Splits one LoRA stack into every non-empty combination."
 
     @staticmethod
@@ -2281,7 +2357,7 @@ class LoraStackListerNode:
     RETURN_TYPES = ("LORA_STACK_LIST",)
     RETURN_NAMES = ("lora_stack_list",)
     FUNCTION = "list_stacks"
-    CATEGORY = "Lora Tester/Stacks"
+    CATEGORY = "Lora Tester/XY/Style"
     DESCRIPTION = "Collects multiple LoRA stacks into one ordered stack list."
 
     @staticmethod
@@ -2539,6 +2615,7 @@ NODE_CLASS_MAPPINGS = {
     "LoraTesterLoraStackAxis": LoraStackAxisNode,
     "LoraTesterSeedList": SeedListNode,
     "LoraTesterSeedAxis": SeedAxisNode,
+    "LoraTesterAxisComposer": AxisComposerNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -2546,17 +2623,18 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LoraTesterStyle": "LoRA Tester Style",
     "ArtistTagTemplate": "Artist Tag Template",
     "AnimaArtistMixerConfig": "Anima Artist Mixer Configuration",
-    "LoraStack": "LoRA Stack",
-    "LoraStackSplitter": "LoRA Stack Splitter",
-    "LoraStackLister": "LoRA Stack Lister",
+    "LoraStack": "Style Stack",
+    "LoraStackSplitter": "Style Stack Splitter",
+    "LoraStackLister": "Style Stack Lister",
     "MultiPromptSample": "Style Combination Tester",
     "LoraTesterXYSampler": "XY Test Sampler",
     "LoraTesterMultiPromptInput": "Multi Prompt Input",
     "LoraTesterGlobalPromptAppend": "Global Prompt Append",
     "LoraTesterPromptAxis": "Prompt Axis",
-    "LoraTesterLoraStackAxis": "LoRA Stack Axis",
+    "LoraTesterLoraStackAxis": "Style Axis",
     "LoraTesterSeedList": "Seed List / Random Seeds",
     "LoraTesterSeedAxis": "Seed Axis",
+    "LoraTesterAxisComposer": "Axis Composer",
 }
 
 
@@ -2576,6 +2654,7 @@ __all__ = [
     "LoraStackAxisNode",
     "SeedListNode",
     "SeedAxisNode",
+    "AxisComposerNode",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
     "compose_positive_prompt",

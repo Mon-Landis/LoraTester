@@ -336,111 +336,111 @@
     }
   },
   "LoraStack": {
-    "display_name": "LoRA Stack",
-    "description": "Configures LoRA files and artist tags that are applied together.",
+    "display_name": "Style Stack",
+    "description": "Configures Style files and artist tags that are applied together as one style stack.",
     "inputs": {
       "lora_count": {
         "name": "Test Item Count",
-        "tooltip": "Number of enabled LoRA or artist-tag entries in this stack."
+        "tooltip": "Number of enabled Style or artist-tag entries in this stack."
       },
-      "lora_1_name": { "name": "LoRA 1 File", "tooltip": "Required LoRA file for stack entry 1." },
-      "lora_1_trigger": { "name": "LoRA 1 Trigger Words", "tooltip": "Trigger words for LoRA entry 1." },
-      "lora_1_strength": { "name": "LoRA 1 Strength", "tooltip": "Model and CLIP strength for LoRA entry 1." },
-      "lora_2_name": { "name": "LoRA 2 File", "tooltip": "Required LoRA file for stack entry 2." },
-      "lora_2_trigger": { "name": "LoRA 2 Trigger Words", "tooltip": "Trigger words for LoRA entry 2." },
-      "lora_2_strength": { "name": "LoRA 2 Strength", "tooltip": "Model and CLIP strength for LoRA entry 2." },
-      "lora_3_name": { "name": "LoRA 3 File", "tooltip": "Required LoRA file for stack entry 3." },
-      "lora_3_trigger": { "name": "LoRA 3 Trigger Words", "tooltip": "Trigger words for LoRA entry 3." },
-      "lora_3_strength": { "name": "LoRA 3 Strength", "tooltip": "Model and CLIP strength for LoRA entry 3." },
-      "lora_4_name": { "name": "LoRA 4 File", "tooltip": "Required LoRA file for stack entry 4." },
-      "lora_4_trigger": { "name": "LoRA 4 Trigger Words", "tooltip": "Trigger words for LoRA entry 4." },
-      "lora_4_strength": { "name": "LoRA 4 Strength", "tooltip": "Model and CLIP strength for LoRA entry 4." },
-      "lora_5_name": { "name": "LoRA 5 File", "tooltip": "Required LoRA file for stack entry 5." },
-      "lora_5_trigger": { "name": "LoRA 5 Trigger Words", "tooltip": "Trigger words for LoRA entry 5." },
-      "lora_5_strength": { "name": "LoRA 5 Strength", "tooltip": "Model and CLIP strength for LoRA entry 5." },
-      "lora_6_name": { "name": "LoRA 6 File", "tooltip": "Required LoRA file for stack entry 6." },
-      "lora_6_trigger": { "name": "LoRA 6 Trigger Words", "tooltip": "Trigger words for LoRA entry 6." },
-      "lora_6_strength": { "name": "LoRA 6 Strength", "tooltip": "Model and CLIP strength for LoRA entry 6." },
-      "lora_7_name": { "name": "LoRA 7 File", "tooltip": "Required LoRA file for stack entry 7." },
-      "lora_7_trigger": { "name": "LoRA 7 Trigger Words", "tooltip": "Trigger words for LoRA entry 7." },
-      "lora_7_strength": { "name": "LoRA 7 Strength", "tooltip": "Model and CLIP strength for LoRA entry 7." },
-      "lora_8_name": { "name": "LoRA 8 File", "tooltip": "Required LoRA file for stack entry 8." },
-      "lora_8_trigger": { "name": "LoRA 8 Trigger Words", "tooltip": "Trigger words for LoRA entry 8." },
-      "lora_8_strength": { "name": "LoRA 8 Strength", "tooltip": "Model and CLIP strength for LoRA entry 8." },
-      "lora_9_name": { "name": "LoRA 9 File", "tooltip": "Required LoRA file for stack entry 9." },
-      "lora_9_trigger": { "name": "LoRA 9 Trigger Words", "tooltip": "Trigger words for LoRA entry 9." },
-      "lora_9_strength": { "name": "LoRA 9 Strength", "tooltip": "Model and CLIP strength for LoRA entry 9." },
-      "lora_10_name": { "name": "LoRA 10 File", "tooltip": "Required LoRA file for stack entry 10." },
-      "lora_10_trigger": { "name": "LoRA 10 Trigger Words", "tooltip": "Trigger words for LoRA entry 10." },
-      "lora_10_strength": { "name": "LoRA 10 Strength", "tooltip": "Model and CLIP strength for LoRA entry 10." },
-      "lora_11_name": { "name": "LoRA 11 File", "tooltip": "Required LoRA file for stack entry 11." },
-      "lora_11_trigger": { "name": "LoRA 11 Trigger Words", "tooltip": "Trigger words for LoRA entry 11." },
-      "lora_11_strength": { "name": "LoRA 11 Strength", "tooltip": "Model and CLIP strength for LoRA entry 11." },
-      "lora_12_name": { "name": "LoRA 12 File", "tooltip": "Required LoRA file for stack entry 12." },
-      "lora_12_trigger": { "name": "LoRA 12 Trigger Words", "tooltip": "Trigger words for LoRA entry 12." },
-      "lora_12_strength": { "name": "LoRA 12 Strength", "tooltip": "Model and CLIP strength for LoRA entry 12." },
-      "lora_13_name": { "name": "LoRA 13 File", "tooltip": "Required LoRA file for stack entry 13." },
-      "lora_13_trigger": { "name": "LoRA 13 Trigger Words", "tooltip": "Trigger words for LoRA entry 13." },
-      "lora_13_strength": { "name": "LoRA 13 Strength", "tooltip": "Model and CLIP strength for LoRA entry 13." },
-      "lora_14_name": { "name": "LoRA 14 File", "tooltip": "Required LoRA file for stack entry 14." },
-      "lora_14_trigger": { "name": "LoRA 14 Trigger Words", "tooltip": "Trigger words for LoRA entry 14." },
-      "lora_14_strength": { "name": "LoRA 14 Strength", "tooltip": "Model and CLIP strength for LoRA entry 14." },
-      "lora_15_name": { "name": "LoRA 15 File", "tooltip": "Required LoRA file for stack entry 15." },
-      "lora_15_trigger": { "name": "LoRA 15 Trigger Words", "tooltip": "Trigger words for LoRA entry 15." },
-      "lora_15_strength": { "name": "LoRA 15 Strength", "tooltip": "Model and CLIP strength for LoRA entry 15." },
-      "lora_16_name": { "name": "LoRA 16 File", "tooltip": "Required LoRA file for stack entry 16." },
-      "lora_16_trigger": { "name": "LoRA 16 Trigger Words", "tooltip": "Trigger words for LoRA entry 16." },
-      "lora_16_strength": { "name": "LoRA 16 Strength", "tooltip": "Model and CLIP strength for LoRA entry 16." },
+      "lora_1_name": { "name": "Style 1 File", "tooltip": "Required Style file for stack entry 1." },
+      "lora_1_trigger": { "name": "Style 1 Trigger Words", "tooltip": "Trigger words for Style entry 1." },
+      "lora_1_strength": { "name": "Style 1 Strength", "tooltip": "Model and CLIP strength for Style entry 1." },
+      "lora_2_name": { "name": "Style 2 File", "tooltip": "Required Style file for stack entry 2." },
+      "lora_2_trigger": { "name": "Style 2 Trigger Words", "tooltip": "Trigger words for Style entry 2." },
+      "lora_2_strength": { "name": "Style 2 Strength", "tooltip": "Model and CLIP strength for Style entry 2." },
+      "lora_3_name": { "name": "Style 3 File", "tooltip": "Required Style file for stack entry 3." },
+      "lora_3_trigger": { "name": "Style 3 Trigger Words", "tooltip": "Trigger words for Style entry 3." },
+      "lora_3_strength": { "name": "Style 3 Strength", "tooltip": "Model and CLIP strength for Style entry 3." },
+      "lora_4_name": { "name": "Style 4 File", "tooltip": "Required Style file for stack entry 4." },
+      "lora_4_trigger": { "name": "Style 4 Trigger Words", "tooltip": "Trigger words for Style entry 4." },
+      "lora_4_strength": { "name": "Style 4 Strength", "tooltip": "Model and CLIP strength for Style entry 4." },
+      "lora_5_name": { "name": "Style 5 File", "tooltip": "Required Style file for stack entry 5." },
+      "lora_5_trigger": { "name": "Style 5 Trigger Words", "tooltip": "Trigger words for Style entry 5." },
+      "lora_5_strength": { "name": "Style 5 Strength", "tooltip": "Model and CLIP strength for Style entry 5." },
+      "lora_6_name": { "name": "Style 6 File", "tooltip": "Required Style file for stack entry 6." },
+      "lora_6_trigger": { "name": "Style 6 Trigger Words", "tooltip": "Trigger words for Style entry 6." },
+      "lora_6_strength": { "name": "Style 6 Strength", "tooltip": "Model and CLIP strength for Style entry 6." },
+      "lora_7_name": { "name": "Style 7 File", "tooltip": "Required Style file for stack entry 7." },
+      "lora_7_trigger": { "name": "Style 7 Trigger Words", "tooltip": "Trigger words for Style entry 7." },
+      "lora_7_strength": { "name": "Style 7 Strength", "tooltip": "Model and CLIP strength for Style entry 7." },
+      "lora_8_name": { "name": "Style 8 File", "tooltip": "Required Style file for stack entry 8." },
+      "lora_8_trigger": { "name": "Style 8 Trigger Words", "tooltip": "Trigger words for Style entry 8." },
+      "lora_8_strength": { "name": "Style 8 Strength", "tooltip": "Model and CLIP strength for Style entry 8." },
+      "lora_9_name": { "name": "Style 9 File", "tooltip": "Required Style file for stack entry 9." },
+      "lora_9_trigger": { "name": "Style 9 Trigger Words", "tooltip": "Trigger words for Style entry 9." },
+      "lora_9_strength": { "name": "Style 9 Strength", "tooltip": "Model and CLIP strength for Style entry 9." },
+      "lora_10_name": { "name": "Style 10 File", "tooltip": "Required Style file for stack entry 10." },
+      "lora_10_trigger": { "name": "Style 10 Trigger Words", "tooltip": "Trigger words for Style entry 10." },
+      "lora_10_strength": { "name": "Style 10 Strength", "tooltip": "Model and CLIP strength for Style entry 10." },
+      "lora_11_name": { "name": "Style 11 File", "tooltip": "Required Style file for stack entry 11." },
+      "lora_11_trigger": { "name": "Style 11 Trigger Words", "tooltip": "Trigger words for Style entry 11." },
+      "lora_11_strength": { "name": "Style 11 Strength", "tooltip": "Model and CLIP strength for Style entry 11." },
+      "lora_12_name": { "name": "Style 12 File", "tooltip": "Required Style file for stack entry 12." },
+      "lora_12_trigger": { "name": "Style 12 Trigger Words", "tooltip": "Trigger words for Style entry 12." },
+      "lora_12_strength": { "name": "Style 12 Strength", "tooltip": "Model and CLIP strength for Style entry 12." },
+      "lora_13_name": { "name": "Style 13 File", "tooltip": "Required Style file for stack entry 13." },
+      "lora_13_trigger": { "name": "Style 13 Trigger Words", "tooltip": "Trigger words for Style entry 13." },
+      "lora_13_strength": { "name": "Style 13 Strength", "tooltip": "Model and CLIP strength for Style entry 13." },
+      "lora_14_name": { "name": "Style 14 File", "tooltip": "Required Style file for stack entry 14." },
+      "lora_14_trigger": { "name": "Style 14 Trigger Words", "tooltip": "Trigger words for Style entry 14." },
+      "lora_14_strength": { "name": "Style 14 Strength", "tooltip": "Model and CLIP strength for Style entry 14." },
+      "lora_15_name": { "name": "Style 15 File", "tooltip": "Required Style file for stack entry 15." },
+      "lora_15_trigger": { "name": "Style 15 Trigger Words", "tooltip": "Trigger words for Style entry 15." },
+      "lora_15_strength": { "name": "Style 15 Strength", "tooltip": "Model and CLIP strength for Style entry 15." },
+      "lora_16_name": { "name": "Style 16 File", "tooltip": "Required Style file for stack entry 16." },
+      "lora_16_trigger": { "name": "Style 16 Trigger Words", "tooltip": "Trigger words for Style entry 16." },
+      "lora_16_strength": { "name": "Style 16 Strength", "tooltip": "Model and CLIP strength for Style entry 16." },
       "artist_tag_template": { "name": "Artist Tag Template", "tooltip": "Optional artist-tag syntax stored with this stack and preserved by the splitter." }
     },
     "outputs": {
       "0": {
-        "name": "LoRA Stack",
-        "tooltip": "LoRA files, trigger words, and strengths applied together."
+        "name": "Style Stack",
+        "tooltip": "Style files, trigger words, and strengths applied together as one style."
       }
     }
   },
   "LoraStackSplitter": {
-    "display_name": "LoRA Stack Splitter",
-    "description": "Splits one LoRA stack into every non-empty combination.",
+    "display_name": "Style Stack Splitter",
+    "description": "Splits one style stack into every non-empty combination.",
     "inputs": {
       "lora_stack": {
-        "name": "LoRA Stack",
-        "tooltip": "The LoRA stack to expand into every non-empty subset."
+        "name": "Style Stack",
+        "tooltip": "The style stack to expand into every non-empty subset."
       }
     },
     "outputs": {
       "0": {
-        "name": "LoRA Stack List",
-        "tooltip": "Single, pairwise, and complete LoRA combinations in order."
+        "name": "Style Stack List",
+        "tooltip": "Single, pairwise, and complete Style combinations in order."
       }
     }
   },
   "LoraStackLister": {
-    "display_name": "LoRA Stack Lister",
-    "description": "Collects LoRA stacks in connection order and reveals the next input automatically.",
+    "display_name": "Style Stack Lister",
+    "description": "Collects style stacks in connection order and reveals the next input automatically.",
     "inputs": {
-      "stack_1": { "name": "LoRA Stack 1", "tooltip": "First LoRA stack to collect." },
-      "stack_2": { "name": "LoRA Stack 2", "tooltip": "Optional LoRA stack 2." },
-      "stack_3": { "name": "LoRA Stack 3", "tooltip": "Optional LoRA stack 3." },
-      "stack_4": { "name": "LoRA Stack 4", "tooltip": "Optional LoRA stack 4." },
-      "stack_5": { "name": "LoRA Stack 5", "tooltip": "Optional LoRA stack 5." },
-      "stack_6": { "name": "LoRA Stack 6", "tooltip": "Optional LoRA stack 6." },
-      "stack_7": { "name": "LoRA Stack 7", "tooltip": "Optional LoRA stack 7." },
-      "stack_8": { "name": "LoRA Stack 8", "tooltip": "Optional LoRA stack 8." },
-      "stack_9": { "name": "LoRA Stack 9", "tooltip": "Optional LoRA stack 9." },
-      "stack_10": { "name": "LoRA Stack 10", "tooltip": "Optional LoRA stack 10." },
-      "stack_11": { "name": "LoRA Stack 11", "tooltip": "Optional LoRA stack 11." },
-      "stack_12": { "name": "LoRA Stack 12", "tooltip": "Optional LoRA stack 12." },
-      "stack_13": { "name": "LoRA Stack 13", "tooltip": "Optional LoRA stack 13." },
-      "stack_14": { "name": "LoRA Stack 14", "tooltip": "Optional LoRA stack 14." },
-      "stack_15": { "name": "LoRA Stack 15", "tooltip": "Optional LoRA stack 15." },
-      "stack_16": { "name": "LoRA Stack 16", "tooltip": "Optional LoRA stack 16." }
+      "stack_1": { "name": "Style Stack 1", "tooltip": "First style stack to collect." },
+      "stack_2": { "name": "Style Stack 2", "tooltip": "Optional Style stack 2." },
+      "stack_3": { "name": "Style Stack 3", "tooltip": "Optional Style stack 3." },
+      "stack_4": { "name": "Style Stack 4", "tooltip": "Optional Style stack 4." },
+      "stack_5": { "name": "Style Stack 5", "tooltip": "Optional Style stack 5." },
+      "stack_6": { "name": "Style Stack 6", "tooltip": "Optional Style stack 6." },
+      "stack_7": { "name": "Style Stack 7", "tooltip": "Optional Style stack 7." },
+      "stack_8": { "name": "Style Stack 8", "tooltip": "Optional Style stack 8." },
+      "stack_9": { "name": "Style Stack 9", "tooltip": "Optional Style stack 9." },
+      "stack_10": { "name": "Style Stack 10", "tooltip": "Optional Style stack 10." },
+      "stack_11": { "name": "Style Stack 11", "tooltip": "Optional Style stack 11." },
+      "stack_12": { "name": "Style Stack 12", "tooltip": "Optional Style stack 12." },
+      "stack_13": { "name": "Style Stack 13", "tooltip": "Optional Style stack 13." },
+      "stack_14": { "name": "Style Stack 14", "tooltip": "Optional Style stack 14." },
+      "stack_15": { "name": "Style Stack 15", "tooltip": "Optional Style stack 15." },
+      "stack_16": { "name": "Style Stack 16", "tooltip": "Optional Style stack 16." }
     },
     "outputs": {
       "0": {
-        "name": "LoRA Stack List",
-        "tooltip": "LoRA stacks preserved in input connection order."
+        "name": "Style Stack List",
+        "tooltip": "Style stacks preserved in input connection order."
       }
     }
   },
@@ -555,19 +555,19 @@
     "description": "Converts a structured prompt list into an XY axis.",
     "inputs": {
       "prompt_list": { "name": "Prompt List", "tooltip": "Prompt entries used by the axis." },
-      "axis_title": { "name": "Axis Title", "tooltip": "Short heading rendered beside the prompt axis." }
+      "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; each row or column label comes from its source entry." }
     },
-    "outputs": { "0": { "name": "Prompt Axis", "tooltip": "Prompt entries with labels, parameters, and detail text." } }
+    "outputs": { "0": { "name": "Axis", "tooltip": "Prompt entries with labels, parameters, and detail text; connect to either X or Y." } }
   },
   "LoraTesterLoraStackAxis": {
-    "display_name": "LoRA Stack Axis",
-    "description": "Converts LoRA and artist-tag stacks into a grouped XY axis with categorized detail tables.",
+    "display_name": "Style Axis",
+    "description": "Converts Style and artist-tag stacks into a grouped style axis with categorized detail tables.",
     "inputs": {
-      "lorastacks": { "name": "LoRA Stack List", "tooltip": "LoRA and artist configurations to place on this axis." },
+      "lorastacks": { "name": "Style Stack List", "tooltip": "Style configurations to place on this axis." },
       "include_base": { "name": "Include BASE", "tooltip": "Adds BASE as a separate group with visible spacing before test configurations." },
-      "axis_title": { "name": "Axis Title", "tooltip": "Short heading rendered beside the stack axis." }
+      "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; each row or column label comes from its source entry." }
     },
-    "outputs": { "0": { "name": "LoRA Stack Axis", "tooltip": "Grouped LoRA/artist configurations ready for either XY sampler socket." } }
+    "outputs": { "0": { "name": "Axis", "tooltip": "Grouped style configurations ready for either XY sampler socket." } }
   },
   "LoraTesterSeedList": {
     "display_name": "Seed List / Random Seeds",
@@ -585,8 +585,18 @@
     "description": "Converts an ordered seed list into an XY axis.",
     "inputs": {
       "seed_list": { "name": "Seed List", "tooltip": "Explicit or generated seeds used by the axis." },
-      "axis_title": { "name": "Axis Title", "tooltip": "Short heading rendered beside the seed axis." }
+      "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; each row or column label comes from its source entry." }
     },
-    "outputs": { "0": { "name": "Seed Axis", "tooltip": "Seed values ready for either XY sampler socket." } }
+    "outputs": { "0": { "name": "Axis", "tooltip": "Seed values ready for either XY sampler socket." } }
+  },
+  "LoraTesterAxisComposer": {
+    "display_name": "Axis Composer",
+    "description": "Converts one prompt, style, or seed source into an orientation-neutral XY axis.",
+    "inputs": {
+      "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; individual labels come from source entries." },
+      "include_base": { "name": "Include BASE", "tooltip": "For a style source, place BASE in its own group." },
+      "source": { "name": "Axis Source", "tooltip": "Connect one prompt list, style stack/list, or seed list. Do not connect multiple sources." }
+    },
+    "outputs": { "0": { "name": "Axis", "tooltip": "A grouped axis that can be connected to either X or Y." } }
   }
 }

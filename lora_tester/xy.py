@@ -454,6 +454,54 @@ def merge_axis_parameters(*entries: AxisEntry) -> dict[str, Any]:
     return merged
 
 
+def concatenate_axes(*axes: XYAxis, title: str | None = None) -> XYAxis:
+    """Concatenate complete axes while preserving each input axis as a group.
+
+    This operates on immutable axis data as a whole. It intentionally does not expose
+    a per-entry mutation step, leaving future axis composition safe to extend.
+    """
+
+    if not axes or any(not isinstance(axis, XYAxis) for axis in axes):
+        raise TypeError("Axis concatenation requires one or more XYAxis values")
+    groups = tuple(group for axis in axes for group in axis.groups)
+    details = tuple(block for axis in axes for block in axis.detail_blocks)
+    return XYAxis(title=str(title).strip() or axes[0].title, groups=groups, detail_blocks=details)
+
+
+def cross_merge_axes(first: XYAxis, second: XYAxis, *, title: str | None = None) -> XYAxis:
+    """Build a Cartesian axis from two complete axes without mutating their entries."""
+
+    if not isinstance(first, XYAxis) or not isinstance(second, XYAxis):
+        raise TypeError("Axis cross merge requires two XYAxis values")
+    groups: list[tuple[AxisEntry, ...]] = []
+    for first_group in first.groups:
+        for second_group in second.groups:
+            entries: list[AxisEntry] = []
+            for first_entry in first_group:
+                for second_entry in second_group:
+                    merged = merge_axis_parameters(first_entry, second_entry)
+                    entries.append(
+                        AxisEntry(
+                            label=f"{first_entry.label} × {second_entry.label}",
+                            parameters=tuple(
+                                AxisParameter(name, value) for name, value in merged.items()
+                            ),
+                            detail_label=" | ".join(
+                                part
+                                for part in (first_entry.detail_label, second_entry.detail_label)
+                                if part
+                            ),
+                        )
+                    )
+            if entries:
+                groups.append(tuple(entries))
+    return XYAxis(
+        title=str(title).strip() or f"{first.title} × {second.title}",
+        groups=tuple(groups),
+        detail_blocks=(*first.detail_blocks, *second.detail_blocks),
+    )
+
+
 __all__ = [
     "AxisEntry",
     "AxisParameter",
@@ -468,5 +516,7 @@ __all__ = [
     "build_lora_stack_axis",
     "build_prompt_axis",
     "build_seed_axis",
+    "concatenate_axes",
+    "cross_merge_axes",
     "merge_axis_parameters",
 ]

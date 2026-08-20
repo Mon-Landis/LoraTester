@@ -336,111 +336,111 @@
     }
   },
   "LoraStack": {
-    "display_name": "LoRA 组合配置",
-    "description": "配置一组同时应用的 LoRA 文件与画师 Tag。",
+    "display_name": "风格组合配置",
+    "description": "配置一组同时应用的 风格 文件与画师 Tag。",
     "inputs": {
       "lora_count": {
         "name": "测试项数量",
-        "tooltip": "当前组合中启用的 LoRA 或画师 Tag 项目数量。"
+        "tooltip": "当前组合中启用的 风格 或画师 Tag 项目数量。"
       },
-      "lora_1_name": { "name": "LoRA 1 文件", "tooltip": "组合第 1 项使用的必选 LoRA 文件。" },
-      "lora_1_trigger": { "name": "LoRA 1 触发词", "tooltip": "组合第 1 项使用的触发词。" },
-      "lora_1_strength": { "name": "LoRA 1 强度", "tooltip": "组合第 1 项同时应用于模型与 CLIP 的强度。" },
-      "lora_2_name": { "name": "LoRA 2 文件", "tooltip": "组合第 2 项使用的必选 LoRA 文件。" },
-      "lora_2_trigger": { "name": "LoRA 2 触发词", "tooltip": "组合第 2 项使用的触发词。" },
-      "lora_2_strength": { "name": "LoRA 2 强度", "tooltip": "组合第 2 项同时应用于模型与 CLIP 的强度。" },
-      "lora_3_name": { "name": "LoRA 3 文件", "tooltip": "组合第 3 项使用的必选 LoRA 文件。" },
-      "lora_3_trigger": { "name": "LoRA 3 触发词", "tooltip": "组合第 3 项使用的触发词。" },
-      "lora_3_strength": { "name": "LoRA 3 强度", "tooltip": "组合第 3 项同时应用于模型与 CLIP 的强度。" },
-      "lora_4_name": { "name": "LoRA 4 文件", "tooltip": "组合第 4 项使用的必选 LoRA 文件。" },
-      "lora_4_trigger": { "name": "LoRA 4 触发词", "tooltip": "组合第 4 项使用的触发词。" },
-      "lora_4_strength": { "name": "LoRA 4 强度", "tooltip": "组合第 4 项同时应用于模型与 CLIP 的强度。" },
-      "lora_5_name": { "name": "LoRA 5 文件", "tooltip": "组合第 5 项使用的必选 LoRA 文件。" },
-      "lora_5_trigger": { "name": "LoRA 5 触发词", "tooltip": "组合第 5 项使用的触发词。" },
-      "lora_5_strength": { "name": "LoRA 5 强度", "tooltip": "组合第 5 项同时应用于模型与 CLIP 的强度。" },
-      "lora_6_name": { "name": "LoRA 6 文件", "tooltip": "组合第 6 项使用的必选 LoRA 文件。" },
-      "lora_6_trigger": { "name": "LoRA 6 触发词", "tooltip": "组合第 6 项使用的触发词。" },
-      "lora_6_strength": { "name": "LoRA 6 强度", "tooltip": "组合第 6 项同时应用于模型与 CLIP 的强度。" },
-      "lora_7_name": { "name": "LoRA 7 文件", "tooltip": "组合第 7 项使用的必选 LoRA 文件。" },
-      "lora_7_trigger": { "name": "LoRA 7 触发词", "tooltip": "组合第 7 项使用的触发词。" },
-      "lora_7_strength": { "name": "LoRA 7 强度", "tooltip": "组合第 7 项同时应用于模型与 CLIP 的强度。" },
-      "lora_8_name": { "name": "LoRA 8 文件", "tooltip": "组合第 8 项使用的必选 LoRA 文件。" },
-      "lora_8_trigger": { "name": "LoRA 8 触发词", "tooltip": "组合第 8 项使用的触发词。" },
-      "lora_8_strength": { "name": "LoRA 8 强度", "tooltip": "组合第 8 项同时应用于模型与 CLIP 的强度。" },
-      "lora_9_name": { "name": "LoRA 9 文件", "tooltip": "组合第 9 项使用的必选 LoRA 文件。" },
-      "lora_9_trigger": { "name": "LoRA 9 触发词", "tooltip": "组合第 9 项使用的触发词。" },
-      "lora_9_strength": { "name": "LoRA 9 强度", "tooltip": "组合第 9 项同时应用于模型与 CLIP 的强度。" },
-      "lora_10_name": { "name": "LoRA 10 文件", "tooltip": "组合第 10 项使用的必选 LoRA 文件。" },
-      "lora_10_trigger": { "name": "LoRA 10 触发词", "tooltip": "组合第 10 项使用的触发词。" },
-      "lora_10_strength": { "name": "LoRA 10 强度", "tooltip": "组合第 10 项同时应用于模型与 CLIP 的强度。" },
-      "lora_11_name": { "name": "LoRA 11 文件", "tooltip": "组合第 11 项使用的必选 LoRA 文件。" },
-      "lora_11_trigger": { "name": "LoRA 11 触发词", "tooltip": "组合第 11 项使用的触发词。" },
-      "lora_11_strength": { "name": "LoRA 11 强度", "tooltip": "组合第 11 项同时应用于模型与 CLIP 的强度。" },
-      "lora_12_name": { "name": "LoRA 12 文件", "tooltip": "组合第 12 项使用的必选 LoRA 文件。" },
-      "lora_12_trigger": { "name": "LoRA 12 触发词", "tooltip": "组合第 12 项使用的触发词。" },
-      "lora_12_strength": { "name": "LoRA 12 强度", "tooltip": "组合第 12 项同时应用于模型与 CLIP 的强度。" },
-      "lora_13_name": { "name": "LoRA 13 文件", "tooltip": "组合第 13 项使用的必选 LoRA 文件。" },
-      "lora_13_trigger": { "name": "LoRA 13 触发词", "tooltip": "组合第 13 项使用的触发词。" },
-      "lora_13_strength": { "name": "LoRA 13 强度", "tooltip": "组合第 13 项同时应用于模型与 CLIP 的强度。" },
-      "lora_14_name": { "name": "LoRA 14 文件", "tooltip": "组合第 14 项使用的必选 LoRA 文件。" },
-      "lora_14_trigger": { "name": "LoRA 14 触发词", "tooltip": "组合第 14 项使用的触发词。" },
-      "lora_14_strength": { "name": "LoRA 14 强度", "tooltip": "组合第 14 项同时应用于模型与 CLIP 的强度。" },
-      "lora_15_name": { "name": "LoRA 15 文件", "tooltip": "组合第 15 项使用的必选 LoRA 文件。" },
-      "lora_15_trigger": { "name": "LoRA 15 触发词", "tooltip": "组合第 15 项使用的触发词。" },
-      "lora_15_strength": { "name": "LoRA 15 强度", "tooltip": "组合第 15 项同时应用于模型与 CLIP 的强度。" },
-      "lora_16_name": { "name": "LoRA 16 文件", "tooltip": "组合第 16 项使用的必选 LoRA 文件。" },
-      "lora_16_trigger": { "name": "LoRA 16 触发词", "tooltip": "组合第 16 项使用的触发词。" },
-      "lora_16_strength": { "name": "LoRA 16 强度", "tooltip": "组合第 16 项同时应用于模型与 CLIP 的强度。" },
+      "lora_1_name": { "name": "风格 1 文件", "tooltip": "组合第 1 项使用的必选 风格 文件。" },
+      "lora_1_trigger": { "name": "风格 1 触发词", "tooltip": "组合第 1 项使用的触发词。" },
+      "lora_1_strength": { "name": "风格 1 强度", "tooltip": "组合第 1 项同时应用于模型与 CLIP 的强度。" },
+      "lora_2_name": { "name": "风格 2 文件", "tooltip": "组合第 2 项使用的必选 风格 文件。" },
+      "lora_2_trigger": { "name": "风格 2 触发词", "tooltip": "组合第 2 项使用的触发词。" },
+      "lora_2_strength": { "name": "风格 2 强度", "tooltip": "组合第 2 项同时应用于模型与 CLIP 的强度。" },
+      "lora_3_name": { "name": "风格 3 文件", "tooltip": "组合第 3 项使用的必选 风格 文件。" },
+      "lora_3_trigger": { "name": "风格 3 触发词", "tooltip": "组合第 3 项使用的触发词。" },
+      "lora_3_strength": { "name": "风格 3 强度", "tooltip": "组合第 3 项同时应用于模型与 CLIP 的强度。" },
+      "lora_4_name": { "name": "风格 4 文件", "tooltip": "组合第 4 项使用的必选 风格 文件。" },
+      "lora_4_trigger": { "name": "风格 4 触发词", "tooltip": "组合第 4 项使用的触发词。" },
+      "lora_4_strength": { "name": "风格 4 强度", "tooltip": "组合第 4 项同时应用于模型与 CLIP 的强度。" },
+      "lora_5_name": { "name": "风格 5 文件", "tooltip": "组合第 5 项使用的必选 风格 文件。" },
+      "lora_5_trigger": { "name": "风格 5 触发词", "tooltip": "组合第 5 项使用的触发词。" },
+      "lora_5_strength": { "name": "风格 5 强度", "tooltip": "组合第 5 项同时应用于模型与 CLIP 的强度。" },
+      "lora_6_name": { "name": "风格 6 文件", "tooltip": "组合第 6 项使用的必选 风格 文件。" },
+      "lora_6_trigger": { "name": "风格 6 触发词", "tooltip": "组合第 6 项使用的触发词。" },
+      "lora_6_strength": { "name": "风格 6 强度", "tooltip": "组合第 6 项同时应用于模型与 CLIP 的强度。" },
+      "lora_7_name": { "name": "风格 7 文件", "tooltip": "组合第 7 项使用的必选 风格 文件。" },
+      "lora_7_trigger": { "name": "风格 7 触发词", "tooltip": "组合第 7 项使用的触发词。" },
+      "lora_7_strength": { "name": "风格 7 强度", "tooltip": "组合第 7 项同时应用于模型与 CLIP 的强度。" },
+      "lora_8_name": { "name": "风格 8 文件", "tooltip": "组合第 8 项使用的必选 风格 文件。" },
+      "lora_8_trigger": { "name": "风格 8 触发词", "tooltip": "组合第 8 项使用的触发词。" },
+      "lora_8_strength": { "name": "风格 8 强度", "tooltip": "组合第 8 项同时应用于模型与 CLIP 的强度。" },
+      "lora_9_name": { "name": "风格 9 文件", "tooltip": "组合第 9 项使用的必选 风格 文件。" },
+      "lora_9_trigger": { "name": "风格 9 触发词", "tooltip": "组合第 9 项使用的触发词。" },
+      "lora_9_strength": { "name": "风格 9 强度", "tooltip": "组合第 9 项同时应用于模型与 CLIP 的强度。" },
+      "lora_10_name": { "name": "风格 10 文件", "tooltip": "组合第 10 项使用的必选 风格 文件。" },
+      "lora_10_trigger": { "name": "风格 10 触发词", "tooltip": "组合第 10 项使用的触发词。" },
+      "lora_10_strength": { "name": "风格 10 强度", "tooltip": "组合第 10 项同时应用于模型与 CLIP 的强度。" },
+      "lora_11_name": { "name": "风格 11 文件", "tooltip": "组合第 11 项使用的必选 风格 文件。" },
+      "lora_11_trigger": { "name": "风格 11 触发词", "tooltip": "组合第 11 项使用的触发词。" },
+      "lora_11_strength": { "name": "风格 11 强度", "tooltip": "组合第 11 项同时应用于模型与 CLIP 的强度。" },
+      "lora_12_name": { "name": "风格 12 文件", "tooltip": "组合第 12 项使用的必选 风格 文件。" },
+      "lora_12_trigger": { "name": "风格 12 触发词", "tooltip": "组合第 12 项使用的触发词。" },
+      "lora_12_strength": { "name": "风格 12 强度", "tooltip": "组合第 12 项同时应用于模型与 CLIP 的强度。" },
+      "lora_13_name": { "name": "风格 13 文件", "tooltip": "组合第 13 项使用的必选 风格 文件。" },
+      "lora_13_trigger": { "name": "风格 13 触发词", "tooltip": "组合第 13 项使用的触发词。" },
+      "lora_13_strength": { "name": "风格 13 强度", "tooltip": "组合第 13 项同时应用于模型与 CLIP 的强度。" },
+      "lora_14_name": { "name": "风格 14 文件", "tooltip": "组合第 14 项使用的必选 风格 文件。" },
+      "lora_14_trigger": { "name": "风格 14 触发词", "tooltip": "组合第 14 项使用的触发词。" },
+      "lora_14_strength": { "name": "风格 14 强度", "tooltip": "组合第 14 项同时应用于模型与 CLIP 的强度。" },
+      "lora_15_name": { "name": "风格 15 文件", "tooltip": "组合第 15 项使用的必选 风格 文件。" },
+      "lora_15_trigger": { "name": "风格 15 触发词", "tooltip": "组合第 15 项使用的触发词。" },
+      "lora_15_strength": { "name": "风格 15 强度", "tooltip": "组合第 15 项同时应用于模型与 CLIP 的强度。" },
+      "lora_16_name": { "name": "风格 16 文件", "tooltip": "组合第 16 项使用的必选 风格 文件。" },
+      "lora_16_trigger": { "name": "风格 16 触发词", "tooltip": "组合第 16 项使用的触发词。" },
+      "lora_16_strength": { "name": "风格 16 强度", "tooltip": "组合第 16 项同时应用于模型与 CLIP 的强度。" },
       "artist_tag_template": { "name": "画师 Tag 模板", "tooltip": "随组合保存并由拆分节点继续传递的可选画师 Tag 语法。" }
     },
     "outputs": {
       "0": {
-        "name": "LoRA 组合",
-        "tooltip": "包含文件、触发词和强度的 LoRA 组合。"
+        "name": "风格组合",
+        "tooltip": "包含文件、触发词和强度的 风格组合。"
       }
     }
   },
   "LoraStackSplitter": {
-    "display_name": "LoRA 组合拆分",
-    "description": "将一组 LoRA 拆分为所有非空组合。",
+    "display_name": "风格组合拆分",
+    "description": "将一组 风格 拆分为所有非空组合。",
     "inputs": {
       "lora_stack": {
-        "name": "LoRA 组合",
-        "tooltip": "需要生成全部非空子组合的 LoRA 组合。"
+        "name": "风格组合",
+        "tooltip": "需要生成全部非空子组合的 风格组合。"
       }
     },
     "outputs": {
       "0": {
-        "name": "LoRA 组合列表",
+        "name": "风格组合列表",
         "tooltip": "按单项、两两组合到完整组合排列的列表。"
       }
     }
   },
   "LoraStackLister": {
-    "display_name": "LoRA 组合列表",
-    "description": "按连接顺序收集多个 LoRA 组合，并自动增加下一个输入口。",
+    "display_name": "风格组合列表",
+    "description": "按连接顺序收集多个 风格组合，并自动增加下一个输入口。",
     "inputs": {
-      "stack_1": { "name": "LoRA 组合 1", "tooltip": "要收集的第一个 LoRA 组合。" },
-      "stack_2": { "name": "LoRA 组合 2", "tooltip": "可选的第 2 个 LoRA 组合。" },
-      "stack_3": { "name": "LoRA 组合 3", "tooltip": "可选的第 3 个 LoRA 组合。" },
-      "stack_4": { "name": "LoRA 组合 4", "tooltip": "可选的第 4 个 LoRA 组合。" },
-      "stack_5": { "name": "LoRA 组合 5", "tooltip": "可选的第 5 个 LoRA 组合。" },
-      "stack_6": { "name": "LoRA 组合 6", "tooltip": "可选的第 6 个 LoRA 组合。" },
-      "stack_7": { "name": "LoRA 组合 7", "tooltip": "可选的第 7 个 LoRA 组合。" },
-      "stack_8": { "name": "LoRA 组合 8", "tooltip": "可选的第 8 个 LoRA 组合。" },
-      "stack_9": { "name": "LoRA 组合 9", "tooltip": "可选的第 9 个 LoRA 组合。" },
-      "stack_10": { "name": "LoRA 组合 10", "tooltip": "可选的第 10 个 LoRA 组合。" },
-      "stack_11": { "name": "LoRA 组合 11", "tooltip": "可选的第 11 个 LoRA 组合。" },
-      "stack_12": { "name": "LoRA 组合 12", "tooltip": "可选的第 12 个 LoRA 组合。" },
-      "stack_13": { "name": "LoRA 组合 13", "tooltip": "可选的第 13 个 LoRA 组合。" },
-      "stack_14": { "name": "LoRA 组合 14", "tooltip": "可选的第 14 个 LoRA 组合。" },
-      "stack_15": { "name": "LoRA 组合 15", "tooltip": "可选的第 15 个 LoRA 组合。" },
-      "stack_16": { "name": "LoRA 组合 16", "tooltip": "可选的第 16 个 LoRA 组合。" }
+      "stack_1": { "name": "风格组合 1", "tooltip": "要收集的第一个 风格组合。" },
+      "stack_2": { "name": "风格组合 2", "tooltip": "可选的第 2 个 风格组合。" },
+      "stack_3": { "name": "风格组合 3", "tooltip": "可选的第 3 个 风格组合。" },
+      "stack_4": { "name": "风格组合 4", "tooltip": "可选的第 4 个 风格组合。" },
+      "stack_5": { "name": "风格组合 5", "tooltip": "可选的第 5 个 风格组合。" },
+      "stack_6": { "name": "风格组合 6", "tooltip": "可选的第 6 个 风格组合。" },
+      "stack_7": { "name": "风格组合 7", "tooltip": "可选的第 7 个 风格组合。" },
+      "stack_8": { "name": "风格组合 8", "tooltip": "可选的第 8 个 风格组合。" },
+      "stack_9": { "name": "风格组合 9", "tooltip": "可选的第 9 个 风格组合。" },
+      "stack_10": { "name": "风格组合 10", "tooltip": "可选的第 10 个 风格组合。" },
+      "stack_11": { "name": "风格组合 11", "tooltip": "可选的第 11 个 风格组合。" },
+      "stack_12": { "name": "风格组合 12", "tooltip": "可选的第 12 个 风格组合。" },
+      "stack_13": { "name": "风格组合 13", "tooltip": "可选的第 13 个 风格组合。" },
+      "stack_14": { "name": "风格组合 14", "tooltip": "可选的第 14 个 风格组合。" },
+      "stack_15": { "name": "风格组合 15", "tooltip": "可选的第 15 个 风格组合。" },
+      "stack_16": { "name": "风格组合 16", "tooltip": "可选的第 16 个 风格组合。" }
     },
     "outputs": {
       "0": {
-        "name": "LoRA 组合列表",
-        "tooltip": "按输入连接顺序保存的 LoRA 组合列表。"
+        "name": "风格组合列表",
+        "tooltip": "按输入连接顺序保存的 风格组合列表。"
       }
     }
   },
@@ -555,19 +555,19 @@
     "description": "将结构化提示词列表转换为 XY 轴。",
     "inputs": {
       "prompt_list": { "name": "提示词列表", "tooltip": "用于构造轴的提示词条目。" },
-      "axis_title": { "name": "轴标题", "tooltip": "显示在提示词轴旁的短标题。" }
+      "axis_title": { "name": "轴总标题", "tooltip": "显示在轴旁的总标题；每行或每列的标签由单个源条目提供。" }
     },
-    "outputs": { "0": { "name": "提示词轴", "tooltip": "包含标签、采样参数与详情文字的提示词轴。" } }
+    "outputs": { "0": { "name": "轴", "tooltip": "包含标签、采样参数与详情文字的轴，可接入 X 或 Y。" } }
   },
   "LoraTesterLoraStackAxis": {
-    "display_name": "LoRA 组合轴",
-    "description": "将 LoRA 与画师 Tag 组合转换为带分组和分类详情表格的 XY 轴。",
+    "display_name": "风格轴",
+    "description": "将 风格 与画师 Tag 组合转换为带分组和分类详情表格的风格轴。",
     "inputs": {
-      "lorastacks": { "name": "LoRA 组合列表", "tooltip": "需要放置到该轴上的 LoRA 与画师配置。" },
+      "lorastacks": { "name": "风格组合列表", "tooltip": "需要放置到该轴上的风格配置。" },
       "include_base": { "name": "包含 BASE 基线", "tooltip": "将 BASE 放在独立分组中，并与测试配置显示可见间隔。" },
-      "axis_title": { "name": "轴标题", "tooltip": "显示在组合轴旁的短标题。" }
+      "axis_title": { "name": "轴总标题", "tooltip": "显示在轴旁的总标题；每行或每列的标签由单个源条目提供。" }
     },
-    "outputs": { "0": { "name": "LoRA 组合轴", "tooltip": "可接入 XY 采样器任一轴输入的分组 LoRA/画师配置。" } }
+    "outputs": { "0": { "name": "轴", "tooltip": "可接入 XY 采样器任一轴输入的分组风格配置。" } }
   },
   "LoraTesterSeedList": {
     "display_name": "种子列表 / 随机种子生成",
@@ -585,8 +585,18 @@
     "description": "将有序种子列表转换为 XY 轴。",
     "inputs": {
       "seed_list": { "name": "种子列表", "tooltip": "用于构造轴的指定或生成种子。" },
-      "axis_title": { "name": "轴标题", "tooltip": "显示在种子轴旁的短标题。" }
+      "axis_title": { "name": "轴总标题", "tooltip": "显示在轴旁的总标题；每行或每列的标签由单个源条目提供。" }
     },
-    "outputs": { "0": { "name": "种子轴", "tooltip": "可接入 XY 采样器任一轴输入的种子值。" } }
+    "outputs": { "0": { "name": "轴", "tooltip": "可接入 XY 采样器任一轴输入的种子值。" } }
+  },
+  "LoraTesterAxisComposer": {
+    "display_name": "轴合成器",
+    "description": "将一组提示词、风格或种子源转换为与方向无关的 XY 轴。",
+    "inputs": {
+      "axis_title": { "name": "轴总标题", "tooltip": "显示在轴旁的总标题；单个条目的标签由源数据提供。" },
+      "include_base": { "name": "包含 BASE", "tooltip": "使用风格源时，将 BASE 放在独立分组中。" },
+      "source": { "name": "轴源数据", "tooltip": "连接一个提示词列表、风格组合/列表或种子列表；不要同时连接多个源。" }
+    },
+    "outputs": { "0": { "name": "轴", "tooltip": "可接入 X 或 Y 的分组轴。" } }
   }
 }

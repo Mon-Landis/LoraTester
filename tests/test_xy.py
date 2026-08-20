@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from lora_tester.artist import ARTIST_TAG_MODE
 from lora_tester.nodes import (
+    AxisComposerNode,
     GlobalPromptAppendNode,
     MultiPromptInputNode,
     SeedListNode,
@@ -34,6 +35,8 @@ from lora_tester.xy import (
     build_lora_stack_axis,
     build_prompt_axis,
     build_seed_axis,
+    concatenate_axes,
+    cross_merge_axes,
     merge_axis_parameters,
 )
 from lora_tester.xy_compositor import XYMatrixCompositor
@@ -97,6 +100,37 @@ class XYModelTests(unittest.TestCase):
             ["portrait, masterpiece", "landscape, masterpiece"],
         )
         self.assertEqual(result.entries[1].independent_artist_tags, "@artist")
+
+    def test_axis_composer_accepts_all_raw_axis_sources(self) -> None:
+        prompt_axis = AxisComposerNode.compose_axis(
+            "PROMPTS",
+            True,
+            PromptList((PromptEntry("portrait"),)),
+        )[0]
+        style = LoraStack((LoraStackItem("A.safetensors", "alpha", 0.8),))
+        style_axis = AxisComposerNode.compose_axis(
+            "STYLE",
+            True,
+            LoraStackList((style,)),
+        )[0]
+        seed_axis = AxisComposerNode.compose_axis("SEEDS", True, SeedList((11, 22)))[0]
+
+        self.assertEqual(prompt_axis.title, "PROMPTS")
+        self.assertEqual(style_axis.entries[0].label, "BASE")
+        self.assertEqual(seed_axis.entries[1].parameter_map["seed"], 22)
+        with self.assertRaisesRegex(TypeError, "expects a PromptList"):
+            AxisComposerNode.compose_axis("AXIS", True, object())
+
+    def test_axis_operations_are_whole_axis_and_preserve_group_boundaries(self) -> None:
+        prompts = build_prompt_axis(PromptList((PromptEntry("portrait"),)))
+        seeds = build_seed_axis(SeedList((3, 4)))
+        combined = cross_merge_axes(prompts, seeds, title="COMBINED")
+        self.assertEqual(combined.title, "COMBINED")
+        self.assertEqual(len(combined.entries), 2)
+        self.assertEqual(combined.entries[0].parameter_map["seed"], 3)
+        concatenated = concatenate_axes(prompts, seeds, title="CONCAT")
+        self.assertEqual(concatenated.title, "CONCAT")
+        self.assertEqual(len(concatenated.groups), 2)
 
     def test_axis_groups_are_two_dimensional_and_conflicts_are_rejected(self) -> None:
         x = AxisEntry("X", (AxisParameter("seed", 1),))

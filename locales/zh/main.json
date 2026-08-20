@@ -4,9 +4,13 @@
     "Stacks": "组合工具",
     "Axes": "轴构造",
     "Deprecated": "已过时",
-    "Lora Tester/Stacks": "LoRA 测试器/组合工具",
+    "Lora Tester/Stacks": "LoRA 测试器/组合工具（旧分类）",
     "Lora Tester/XY": "LoRA 测试器/XY 测试",
-    "Lora Tester/XY/Axes": "LoRA 测试器/XY 轴构造",
+    "Lora Tester/XY/Prompt": "LoRA 测试器/XY/提示词",
+    "Lora Tester/XY/Style": "LoRA 测试器/XY/风格",
+    "Lora Tester/XY/Seed": "LoRA 测试器/XY/种子",
+    "Lora Tester/XY/Axis": "LoRA 测试器/XY/轴合成",
+    "Lora Tester/XY/Axes": "LoRA 测试器/XY 轴构造（旧分类）",
     "Lora Tester/Deprecated": "LoRA 测试器/已过时"
   }
 }

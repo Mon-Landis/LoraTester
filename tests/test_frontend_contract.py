@@ -77,6 +77,7 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("ARTIST_MODE_OPTION_LABELS", source)
         self.assertIn("artistModeLabels(node, nodeName)", source)
         self.assertIn("Artist ${title} Tag Weight", source)
+        self.assertIn('language === "zh" ? `风格 ${title}` : `Style ${title}`', source)
         self.assertIn("countIndependentArtistTags", source)
         self.assertIn('"independent_artist_tags"', source)
         self.assertIn("independentArtists > 1", source)
@@ -123,6 +124,10 @@ class FrontendContractTests(unittest.TestCase):
 
     def test_xy_frontend_tracks_axis_overrides_warnings_and_all_controls(self) -> None:
         source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn('const AXIS_COMPOSER_NODE = "LoraTesterAxisComposer"', source)
+        self.assertIn("function axisMetadataFromSource", source)
+        self.assertIn('axis: { en: "Axis", zh: "轴" }', source)
+        self.assertIn('Style Stack', source)
         self.assertIn("function setWidgetDisabled(widget, disabled, node = null)", source)
         self.assertIn('querySelectorAll?.("textarea, input, select, button")', source)
         self.assertIn("element.inert = disabled ? true", source)

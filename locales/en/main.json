@@ -4,9 +4,13 @@
     "Stacks": "Stacks",
     "Axes": "Axes",
     "Deprecated": "Deprecated",
-    "Lora Tester/Stacks": "LoRA Tester/Stacks",
+    "Lora Tester/Stacks": "LoRA Tester/Stacks (legacy)",
     "Lora Tester/XY": "LoRA Tester/XY Testing",
-    "Lora Tester/XY/Axes": "LoRA Tester/XY Axes",
+    "Lora Tester/XY/Prompt": "LoRA Tester/XY/Prompt",
+    "Lora Tester/XY/Style": "LoRA Tester/XY/Style",
+    "Lora Tester/XY/Seed": "LoRA Tester/XY/Seed",
+    "Lora Tester/XY/Axis": "LoRA Tester/XY/Axis",
+    "Lora Tester/XY/Axes": "LoRA Tester/XY Axes (legacy)",
     "Lora Tester/Deprecated": "LoRA Tester/Deprecated"
   }
 }

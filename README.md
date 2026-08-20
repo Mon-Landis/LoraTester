@@ -4,14 +4,15 @@
 
 面向 ComfyUI 的 LoRA、画师 Tag 与通用 XY 参数测试节点。采样器直接接收 `MODEL / CLIP / VAE / LATENT`，在节点内完成提示词编码、模型/CLIP 处理、采样、VAE 解码和带标注的对比图合成。
 
-![多提示词与 LoRA Stack 对比矩阵](previews/multi_prompt_stack_matrix.png)
+![多提示词与风格组合对比矩阵](previews/multi_prompt_stack_matrix.png)
 
 ## 核心能力
 
 - 通用 `XY Test Sampler`：组合任意两个 `XY_AXIS`，输出带标注的 `comparison_sheet` 和按行优先排列的原始图片批次 `raw_images`。
 - 提示词轴：拆分长文本、统一前置或后置追加提示词，并单独传递画师 Tag。
 - 种子轴：解析显式种子列表，或根据来源种子确定性生成一组随机种子。
-- LoRA/画师轴：从 Stack、组合拆分和列表汇总节点构造轴，支持独立 BASE 分组和底部配置表。
+- 风格轴：从风格组合、组合拆分和列表汇总节点构造轴，统一表示 LoRA 与画师 Tag，支持独立 BASE 分组和底部配置表。
+- 通用轴合成：提示词列表、风格组合、风格组合列表和种子列表均可经 `Axis Composer` 转换为方向无关的 `XY_AXIS`。
 - 专用 LoRA 测试：保留 1 至 3 个 LoRA 的权重梯度与混合布局。
 - Anima 兼容：按模型配置选择画师 Tag 模板，并可选接入 Anima Artist Mixer 处理多画师组合。
 - 可定制输出：黑色、白色或自定义主题，支持背景图、字体、颜色、间距、装饰器、分类表格和文字说明。
@@ -24,10 +25,10 @@
 ```mermaid
 flowchart LR
   P1["Multi Prompt Input"] --> P2["Global Prompt Append"]
-  P2 --> P3["Prompt Axis"]
-  S1["Seed List / Random Seeds"] --> S2["Seed Axis"]
-  P3 -->|y_axis| XY["XY Test Sampler"]
-  S2 -->|x_axis| XY
+  P2 --> P3["Axis Composer"]
+  S1["Seed List / Random Seeds"] --> S2["Axis Composer"]
+  P3 -->|axis → y_axis| XY["XY Test Sampler"]
+  S2 -->|axis → x_axis| XY
   M["MODEL / CLIP / VAE / LATENT"] --> XY
   XY --> O1["comparison_sheet"]
   XY --> O2["raw_images"]
@@ -36,11 +37,11 @@ flowchart LR
 画风横向测试可使用：
 
 ```text
-LoRA Stack -> LoRA Stack Splitter / LoRA Stack Lister -> LoRA Stack Axis -> x_axis
-Multi Prompt Input -> Global Prompt Append -> Prompt Axis                         -> y_axis
+Style Stack -> Style Stack Splitter / Style Stack Lister -> Axis Composer -> axis -> x_axis
+Multi Prompt Input -> Global Prompt Append                    -> Axis Composer -> axis -> y_axis
 ```
 
-轴本身不绑定方向，提示词、种子或 LoRA Stack 轴均可接入 X 或 Y。`LoRA Stack Axis` 可将 BASE 放入单独分组，使基线列与其余测试列之间自动留出间隔。
+所有轴节点的输出均名为 `axis`，轴本身不绑定方向，可自由接入采样器的 `x_axis` 或 `y_axis`。`axis_title` 是整条轴的总标题；每行或每列顶端显示的文字来自各个 `AxisEntry.label`。`Axis Composer` 的 `include_base` 可将风格 BASE 放入单独分组，使基线列与其余测试列之间自动留出间隔。`Prompt Axis`、`Style Axis` 和 `Seed Axis` 仍作为对应数据类型的快捷构造器提供。
 
 ## 安装
 
@@ -71,15 +72,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | 分类 | 节点 | 用途 |
 |---|---|---|
 | `Lora Tester/XY` | `XY Test Sampler` | 对两个轴做笛卡尔积采样，输出拼接图与原始图片批次。 |
-| `Lora Tester/XY/Axes` | `Multi Prompt Input` | 按空行、单行或自定义分隔符解析多提示词。 |
-| `Lora Tester/XY/Axes` | `Global Prompt Append` | 为全部提示词统一前置/后置文本，并追加独立画师 Tag。 |
-| `Lora Tester/XY/Axes` | `Prompt Axis` | 将提示词列表转换为 `XY_AXIS`。 |
-| `Lora Tester/XY/Axes` | `LoRA Stack Axis` | 将 `LORA_STACK_LIST` 转换为带分组和详情表的 `XY_AXIS`。 |
-| `Lora Tester/XY/Axes` | `Seed List / Random Seeds` | 解析种子列表或确定性生成随机种子。 |
-| `Lora Tester/XY/Axes` | `Seed Axis` | 将种子列表转换为 `XY_AXIS`。 |
-| `Lora Tester/Stacks` | `LoRA Stack` | 配置最多 16 个 LoRA 或画师 Tag 项。 |
-| `Lora Tester/Stacks` | `LoRA Stack Splitter` | 生成 Stack 的全部非空组合。 |
-| `Lora Tester/Stacks` | `LoRA Stack Lister` | 动态合并最多 16 个独立 Stack，输出 Stack List。 |
+| `Lora Tester/XY/Prompt` | `Multi Prompt Input` | 按空行、单行或自定义分隔符解析多提示词。 |
+| `Lora Tester/XY/Prompt` | `Global Prompt Append` | 为全部提示词统一前置/后置文本，并追加独立画师 Tag。 |
+| `Lora Tester/XY/Prompt` | `Prompt Axis` | 将提示词列表直接转换为方向无关的 `XY_AXIS`。 |
+| `Lora Tester/XY/Style` | `Style Stack` | 配置最多 16 个 LoRA 或画师 Tag 风格项。 |
+| `Lora Tester/XY/Style` | `Style Stack Splitter` | 生成风格组合的全部非空组合。 |
+| `Lora Tester/XY/Style` | `Style Stack Lister` | 动态合并最多 16 个独立风格组合。 |
+| `Lora Tester/XY/Style` | `Style Axis` | 将风格组合列表直接转换为带分组和详情表的 `XY_AXIS`。 |
+| `Lora Tester/XY/Seed` | `Seed List / Random Seeds` | 解析种子列表或确定性生成随机种子。 |
+| `Lora Tester/XY/Seed` | `Seed Axis` | 将种子列表直接转换为方向无关的 `XY_AXIS`。 |
+| `Lora Tester/XY/Axis` | `Axis Composer` | 将任一受支持的原始数据源或完整轴转换为通用 `axis`。 |
 | `Lora Tester` | `Style Component Tester` | 专用的 1 至 3 LoRA 权重与混合测试器。 |
 | `Lora Tester` | `LoRA Tester Style` | 为采样器提供自定义视觉样式。 |
 | `Lora Tester/Artist Tags` | `Artist Tag Template` | 覆盖普通权重和加权画师 Tag 的格式。 |
@@ -91,7 +93,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 ## XY 行为与限制
 
 - 每个轴最多 64 个条目。两轴不能同时修改同一个参数，例如同时提供两个种子轴或两个提示词轴；采样器会在加载模型前拒绝冲突。
-- 已内置 `prompt`、`seed`、`lora_stack`、`steps`、`cfg`、`sampler_name`、`scheduler` 和 `denoise` 参数处理器。当前界面提供提示词、种子和 LoRA Stack 轴，架构允许后续增加其他轴构造器。
+- 已内置 `prompt`、`seed`、`lora_stack`、`steps`、`cfg`、`sampler_name`、`scheduler` 和 `denoise` 参数处理器。当前界面提供提示词、种子和风格数据源及快捷轴构造器；`Axis Composer` 提供一致的通用入口。
+- 轴合成后只允许整轴级操作，不提供单元素二次修改。内部已提供保留分组的轴拼接与带参数冲突检查的交叉合并函数，供后续节点使用。
 - 当轴来源可被前端识别时，对应的基础采样控件会被禁用；后端校验始终是最终边界。
 - `raw_images` 为 ComfyUI `[N,H,W,C]` IMAGE 批次，顺序是行优先 `(y, x)`，不受分组间距和底部详情布局影响。
 - 输入 latent 必须只有一个样本。轴条目过多或 latent 空间过大时会产生非阻断警告；最终拼接图默认受 `150 MP` 的 `max_canvas_megapixels` 限制。

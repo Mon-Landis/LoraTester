@@ -23,6 +23,7 @@ from lora_tester.nodes import (
     ArtistTagTemplateNode,
     LoraTesterSampler,
     LoraTesterStyleNode,
+    AxisComposerNode,
     _common_ksampler,
     _release_temporary_model,
     _sampling_progress_value,
@@ -970,6 +971,8 @@ class NodeTests(unittest.TestCase):
             NODE_DISPLAY_NAME_MAPPINGS["MultiPromptSample"],
             "Style Combination Tester",
         )
+        self.assertIs(NODE_CLASS_MAPPINGS["LoraTesterAxisComposer"], AxisComposerNode)
+        self.assertEqual(AxisComposerNode.RETURN_NAMES, ("axis",))
 
 
 if __name__ == "__main__":

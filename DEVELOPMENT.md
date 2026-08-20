@@ -17,16 +17,17 @@
 
 ```mermaid
 flowchart LR
-  A["Axis builder nodes"] --> B["XYAxis<br/>groups / entries / parameters"]
-  B --> C["Cross-axis conflict validation"]
-  C --> D["XY parameter handlers"]
-  D --> E["Resolved per-cell sampler values"]
-  E --> F["MODEL / CLIP grouping and patch reuse"]
-  F --> G["Artist routing and prompt encoding"]
-  G --> H["Sampling and VAE decode"]
-  H --> I["Preallocated raw IMAGE batch"]
-  H --> J["Streaming XY compositor"]
-  J --> K["Labeled comparison sheet"]
+  A["Prompt / Style / Seed sources"] --> B["Axis Composer or typed convenience builder"]
+  B --> C["XYAxis<br/>groups / entries / parameters"]
+  C --> D["Cross-axis conflict validation"]
+  D --> E["XY parameter handlers"]
+  E --> F["Resolved per-cell sampler values"]
+  F --> G["MODEL / CLIP grouping and patch reuse"]
+  G --> H["Artist routing and prompt encoding"]
+  H --> I["Sampling and VAE decode"]
+  I --> J["Preallocated raw IMAGE batch"]
+  I --> K["Streaming XY compositor"]
+  K --> L["Labeled comparison sheet"]
 ```
 
 `XY Test Sampler` 的逻辑顺序是：验证单 latent 和轴类型 -> 检查双轴参数冲突 -> 估算矩阵风险 -> 解析每格参数 -> 按 LoRA Stack 签名组织 MODEL/CLIP 复用 -> 路由画师与编码提示词 -> 采样和解码 -> 同时写入原始批次与拼接会话。
@@ -54,7 +55,7 @@ flowchart LR
 
 ## 节点注册契约
 
-当前必须注册 15 个键。显示名可以本地化，注册键不能因界面重命名而改变。
+当前必须注册 16 个键。显示名可以本地化，注册键不能因界面重命名而改变。Python 内部仍保留部分 `LoraStack*` 注册键和类名；用户界面统一称为 Style，避免把 LoRA 文件与画师 Tag 的混合数据结构误解为纯 LoRA。
 
 | 注册键 | Python 类 | 默认分类 |
 |---|---|---|
@@ -62,17 +63,18 @@ flowchart LR
 | `LoraTesterStyle` | `LoraTesterStyleNode` | `Lora Tester` |
 | `ArtistTagTemplate` | `ArtistTagTemplateNode` | `Lora Tester/Artist Tags` |
 | `AnimaArtistMixerConfig` | `AnimaArtistMixerConfigNode` | `Lora Tester/Artist Tags` |
-| `LoraStack` | `LoraStackNode` | `Lora Tester/Stacks` |
-| `LoraStackSplitter` | `LoraStackSplitterNode` | `Lora Tester/Stacks` |
-| `LoraStackLister` | `LoraStackListerNode` | `Lora Tester/Stacks` |
+| `LoraStack` | `LoraStackNode` | `Lora Tester/XY/Style` |
+| `LoraStackSplitter` | `LoraStackSplitterNode` | `Lora Tester/XY/Style` |
+| `LoraStackLister` | `LoraStackListerNode` | `Lora Tester/XY/Style` |
 | `MultiPromptSample` | `MultiPromptSampleNode` | `Lora Tester/Deprecated` |
 | `LoraTesterXYSampler` | `XYTestSampler` | `Lora Tester/XY` |
-| `LoraTesterMultiPromptInput` | `MultiPromptInputNode` | `Lora Tester/XY/Axes` |
-| `LoraTesterGlobalPromptAppend` | `GlobalPromptAppendNode` | `Lora Tester/XY/Axes` |
-| `LoraTesterPromptAxis` | `PromptAxisNode` | `Lora Tester/XY/Axes` |
-| `LoraTesterLoraStackAxis` | `LoraStackAxisNode` | `Lora Tester/XY/Axes` |
-| `LoraTesterSeedList` | `SeedListNode` | `Lora Tester/XY/Axes` |
-| `LoraTesterSeedAxis` | `SeedAxisNode` | `Lora Tester/XY/Axes` |
+| `LoraTesterMultiPromptInput` | `MultiPromptInputNode` | `Lora Tester/XY/Prompt` |
+| `LoraTesterGlobalPromptAppend` | `GlobalPromptAppendNode` | `Lora Tester/XY/Prompt` |
+| `LoraTesterPromptAxis` | `PromptAxisNode` | `Lora Tester/XY/Prompt` |
+| `LoraTesterLoraStackAxis` | `LoraStackAxisNode` | `Lora Tester/XY/Style` |
+| `LoraTesterSeedList` | `SeedListNode` | `Lora Tester/XY/Seed` |
+| `LoraTesterSeedAxis` | `SeedAxisNode` | `Lora Tester/XY/Seed` |
+| `LoraTesterAxisComposer` | `AxisComposerNode` | `Lora Tester/XY/Axis` |
 
 `MultiPromptSample` 已设置 `DEPRECATED = True`，但必须保留原注册键、输入名称和可加载行为。移入 Deprecated 分类不是删除授权。
 
@@ -80,6 +82,7 @@ flowchart LR
 
 - `XY_AXIS`、`LORA_STACK`、`LORA_STACK_LIST`、`ARTIST_TAG_TEMPLATE`、`ANIMA_ARTIST_MIXER_CONFIG`、`LORA_TESTER_STYLE`。
 - `XYTestSampler.RETURN_NAMES = ("comparison_sheet", "raw_images")`。
+- `PromptAxisNode`、`LoraStackAxisNode`、`SeedAxisNode` 和 `AxisComposerNode` 的输出名称统一为 `axis`，可自由连接 `x_axis` 或 `y_axis`。
 - `raw_images` 的顺序固定为行优先 `(y, x)`。
 - `color_mode` 的序列化值固定为 `black / white / custom`。
 - 画师模式的序列化占位值固定为 `__lora_tester_artist_tag__`。
@@ -117,8 +120,11 @@ groups -> entries -> parameters
 - `table` 详情必须有表头，且每行列数与表头一致；`text` 详情至少有一行。
 - `parameter_names` 是整个轴可能修改的参数集合，用于执行前冲突检查。
 - `group_breaks` 只影响视觉间隔，不改变条目顺序或 `raw_images` 顺序。
+- `title` 是整条轴的总标题；行/列顶端显示文本由各个 `AxisEntry.label` 提供，构造器不得用总标题覆盖条目标签。
 
 双轴合并必须通过 `merge_axis_parameters()` 或等价的同名冲突检查。X/Y 只要有任意相同参数名就应整轮拒绝，不能采用“后者覆盖前者”，否则同一工作流的含义会随轴方向变化。
+
+`AxisComposerNode` 是原始轴源的通用转换入口，当前支持 `PromptList`、`LoraStack`、`LoraStackList`、`SeedList` 和完整 `XYAxis`。完整轴进入合成器后只允许更改整轴总标题，不提供单条目后处理。`concatenate_axes()` 以完整分组为单位拼接轴，`cross_merge_axes()` 以笛卡尔积合并条目并调用参数冲突检查；两者是后续“轴拼接/轴交叉合并”节点的内部设计边界，当前不注册为前端节点。
 
 ### 参数处理注册表
 
@@ -172,10 +178,11 @@ def build_cfg_axis(values: tuple[float, ...]) -> XYAxis:
 1. 选择稳定、方向无关的参数名，并明确值类型、范围和是否影响 MODEL/CLIP 分组。
 2. 在 `nodes.py` 注册后端处理器；不要仅在构造器或前端验证。
 3. 在 `xy.py` 或独立领域模块中生成 `AxisEntry`、`AxisParameter` 和必要的 `DetailBlock`。
-4. 添加返回 `XY_AXIS` 的 ComfyUI 节点，并更新 `NODE_CLASS_MAPPINGS`、`NODE_DISPLAY_NAME_MAPPINGS` 和导出列表。
-5. 同步 `locales/en` 与 `locales/zh`。若该参数对应采样器基础控件，在 `web/lora_tester.js` 中增加禁用/来源提示映射。
-6. 测试构造器边界、X/Y 冲突、处理器范围、输出顺序、工作流恢复和前端契约。
-7. 更新中英文 README 的节点表和限制说明；若影响稳定契约，同时更新本文。
+4. 决定原始源是否可接入通用 `Axis Composer`；必要时扩展其后端类型分派与前端元数据推断。只有类型专属控件有明确交互价值时才增加快捷构造器。
+5. 添加返回 `XY_AXIS` 的 ComfyUI 节点时，将输出名称设为 `axis`，并更新 `NODE_CLASS_MAPPINGS`、`NODE_DISPLAY_NAME_MAPPINGS` 和导出列表。
+6. 同步 `locales/en` 与 `locales/zh`。若该参数对应采样器基础控件，在 `web/lora_tester.js` 中增加禁用/来源提示映射。
+7. 测试构造器边界、X/Y 冲突、处理器范围、输出顺序、工作流恢复和前端契约。
+8. 更新中英文 README 的节点表和限制说明；若影响稳定契约，同时更新本文。
 
 参数如果会改变 MODEL 或 CLIP，必须纳入复用签名。否则不得把 patched 对象跨不同参数条目复用。仅影响 seed、steps、CFG、采样器、调度器或 denoise 的参数可以在同一个模型分组内逐格解析。
 
@@ -183,7 +190,7 @@ def build_cfg_axis(values: tuple[float, ...]) -> XYAxis:
 
 基础采样控件是在对应轴没有赋值时的 fallback。前端能识别 Prompt/Seed/LoRA/Steps/CFG/Sampler/Scheduler/Denoise 轴时会禁用对应控件并标注来源，但后端仍需独立完成：
 
-- `x_axis` / `y_axis` 类型检查。
+- `x_axis` / `y_axis` 输入的 `XY_AXIS` 类型检查；轴构造节点输出名本身统一为 `axis`。
 - 双轴参数名交集检查。
 - 每格值类型与范围检查。
 - 单 latent 检查。
@@ -216,7 +223,7 @@ def build_cfg_axis(values: tuple[float, ...]) -> XYAxis:
 当前职责包括：
 
 - 按 `lora_count`、Prompt/Stack 数量隐藏和恢复动态输入，保持节点尺寸稳定。
-- 为 `LoRA Stack Lister` 自动显示下一个连接槽。
+- 为 `Style Stack Lister` 自动显示下一个连接槽。
 - 保留其他设备缺失的已保存 LoRA combo 值，便于用户替换。
 - 在 LoRA 与画师模式之间切换字段显示名，但不改变序列化值。
 - 根据可识别的轴来源禁用采样器 fallback 控件。
@@ -342,7 +349,7 @@ Set-Location D:\ComfyUI\ComfyUI_windows_portable\ComfyUI
 ..\python_embeded\python.exe main.py --quick-test-for-ci --disable-all-custom-nodes --whitelist-custom-nodes LoraTester --database-url "sqlite:///:memory:"
 ```
 
-预期条件：退出码为 0、插件导入成功、节点映射数量为 15，并且实际 `INPUT_TYPES` 构造不报错。外部 Anima Artist Mixer 未安装时也应满足这些条件。
+预期条件：退出码为 0、插件导入成功、节点映射数量为 16，并且实际 `INPUT_TYPES` 构造不报错。外部 Anima Artist Mixer 未安装时也应满足这些条件。
 
 ## 变更检查表
 

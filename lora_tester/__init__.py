@@ -36,6 +36,7 @@ from .nodes import (
     LoraStackAxisNode,
     SeedListNode,
     SeedAxisNode,
+    AxisComposerNode,
     register_xy_parameter_handler,
 )
 from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
@@ -56,6 +57,8 @@ from .xy import (
     build_lora_stack_axis,
     build_prompt_axis,
     build_seed_axis,
+    concatenate_axes,
+    cross_merge_axes,
     merge_axis_parameters,
 )
 from .xy_compositor import XYMatrixCompositor, XYMatrixSession
@@ -94,6 +97,7 @@ __all__ = [
     "LoraStackAxisNode",
     "SeedListNode",
     "SeedAxisNode",
+    "AxisComposerNode",
     "register_xy_parameter_handler",
     "RenderTask",
     "StyleConfig",
@@ -119,5 +123,7 @@ __all__ = [
     "build_lora_stack_axis",
     "build_prompt_axis",
     "build_seed_axis",
+    "concatenate_axes",
+    "cross_merge_axes",
     "merge_axis_parameters",
 ]

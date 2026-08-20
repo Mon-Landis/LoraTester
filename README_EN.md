@@ -4,14 +4,15 @@
 
 ComfyUI nodes for LoRA, artist-tag, and extensible XY parameter testing. The sampler accepts `MODEL / CLIP / VAE / LATENT` directly and handles prompt encoding, model/CLIP patching, sampling, VAE decoding, and labeled comparison-sheet composition inside the node.
 
-![Multi-prompt and LoRA Stack comparison matrix](previews/multi_prompt_stack_matrix.png)
+![Multi-prompt and Style Stack comparison matrix](previews/multi_prompt_stack_matrix.png)
 
 ## Highlights
 
 - Generic `XY Test Sampler`: combines any two `XY_AXIS` inputs and returns both a labeled `comparison_sheet` and a row-major `raw_images` batch.
 - Prompt axis: splits a long prompt list, applies shared text before or after every prompt, and carries independent artist tags separately.
 - Seed axis: parses an explicit seed list or deterministically generates random seeds from a source seed.
-- LoRA/artist axis: builds an axis from Stack, combination, and list nodes, with a separately grouped BASE entry and footer configuration tables.
+- Style axis: builds an axis from Style Stack, combination, and list nodes, representing LoRA and artist tags together, with a separately grouped BASE entry and footer configuration tables.
+- Generic axis composition: prompt lists, Style Stacks, Style Stack lists, and seed lists can all pass through `Axis Composer` to produce an orientation-neutral `XY_AXIS`.
 - Dedicated LoRA testing: retains the specialized 1-3 LoRA weight-gradient and mixing layouts.
 - Anima support: selects artist-tag templates from model configuration and can optionally route multi-artist cells through Anima Artist Mixer.
 - Configurable output: black, white, and custom themes with background images, fonts, colors, spacing, decorators, categorized tables, and text notes.
@@ -24,10 +25,10 @@ The primary "prompts on Y, seeds on X" workflow is:
 ```mermaid
 flowchart LR
   P1["Multi Prompt Input"] --> P2["Global Prompt Append"]
-  P2 --> P3["Prompt Axis"]
-  S1["Seed List / Random Seeds"] --> S2["Seed Axis"]
-  P3 -->|y_axis| XY["XY Test Sampler"]
-  S2 -->|x_axis| XY
+  P2 --> P3["Axis Composer"]
+  S1["Seed List / Random Seeds"] --> S2["Axis Composer"]
+  P3 -->|axis → y_axis| XY["XY Test Sampler"]
+  S2 -->|axis → x_axis| XY
   M["MODEL / CLIP / VAE / LATENT"] --> XY
   XY --> O1["comparison_sheet"]
   XY --> O2["raw_images"]
@@ -36,11 +37,11 @@ flowchart LR
 For a horizontal style comparison:
 
 ```text
-LoRA Stack -> LoRA Stack Splitter / LoRA Stack Lister -> LoRA Stack Axis -> x_axis
-Multi Prompt Input -> Global Prompt Append -> Prompt Axis                         -> y_axis
+Style Stack -> Style Stack Splitter / Style Stack Lister -> Axis Composer -> axis -> x_axis
+Multi Prompt Input -> Global Prompt Append                    -> Axis Composer -> axis -> y_axis
 ```
 
-Axes are orientation-independent. Prompt, seed, and LoRA Stack axes may be connected to either X or Y. `LoRA Stack Axis` can place BASE in its own group, creating a visible gap between the baseline and the remaining test columns.
+Every axis node exposes an output named `axis`. Axes are orientation-independent and may connect to either sampler input, `x_axis` or `y_axis`. `axis_title` is the heading for the entire axis; each row or column label comes from its own `AxisEntry.label`. `Axis Composer` can place a Style BASE entry in its own group with `include_base`, creating a visible gap before the remaining test entries. `Prompt Axis`, `Style Axis`, and `Seed Axis` remain available as typed convenience builders.
 
 ## Installation
 
@@ -71,15 +72,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | Category | Node | Purpose |
 |---|---|---|
 | `Lora Tester/XY` | `XY Test Sampler` | Samples the Cartesian product of two axes and returns a sheet plus the original image batch. |
-| `Lora Tester/XY/Axes` | `Multi Prompt Input` | Parses prompts by blank lines, individual lines, or a custom separator. |
-| `Lora Tester/XY/Axes` | `Global Prompt Append` | Adds shared text before/after every prompt and appends independent artist tags. |
-| `Lora Tester/XY/Axes` | `Prompt Axis` | Converts a prompt list into `XY_AXIS`. |
-| `Lora Tester/XY/Axes` | `LoRA Stack Axis` | Converts `LORA_STACK_LIST` into grouped `XY_AXIS` data with detail tables. |
-| `Lora Tester/XY/Axes` | `Seed List / Random Seeds` | Parses seeds or generates a deterministic random list. |
-| `Lora Tester/XY/Axes` | `Seed Axis` | Converts a seed list into `XY_AXIS`. |
-| `Lora Tester/Stacks` | `LoRA Stack` | Configures up to 16 LoRA or artist-tag entries. |
-| `Lora Tester/Stacks` | `LoRA Stack Splitter` | Produces every non-empty combination of a Stack. |
-| `Lora Tester/Stacks` | `LoRA Stack Lister` | Dynamically merges up to 16 individual Stacks into a Stack List. |
+| `Lora Tester/XY/Prompt` | `Multi Prompt Input` | Parses prompts by blank lines, individual lines, or a custom separator. |
+| `Lora Tester/XY/Prompt` | `Global Prompt Append` | Adds shared text before/after every prompt and appends independent artist tags. |
+| `Lora Tester/XY/Prompt` | `Prompt Axis` | Directly converts a prompt list into an orientation-neutral `XY_AXIS`. |
+| `Lora Tester/XY/Style` | `Style Stack` | Configures up to 16 LoRA or artist-tag style entries. |
+| `Lora Tester/XY/Style` | `Style Stack Splitter` | Produces every non-empty Style Stack combination. |
+| `Lora Tester/XY/Style` | `Style Stack Lister` | Dynamically merges up to 16 individual Style Stacks. |
+| `Lora Tester/XY/Style` | `Style Axis` | Directly converts a Style Stack list into grouped `XY_AXIS` data with detail tables. |
+| `Lora Tester/XY/Seed` | `Seed List / Random Seeds` | Parses seeds or generates a deterministic random list. |
+| `Lora Tester/XY/Seed` | `Seed Axis` | Directly converts a seed list into an orientation-neutral `XY_AXIS`. |
+| `Lora Tester/XY/Axis` | `Axis Composer` | Converts any supported raw source or complete axis into a generic `axis`. |
 | `Lora Tester` | `Style Component Tester` | Specialized 1-3 LoRA weight and mixing test. |
 | `Lora Tester` | `LoRA Tester Style` | Supplies a custom visual style to samplers. |
 | `Lora Tester/Artist Tags` | `Artist Tag Template` | Overrides normal and weighted artist-tag formatting. |
@@ -91,7 +93,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 ## XY Behavior and Limits
 
 - An axis may contain up to 64 entries. Both axes cannot assign the same parameter, such as two seed axes or two prompt axes; the sampler rejects conflicts before model loading.
-- Built-in handlers cover `prompt`, `seed`, `lora_stack`, `steps`, `cfg`, `sampler_name`, `scheduler`, and `denoise`. Prompt, seed, and LoRA Stack builders are currently exposed in the UI, and the architecture supports additional builders.
+- Built-in handlers cover `prompt`, `seed`, `lora_stack`, `steps`, `cfg`, `sampler_name`, `scheduler`, and `denoise`. Prompt, seed, and style sources and convenience builders are exposed in the UI; `Axis Composer` provides their consistent generic entry point.
+- Once composed, an axis supports whole-axis operations only and does not expose per-entry post-processing. Internal helpers already provide group-preserving concatenation and conflict-checked cross merging for future nodes.
 - When the frontend can identify an axis source, it disables the corresponding base sampler control. Backend validation remains authoritative.
 - `raw_images` is a ComfyUI `[N,H,W,C]` IMAGE batch in row-major `(y, x)` order. Group spacing and footer layout do not affect this order.
 - The input latent must contain one sample. Large axes or latent dimensions produce non-blocking warnings. The final sheet is protected by a default `150 MP` `max_canvas_megapixels` limit.
