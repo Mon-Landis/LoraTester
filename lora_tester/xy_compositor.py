@@ -468,13 +468,12 @@ class XYMatrixSession:
                 align="center",
             )
         for row, entry in enumerate(self.compositor.y_axis.entries):
-            self._draw_fitted_text(
+            self._draw_vertical_text(
                 entry.label,
                 self.geometry.row_label_rects[row],
                 self.geometry.label_font_size,
                 self.style.text_color,
                 bold=True,
-                align="center",
             )
         for row in range(self.compositor.row_count):
             for column in range(self.compositor.column_count):
@@ -615,6 +614,66 @@ class XYMatrixSession:
             x = rect[0] - box[0]
         y = rect[1] + (height - text_height) // 2 - box[1]
         self._draw.text((x, y), value, fill=color, font=selected)
+
+    def _draw_vertical_text(
+        self,
+        text: str,
+        rect: Rect,
+        font_size: int,
+        color: RGBColor,
+        *,
+        bold: bool = False,
+    ) -> None:
+        """Fit a row label and render it vertically in the side rail."""
+        width = rect[2] - rect[0]
+        height = rect[3] - rect[1]
+        if width <= 0 or height <= 0:
+            return
+
+        # Rotation swaps the text's width and height constraints. Keep a small
+        # margin so antialiased edges do not touch the row rail border.
+        max_text_width = max(1, height - 8)
+        max_text_height = max(1, width - 8)
+        value = str(text)
+        selected = self.fonts.get(max(7, int(font_size)), bold=bold)
+        for size in range(max(7, int(font_size)), 6, -1):
+            candidate = self.fonts.get(size, bold=bold)
+            box = self._draw.textbbox((0, 0), value, font=candidate)
+            if (
+                box[2] - box[0] <= max_text_width
+                and box[3] - box[1] <= max_text_height
+            ):
+                selected = candidate
+                break
+        while value and self._draw.textbbox((0, 0), value, font=selected)[2] > max_text_width:
+            value = value[:-1]
+        if value != str(text) and max_text_width >= self._draw.textlength("...", font=selected):
+            value = value.rstrip() + "..."
+
+        box = self._draw.textbbox((0, 0), value, font=selected)
+        text_width = max(1, box[2] - box[0])
+        text_height = max(1, box[3] - box[1])
+        padding = 4
+        layer = Image.new(
+            "RGBA",
+            (text_width + padding * 2, text_height + padding * 2),
+            (0, 0, 0, 0),
+        )
+        layer_draw = ImageDraw.Draw(layer)
+        layer_draw.text(
+            (padding - box[0], padding - box[1]),
+            value,
+            fill=(*color, 255),
+            font=selected,
+        )
+        rotated = layer.rotate(90, expand=True, resample=Image.Resampling.BICUBIC)
+        try:
+            x = rect[0] + max(0, (width - rotated.width) // 2)
+            y = rect[1] + max(0, (height - rotated.height) // 2)
+            self._canvas.paste(rotated, (x, y), rotated)
+        finally:
+            rotated.close()
+            layer.close()
 
     def _prepare_image(self, image: ImageInput) -> Image.Image:
         converted = image_to_pil(image, alpha_background=self.style.placeholder_color)

@@ -286,6 +286,38 @@ class XYCompositorTests(unittest.TestCase):
         second = compositor.geometry.cell(0, 1)
         self.assertGreaterEqual(second[0] - first[2], 10)
 
+    def test_row_labels_are_rotated_vertically_in_the_side_rail(self) -> None:
+        x, y = self.make_axes()
+        style = StyleConfig.black(decorator="none")
+        compositor = XYMatrixCompositor(
+            x,
+            y,
+            80,
+            64,
+            style=style,
+            max_canvas_pixels=None,
+        )
+        rendered = compositor.render_template()
+        try:
+            rect = compositor.geometry.row_label_rects[0]
+            crop = rendered.crop(rect)
+            background = style.background_color
+            pixels = crop.load()
+            points = [
+                (column, row)
+                for row in range(crop.height)
+                for column in range(crop.width)
+                if pixels[column, row] != background
+            ]
+            self.assertTrue(points)
+            min_x = min(point[0] for point in points)
+            max_x = max(point[0] for point in points)
+            min_y = min(point[1] for point in points)
+            max_y = max(point[1] for point in points)
+            self.assertGreater(max_y - min_y, max_x - min_x)
+        finally:
+            rendered.close()
+
 
 class XYSamplerTests(unittest.TestCase):
     def test_sampler_rejects_same_parameter_on_both_axes_before_sampling(self) -> None:
