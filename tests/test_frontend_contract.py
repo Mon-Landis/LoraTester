@@ -46,6 +46,13 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("resizeNodeToWidgets(node)", source)
         self.assertIn("refreshWidgetViews(node)", source)
         self.assertIn("canvas.selectItems?.(selected, false)", source)
+        self.assertIn("const DYNAMIC_LAYOUT_STATE", source)
+        self.assertIn("const WORKFLOW_SIZE_RESTORED", source)
+        self.assertIn("const MIN_WIDTH_APPLIED", source)
+        self.assertIn("const shouldResize = semanticChanged", source)
+        self.assertIn("const semanticChanged =", source)
+        self.assertIn("if (!widget && !warning) return", source)
+        self.assertIn("const inputsChanged =", source)
 
     def test_node2_workflow_tabs_and_missing_loras_are_supported(self) -> None:
         source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
@@ -75,6 +82,7 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("options.placeholder = label", source)
         self.assertIn('document.querySelectorAll("[node-id][node-type]")', source)
         self.assertIn('input.setAttribute("aria-label", label)', source)
+        self.assertIn("workflow owns its saved dimensions", source)
 
     def test_artist_mode_labels_warning_and_upstream_stack_tracking(self) -> None:
         source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")

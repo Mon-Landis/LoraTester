@@ -11,7 +11,7 @@
 - 通用 `XY Test Sampler`：组合任意两个 `XY_AXIS`，输出带标注的 `comparison_sheet` 和按行优先排列的原始图片批次 `raw_images`。
 - 提示词轴：拆分长文本、统一前置或后置追加提示词，并单独传递画师 Tag。
 - 种子轴：解析显式种子列表，或根据来源种子确定性生成一组随机种子。
-- 风格轴：从风格组合、组合拆分和列表汇总节点构造轴，统一表示 LoRA 与画师 Tag，支持独立 BASE 分组和底部配置表。
+- 风格轴：从风格组合、组合拆分和列表汇总节点构造轴，统一表示 LoRA 与画师 Tag，顶部显示“权重-代号”组合，底部只列出代号对应的来源信息。
 - 通用轴合成：提示词列表、风格组合、风格组合列表和种子列表均可经 `Axis Composer` 转换为方向无关的 `XY_AXIS`。
 - 专用 LoRA 测试：保留 1 至 3 个 LoRA 的权重梯度与混合布局。
 - Anima 兼容：按模型配置选择画师 Tag 模板，并可选接入 Anima Artist Mixer 处理多画师组合。
@@ -99,7 +99,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - `raw_images` 为 ComfyUI `[N,H,W,C]` IMAGE 批次，顺序是行优先 `(y, x)`，不受分组间距和底部详情布局影响。
 - 输入 latent 必须只有一个样本。轴条目过多或 latent 空间过大时会产生非阻断警告；最终拼接图默认受 `150 MP` 的 `max_canvas_megapixels` 限制。
 - 原始图片批次会占用 CPU 内存。矩阵规模和单图分辨率较大时，应先减小轴长度或 latent 尺寸，再考虑提高画布上限。
-- `extra_footer_text` 非空时会在所有轴详情后增加 `NOTES`；轴详情可同时包含多组表格和纯文字块。
+- `extra_footer_text` 非空时会在所有轴详情后增加 `NOTES`；风格轴底部只显示代号来源表，提示词正文不会重复显示。
 
 ## 提示词与画师 Tag
 

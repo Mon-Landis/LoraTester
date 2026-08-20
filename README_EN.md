@@ -11,7 +11,7 @@ ComfyUI nodes for LoRA, artist-tag, and extensible XY parameter testing. The sam
 - Generic `XY Test Sampler`: combines any two `XY_AXIS` inputs and returns both a labeled `comparison_sheet` and a row-major `raw_images` batch.
 - Prompt axis: splits a long prompt list, applies shared text before or after every prompt, and carries independent artist tags separately.
 - Seed axis: parses an explicit seed list or deterministically generates random seeds from a source seed.
-- Style axis: builds an axis from Style Stack, combination, and list nodes, representing LoRA and artist tags together, with a separately grouped BASE entry and footer configuration tables.
+- Style axis: builds an axis from Style Stack, combination, and list nodes, representing LoRA and artist tags together. Headers show compact `weight-code` combinations; the footer only maps codes to source information.
 - Generic axis composition: prompt lists, Style Stacks, Style Stack lists, and seed lists can all pass through `Axis Composer` to produce an orientation-neutral `XY_AXIS`.
 - Dedicated LoRA testing: retains the specialized 1-3 LoRA weight-gradient and mixing layouts.
 - Anima support: selects artist-tag templates from model configuration and can optionally route multi-artist cells through Anima Artist Mixer.
@@ -99,7 +99,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - `raw_images` is a ComfyUI `[N,H,W,C]` IMAGE batch in row-major `(y, x)` order. Group spacing and footer layout do not affect this order.
 - The input latent must contain one sample. Large axes or latent dimensions produce non-blocking warnings. The final sheet is protected by a default `150 MP` `max_canvas_megapixels` limit.
 - The original image batch consumes CPU memory. For large matrices and high resolutions, reduce axis lengths or latent dimensions before increasing the canvas limit.
-- Non-empty `extra_footer_text` adds a final `NOTES` section. Axis details may contain multiple categorized tables and plain-text blocks at once.
+- Non-empty `extra_footer_text` adds a final `NOTES` section. Style footers only show the code-to-source map; prompt bodies are not repeated below the sheet.
 
 ## Prompts and Artist Tags
 

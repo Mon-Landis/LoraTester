@@ -305,19 +305,13 @@ def build_prompt_axis(prompts: PromptList, *, title: str = "PROMPT") -> XYAxis:
         )
         for index, entry in enumerate(prompts.entries, start=1)
     )
-    detail_lines = tuple(
-        f"P{index:02d}  {entry.full_prompt}"
-        + (
-            f"  |  ARTISTS: {entry.independent_artist_tags.strip()}"
-            if entry.independent_artist_tags.strip()
-            else ""
-        )
-        for index, entry in enumerate(prompts.entries, start=1)
-    )
     return XYAxis(
         title=title,
         groups=(entries,),
-        detail_blocks=(DetailBlock("PROMPTS", "text", text=detail_lines),),
+        # Prompt text is intentionally kept out of the footer. The row/column
+        # labels already identify each prompt, and rendering full prompts below
+        # the sheet makes large prompt tests unreadable.
+        detail_blocks=(),
     )
 
 
@@ -339,21 +333,33 @@ def build_lora_stack_axis(
         raise ValueError("LoRA Stack axis requires at least one stack or BASE")
 
     source_tokens: dict[tuple[str, str], str] = {}
-    source_rows: dict[tuple[str, str], tuple[str, str, str]] = {}
-    trigger_rows: list[tuple[str, str, str]] = []
+    source_rows: dict[tuple[str, str], tuple[str, str, str, str]] = {}
+    source_info: dict[tuple[str, str], list[str]] = {}
 
     def token_for(item: LoraStackItem, artist_tag: str | None = None) -> str:
         key = _source_key(item, artist_tag)
         token = source_tokens.setdefault(key, axis_token(len(source_tokens)))
         if key not in source_rows:
             if artist_tag is not None:
-                source_rows[key] = (token, "ARTIST", str(artist_tag).strip().lstrip("@"))
+                source_rows[key] = (
+                    token,
+                    "ARTIST",
+                    str(artist_tag).strip().lstrip("@"),
+                    "artist tag",
+                )
             else:
-                source_rows[key] = (token, "LORA", _display_name(item.name))
+                source_rows[key] = (token, "LORA", _display_name(item.name), "")
+        source_info.setdefault(key, [])
+        info = (
+            "artist tag"
+            if artist_tag is not None
+            else str(item.trigger_word).strip()
+        )
+        if info and info not in source_info[key]:
+            source_info[key].append(info)
         return token
 
     stack_entries: list[AxisEntry] = []
-    configuration_rows: list[tuple[str, str]] = []
     for stack in stacks.stacks:
         components: list[str] = []
         for item in stack.items:
@@ -364,10 +370,6 @@ def build_lora_stack_axis(
                 continue
             token = token_for(item)
             components.append(f"{token}-{_format_number(item.strength)}")
-            if item.trigger_word.strip():
-                row = (token, _format_number(item.strength), item.trigger_word.strip())
-                if row not in trigger_rows:
-                    trigger_rows.append(row)
         label = "+".join(components) or "EMPTY"
         stack_entries.append(
             AxisEntry(
@@ -376,7 +378,6 @@ def build_lora_stack_axis(
                 detail_label=stack.label,
             )
         )
-        configuration_rows.append((label, stack.label))
 
     groups: list[tuple[AxisEntry, ...]] = []
     if include_base:
@@ -386,30 +387,16 @@ def build_lora_stack_axis(
 
     detail_blocks: list[DetailBlock] = []
     if source_rows:
+        source_rows = {
+            key: (*row[:3], "; ".join(source_info.get(key, ())) or "-")
+            for key, row in source_rows.items()
+        }
         detail_blocks.append(
             DetailBlock(
                 "STYLE SOURCES",
                 "table",
-                headers=("CODE", "TYPE", "SOURCE"),
+                headers=("CODE", "TYPE", "SOURCE", "INFO"),
                 rows=tuple(source_rows.values()),
-            )
-        )
-    if configuration_rows:
-        detail_blocks.append(
-            DetailBlock(
-                "STYLE CONFIGURATIONS",
-                "table",
-                headers=("COLUMN", "COMPONENTS"),
-                rows=tuple(configuration_rows),
-            )
-        )
-    if trigger_rows:
-        detail_blocks.append(
-            DetailBlock(
-                "LORA TRIGGERS",
-                "table",
-                headers=("CODE", "WEIGHT", "TRIGGER"),
-                rows=tuple(trigger_rows),
             )
         )
     return XYAxis(title=title, groups=tuple(groups), detail_blocks=tuple(detail_blocks))

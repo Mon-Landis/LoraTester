@@ -164,15 +164,21 @@ class XYModelTests(unittest.TestCase):
         self.assertEqual([entry.label for entry in axis.entries], ["BASE", "A-0.5", "A-1"])
         self.assertEqual(axis.group_breaks, (1,))
         sources = next(block for block in axis.detail_blocks if block.title == "STYLE SOURCES")
-        self.assertEqual(sources.rows, (("A", "LORA", "Shared"),))
-        triggers = next(block for block in axis.detail_blocks if block.title == "LORA TRIGGERS")
-        self.assertEqual(len(triggers.rows), 2)
+        self.assertEqual(sources.headers, ("CODE", "TYPE", "SOURCE", "INFO"))
+        self.assertEqual(sources.rows, (("A", "LORA", "Shared", "low; high"),))
+        self.assertFalse(any(block.title == "STYLE CONFIGURATIONS" for block in axis.detail_blocks))
+
+    def test_prompt_axis_does_not_repeat_prompt_text_in_footer(self) -> None:
+        axis = build_prompt_axis(PromptList((PromptEntry("portrait"), PromptEntry("landscape"))))
+        self.assertEqual(axis.detail_blocks, ())
 
     def test_artist_tags_also_share_source_codes_across_weights(self) -> None:
         low = LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@fkey", 0.5),))
         high = LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@fkey", 1.0),))
         axis = build_lora_stack_axis(LoraStackList((low, high)), include_base=False)
         self.assertEqual([entry.label for entry in axis.entries], ["A-0.5", "A-1"])
+        sources = next(block for block in axis.detail_blocks if block.title == "STYLE SOURCES")
+        self.assertEqual(sources.rows, (("A", "ARTIST", "fkey", "artist tag"),))
 
     def test_seed_list_accepts_explicit_and_deterministic_random_values(self) -> None:
         self.assertEqual(SeedList.parse("1, 2\n3").seeds, (1, 2, 3))
@@ -227,7 +233,7 @@ class XYCompositorTests(unittest.TestCase):
         self.assertGreater(second[0] - first[2], third[0] - second[2])
         self.assertEqual(
             [item.block.mode for item in compositor.geometry.detail_blocks],
-            ["table", "text"],
+            ["table"],
         )
 
     def test_session_pastes_in_place_and_finalizes_without_a_canvas_copy(self) -> None:

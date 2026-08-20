@@ -28,6 +28,9 @@ const ARTIST_OBSERVER = Symbol("loraTesterArtistObserver");
 const ARTIST_CONNECTION_OBSERVER = Symbol("loraTesterArtistConnectionObserver");
 const ARTIST_WIDGET_CHANGE_OBSERVER = Symbol("loraTesterArtistWidgetChangeObserver");
 const GRAPH_UI_SCHEDULED = Symbol("loraTesterGraphUiScheduled");
+const DYNAMIC_LAYOUT_STATE = Symbol("loraTesterDynamicLayoutState");
+const WORKFLOW_SIZE_RESTORED = Symbol("loraTesterWorkflowSizeRestored");
+const MIN_WIDTH_APPLIED = Symbol("loraTesterMinWidthApplied");
 const SEED_MODE_OBSERVER = Symbol("loraTesterSeedModeObserver");
 const DISABLED_STATE = Symbol("loraTesterDisabledState");
 const DISABLED_ELEMENT_STATE = Symbol("loraTesterDisabledElementState");
@@ -638,8 +641,19 @@ function captureVisibleState(widget) {
   return state;
 }
 
+function widgetIsHidden(widget) {
+  const state = widget?.[WIDGET_STATE];
+  if (state) return Boolean(state.hiddenByLoraTester);
+  return Boolean(
+    widget?.type === HIDDEN_WIDGET_TYPE ||
+      widget?.hidden === true ||
+      widgetOptionTargets(widget).some((options) => options.hidden === true),
+  );
+}
+
 function setWidgetVisible(widget, visible) {
-  if (!widget) return;
+  if (!widget) return false;
+  const wasHidden = widgetIsHidden(widget);
 
   // Workflow restore can replace a widget after this extension hid its predecessor.
   // The replacement inherits hidden options but not the symbol-backed restore state.
@@ -656,13 +670,16 @@ function setWidgetVisible(widget, visible) {
       delete widget.draw;
     }
     widgetElements(widget).forEach((element) => setElementVisible(element, true));
-    return;
+    return wasHidden;
   }
 
   const state = captureVisibleState(widget);
 
   if (visible) {
-    if (!state.hiddenByLoraTester) return;
+    if (!state.hiddenByLoraTester) {
+      widgetElements(widget).forEach((element) => setElementVisible(element, true));
+      return false;
+    }
     widget.type = state.type;
     if (state.computeSize === undefined) delete widget.computeSize;
     else widget.computeSize = state.computeSize;
@@ -678,7 +695,7 @@ function setWidgetVisible(widget, visible) {
     restoreHiddenOption(widget);
     widgetElements(widget).forEach((element) => setElementVisible(element, true));
     state.hiddenByLoraTester = false;
-    return;
+    return true;
   }
 
   if (!state.hiddenByLoraTester) {
@@ -697,6 +714,7 @@ function setWidgetVisible(widget, visible) {
   widget.y = -100000;
   widget.last_y = -100000;
   widgetElements(widget).forEach((element) => setElementVisible(element, false));
+  return !wasHidden;
 }
 
 function setDomElementDisabled(element, disabled) {
@@ -818,37 +836,63 @@ function refreshWidgetViews(node) {
   });
 }
 
-function updateLoraGroups(node, value) {
+function updateLoraGroups(node, value, forceResize = false) {
   const count = Math.min(3, Math.max(1, Number.parseInt(value, 10) || 1));
+  const signature = `lora_count:${count}`;
+  const layoutState = node[DYNAMIC_LAYOUT_STATE] ?? new Map();
+  let visibilityChanged = false;
   for (const group of LORA_GROUPS) {
     const visible = count >= group.minimumCount;
     for (const name of group.widgets) {
-      setWidgetVisible(node.widgets?.find((widget) => widget.name === name), visible);
+      visibilityChanged = setWidgetVisible(
+        node.widgets?.find((widget) => widget.name === name),
+        visible,
+      ) || visibilityChanged;
     }
   }
-  refreshReactiveCollection(node, "widgets");
-  node.graph?.incrementVersion?.();
-  resizeNodeToWidgets(node);
+  const semanticChanged = layoutState.get("lora_count") !== signature;
+  const layoutChanged = semanticChanged || visibilityChanged;
+  layoutState.set("lora_count", signature);
+  node[DYNAMIC_LAYOUT_STATE] = layoutState;
+  const shouldResize = semanticChanged && (forceResize || !node[WORKFLOW_SIZE_RESTORED]);
+  if (layoutChanged) {
+    refreshReactiveCollection(node, "widgets");
+    node.graph?.incrementVersion?.();
+    if (shouldResize) resizeNodeToWidgets(node);
+  }
 }
 
-function updateWidgetGroups(node, value, groups, maximum) {
+function updateWidgetGroups(node, value, groups, maximum, widgetName, forceResize = false) {
   const count = Math.min(maximum, Math.max(1, Number.parseInt(value, 10) || 1));
+  const signature = `${widgetName}:${count}`;
+  const layoutState = node[DYNAMIC_LAYOUT_STATE] ?? new Map();
+  let visibilityChanged = false;
   for (const group of groups) {
     const visible = count >= group.minimumCount;
     for (const name of group.widgets) {
-      setWidgetVisible(node.widgets?.find((widget) => widget.name === name), visible);
+      visibilityChanged = setWidgetVisible(
+        node.widgets?.find((widget) => widget.name === name),
+        visible,
+      ) || visibilityChanged;
     }
   }
-  refreshReactiveCollection(node, "widgets");
-  node.graph?.incrementVersion?.();
-  resizeNodeToWidgets(node);
+  const semanticChanged = layoutState.get(widgetName) !== signature;
+  const layoutChanged = semanticChanged || visibilityChanged;
+  layoutState.set(widgetName, signature);
+  node[DYNAMIC_LAYOUT_STATE] = layoutState;
+  const shouldResize = semanticChanged && (forceResize || !node[WORKFLOW_SIZE_RESTORED]);
+  if (layoutChanged) {
+    refreshReactiveCollection(node, "widgets");
+    node.graph?.incrementVersion?.();
+    if (shouldResize) resizeNodeToWidgets(node);
+  }
 }
 
 function installDynamicCount(node, widgetName, groups, maximum) {
   const countWidget = node.widgets?.find((widget) => widget.name === widgetName);
   if (!countWidget) return;
   if (countWidget.__loraTesterInstalled) {
-    updateWidgetGroups(node, countWidget.value, groups, maximum);
+    updateWidgetGroups(node, countWidget.value, groups, maximum, widgetName);
     return;
   }
   countWidget.__loraTesterInstalled = true;
@@ -857,12 +901,12 @@ function installDynamicCount(node, widgetName, groups, maximum) {
     countWidget.value = value;
     if (this && this !== countWidget) this.value = value;
     const result = originalCallback?.apply(this, [value, ...args]);
-    updateWidgetGroups(node, value, groups, maximum);
+    updateWidgetGroups(node, value, groups, maximum, widgetName, true);
     refreshWidgetViews(node);
     scheduleNodeUi(node);
     return result;
   };
-  updateWidgetGroups(node, countWidget.value, groups, maximum);
+  updateWidgetGroups(node, countWidget.value, groups, maximum, widgetName);
 }
 
 function installDynamicLoraCount(node) {
@@ -879,7 +923,7 @@ function installDynamicLoraCount(node) {
     countWidget.value = value;
     if (this && this !== countWidget) this.value = value;
     const result = originalCallback?.apply(this, [value, ...args]);
-    updateLoraGroups(node, value);
+    updateLoraGroups(node, value, true);
     refreshWidgetViews(node);
     scheduleNodeUi(node, TARGET_NODE);
     return result;
@@ -889,20 +933,44 @@ function installDynamicLoraCount(node) {
 }
 
 function installMultiPromptLayout(node) {
+  // A restored workflow owns its saved dimensions. Only newly created nodes
+  // receive the readability floor; later value/connection refreshes must not
+  // overwrite user resizing.
+  if (node[WORKFLOW_SIZE_RESTORED] || node[MIN_WIDTH_APPLIED]) return;
+  node[MIN_WIDTH_APPLIED] = true;
   const width = node.size?.[0] ?? 0;
   if (width >= MULTI_PROMPT_MIN_WIDTH) return;
   const height = node.size?.[1] ?? node.computeSize?.()?.[1] ?? 200;
   node.setSize?.([MULTI_PROMPT_MIN_WIDTH, height]);
 }
 
-function updateSeedMode(node, value) {
+function updateSeedMode(node, value, forceResize = false) {
   const randomMode = String(value) === "random";
-  setWidgetVisible(node.widgets?.find((widget) => widget.name === "seed_text"), !randomMode);
-  setWidgetVisible(node.widgets?.find((widget) => widget.name === "random_count"), randomMode);
-  setWidgetVisible(node.widgets?.find((widget) => widget.name === "random_source_seed"), randomMode);
-  refreshReactiveCollection(node, "widgets");
-  node.graph?.incrementVersion?.();
-  resizeNodeToWidgets(node);
+  const signature = `seed_mode:${randomMode ? "random" : "list"}`;
+  const layoutState = node[DYNAMIC_LAYOUT_STATE] ?? new Map();
+  let visibilityChanged = false;
+  visibilityChanged = setWidgetVisible(
+    node.widgets?.find((widget) => widget.name === "seed_text"),
+    !randomMode,
+  ) || visibilityChanged;
+  visibilityChanged = setWidgetVisible(
+    node.widgets?.find((widget) => widget.name === "random_count"),
+    randomMode,
+  ) || visibilityChanged;
+  visibilityChanged = setWidgetVisible(
+    node.widgets?.find((widget) => widget.name === "random_source_seed"),
+    randomMode,
+  ) || visibilityChanged;
+  const semanticChanged = layoutState.get("seed_mode") !== signature;
+  const layoutChanged = semanticChanged || visibilityChanged;
+  layoutState.set("seed_mode", signature);
+  node[DYNAMIC_LAYOUT_STATE] = layoutState;
+  const shouldResize = semanticChanged && (forceResize || !node[WORKFLOW_SIZE_RESTORED]);
+  if (layoutChanged) {
+    refreshReactiveCollection(node, "widgets");
+    node.graph?.incrementVersion?.();
+    if (shouldResize) resizeNodeToWidgets(node);
+  }
 }
 
 function installSeedMode(node) {
@@ -914,7 +982,7 @@ function installSeedMode(node) {
   const originalCallback = modeWidget.callback;
   modeWidget.callback = function (value, ...args) {
     const result = originalCallback?.apply(this, [value, ...args]);
-    updateSeedMode(node, value);
+    updateSeedMode(node, value, true);
     refreshWidgetViews(node);
     return result;
   };
@@ -922,7 +990,7 @@ function installSeedMode(node) {
   node.onWidgetChanged = function (...args) {
     const result = originalWidgetChanged?.apply(this, args);
     if (String(args[0] ?? "") === "mode") {
-      queueMicrotask(() => updateSeedMode(this, widgetValue(this, "mode")));
+      queueMicrotask(() => updateSeedMode(this, widgetValue(this, "mode"), true));
     }
     return result;
   };
@@ -932,7 +1000,7 @@ function inputIsConnected(input) {
   return input?.link != null || (Array.isArray(input?.linkIds) && input.linkIds.length > 0);
 }
 
-function updateStackListInputs(node) {
+function updateStackListInputs(node, forceResize = false) {
   const currentInputs = [...(node.inputs ?? [])];
   const templates = node[STACK_INPUT_TEMPLATES] ?? new Map();
   for (const input of currentInputs) {
@@ -954,8 +1022,13 @@ function updateStackListInputs(node) {
   const otherInputs = currentInputs.filter(
     (input) => !/^stack_(\d+)$/.test(String(input?.name ?? "")),
   );
-  node.inputs = [...stackInputs, ...otherInputs];
-  resizeNodeToWidgets(node);
+  const nextInputs = [...stackInputs, ...otherInputs];
+  const inputsChanged = currentInputs.length !== nextInputs.length ||
+    currentInputs.some((input, index) => input !== nextInputs[index]);
+  if (!inputsChanged) return;
+  node.inputs = nextInputs;
+  refreshReactiveCollection(node, "inputs");
+  if (forceResize || !node[WORKFLOW_SIZE_RESTORED]) resizeNodeToWidgets(node);
   node.setDirtyCanvas?.(true, true);
 }
 
@@ -968,7 +1041,7 @@ function installDynamicStackList(node) {
   const originalConnectionsChange = node.onConnectionsChange;
   node.onConnectionsChange = function (...args) {
     const result = originalConnectionsChange?.apply(this, args);
-    updateStackListInputs(this);
+    updateStackListInputs(this, true);
     return result;
   };
   updateStackListInputs(node);
@@ -1236,15 +1309,24 @@ function updateXyAxisState(node) {
       : `Large XY queue: ${x.count ?? "?"} x ${y.count ?? "?"}. Sampling time and IMAGE memory will increase substantially.`;
   }
   let widget = node.widgets?.find((item) => item.name === XY_WARNING_WIDGET);
+  if (!widget && !warning) return;
+  const previousWarning = widget
+    ? { text: widget.element?.textContent ?? "", visible: Boolean(widget.__loraTesterWarningVisible) }
+    : null;
   if (!widget) widget = createXyWarningWidget(node);
   widget.element.textContent = warning;
   widget.element.title = warning;
   const visible = Boolean(warning);
   widget.__loraTesterWarningVisible = visible;
-  setWidgetVisible(widget, visible);
-  refreshReactiveCollection(node, "widgets");
-  node.graph?.incrementVersion?.();
-  resizeNodeToWidgets(node);
+  const visibilityChanged = setWidgetVisible(widget, visible);
+  const warningChanged = previousWarning
+    ? previousWarning.text !== warning || previousWarning.visible !== visible
+    : visible;
+  if (warningChanged || visibilityChanged) {
+    refreshReactiveCollection(node, "widgets");
+    node.graph?.incrementVersion?.();
+    resizeNodeToWidgets(node);
+  }
 }
 
 function installXyObservers(node) {
@@ -1434,6 +1516,7 @@ function createWarningWidget(node) {
 function updateMixerWarning(node, nodeName) {
   if (nodeName !== TARGET_NODE && nodeName !== MULTI_PROMPT_NODE) return;
   let widget = node.widgets?.find((item) => item.name === ARTIST_WARNING_WIDGET);
+  const created = !widget;
   if (!widget) widget = createWarningWidget(node);
   const visible = animaArtistMixerEnabled(node) && !externalMixerAvailable() && (
     nodeName === TARGET_NODE
@@ -1451,7 +1534,7 @@ function updateMixerWarning(node, nodeName) {
   setWidgetVisible(widget, visible);
   refreshReactiveCollection(node, "widgets");
   node.graph?.incrementVersion?.();
-  resizeNodeToWidgets(node);
+  if (!created || !node[WORKFLOW_SIZE_RESTORED]) resizeNodeToWidgets(node);
 }
 
 function installArtistObservers(node, nodeName) {
@@ -1616,6 +1699,7 @@ app.registerExtension({
     };
   },
   loadedGraphNode(node) {
+    node[WORKFLOW_SIZE_RESTORED] = true;
     scheduleNodeUi(node);
   },
   beforeRegisterNodeDef(nodeType, nodeData) {
@@ -1645,6 +1729,7 @@ app.registerExtension({
 
     const originalOnConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function (...args) {
+      this[WORKFLOW_SIZE_RESTORED] = true;
       const result = originalOnConfigure?.apply(this, args);
       scheduleNodeUi(this, nodeData.name);
       return result;
