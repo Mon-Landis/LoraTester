@@ -5,6 +5,7 @@ import math
 import os
 from collections import OrderedDict
 from collections.abc import Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable
@@ -22,6 +23,7 @@ from .artist import (
     route_artist_prompt,
     split_artist_tags,
 )
+from .anima_patch import anima_remap_diagnosis, warn_missing_anima_remap
 from .comfy_adapter import pil_to_comfy_image
 from .compositor import LoraComparisonCompositor, image_to_pil
 from .layout import LoraSpec, RenderTask, build_layout
@@ -218,6 +220,19 @@ def _apply_lora_to_models(
         weight,
         lora_metadata=metadata,
     )
+
+
+def _missing_anima_remap_ui(diagnosis: Mapping[str, Any]) -> dict[str, Any] | None:
+    if not diagnosis.get("required"):
+        return None
+    return {
+        "lora_tester_anima_remap": [{
+            "message": (
+                "A 28-block Anima LoRA is applied to a 40-block Anima 2.9B model "
+                "without ComfyUI-Anima-2.9B-loraPatch."
+            ),
+        }],
+    }
 
 
 def _common_ksampler(
@@ -959,6 +974,11 @@ class LoraTesterSampler:
             for spec in specs
         )
         loaded_loras = tuple(result[0] for result in load_results)
+        anima_diagnosis = anima_remap_diagnosis(
+            model=model,
+            state_dicts=tuple(result[0].state_dict for result in load_results),
+        )
+        warn_missing_anima_remap(anima_diagnosis, unique_id=unique_id)
         lora_cache_status = tuple(
             "run-local:miss" if result[1] is False else "run-local:hit"
             for result in load_results
@@ -1101,7 +1121,11 @@ class LoraTesterSampler:
 
         if session is None:
             raise RuntimeError("LoRA Tester generated no render tasks")
-        return (pil_to_comfy_image(session.finalize(strict=True)),)
+        output = pil_to_comfy_image(session.finalize(strict=True))
+        remap_ui = _missing_anima_remap_ui(anima_diagnosis)
+        if remap_ui:
+            return {"ui": remap_ui, "result": (output,)}
+        return (output,)
 
     @staticmethod
     def _make_specs(
@@ -1280,6 +1304,8 @@ def _raw_batch_slot(decoded: Any, raw_batch: Any, index: int, total: int) -> Any
 
 
 class XYTestSampler(LoraTesterSampler):
+    _last_anima_diagnosis: dict[str, Any] = {"required": False}
+
     """Generic XY sampler; axis producers define data and presentation metadata."""
 
     @classmethod
@@ -1418,7 +1444,7 @@ class XYTestSampler(LoraTesterSampler):
         anima_mixer_config: AnimaArtistMixerConfig | None = None,
         unique_id: Any = None,
     ) -> tuple[Any, Any]:
-        return self._sample_xy(
+        sampled = self._sample_xy(
             model=model,
             clip=clip,
             vae=vae,
@@ -1446,6 +1472,18 @@ class XYTestSampler(LoraTesterSampler):
             return_raw=True,
             log_label="XY image",
         )
+        return self._with_anima_remap_ui(model, sampled)
+
+    @classmethod
+    def _with_anima_remap_ui(cls, model: Any, sampled: Any) -> Any:
+        diagnosis = cls._last_anima_diagnosis
+        if not diagnosis.get("required"):
+            return sampled
+        remap_ui = _missing_anima_remap_ui(diagnosis)
+        if not remap_ui:
+            return sampled
+        sheet, raw_batch = sampled
+        return {"ui": remap_ui, "result": (sheet, raw_batch)}
 
     def _sample_xy(
         self,
@@ -1539,6 +1577,7 @@ class XYTestSampler(LoraTesterSampler):
 
         total_tasks = len(tasks)
         progress = _make_progress_bar(total_tasks, node_id=unique_id)
+        anima_state_dicts: list[Mapping[Any, Any]] = []
         compositor: XYMatrixCompositor | None = None
         session = None
         raw_batch = None
@@ -1563,6 +1602,7 @@ class XYTestSampler(LoraTesterSampler):
                             if item.is_artist_tag:
                                 continue
                             loaded, cache_hit = self._load_lora_with_status(item.name)
+                            anima_state_dicts.append(loaded.state_dict)
                             column_lora_usage.append(
                                 (
                                     item.name,
@@ -1679,6 +1719,12 @@ class XYTestSampler(LoraTesterSampler):
                     column_model = column_clip = negative = None
         finally:
             self._lora_cache.clear()
+        anima_diagnosis = anima_remap_diagnosis(
+            model=model,
+            state_dicts=tuple(anima_state_dicts),
+        )
+        warn_missing_anima_remap(anima_diagnosis, unique_id=unique_id)
+        type(self)._last_anima_diagnosis = anima_diagnosis
         if session is None:
             raise RuntimeError("XY sampler generated no images")
         sheet_pil = session.finalize(strict=True)
@@ -2608,6 +2654,9 @@ class MultiPromptSampleNode(LoraTesterSampler):
             log_label="Combination image",
             x_group_gap=control_gap,
         )
+        remap_ui = _missing_anima_remap_ui(XYTestSampler._last_anima_diagnosis)
+        if remap_ui:
+            return {"ui": remap_ui, "result": (sheet,)}
         return (sheet,)
 
 

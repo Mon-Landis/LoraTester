@@ -158,6 +158,23 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("refreshReactiveCollection(node, \"inputs\")", source)
         self.assertIn("refreshReactiveCollection(node, \"outputs\")", source)
 
+    def test_anima_remap_warning_tracks_static_and_runtime_diagnosis(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn('const ANIMA_REMAP_WARNING_WIDGET =', source)
+        self.assertIn("function createAnimaRemapWarningWidget(node)", source)
+        self.assertIn("function anima29BModelConnected(node)", source)
+        self.assertIn("function anyLoraSelected(node, nodeName)", source)
+        self.assertIn("function updateAnimaRemapWarning(node, nodeName)", source)
+        self.assertIn("function xySamplerHasMultiArtistTest(node)", source)
+        self.assertIn(
+            'if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE].includes(nodeName)) return;',
+            source,
+        )
+        self.assertIn("__loraTesterAnimaRemapMessage", source)
+        self.assertIn("message?.lora_tester_anima_remap?.[0]?.message", source)
+        self.assertIn("originalOnExecuted", source)
+        self.assertIn("[TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE]", source)
+
     def test_english_and_chinese_locales_cover_all_nodes(self) -> None:
         with (
             patch("lora_tester.nodes._get_lora_names", return_value=["A.safetensors"]),

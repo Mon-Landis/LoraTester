@@ -16,6 +16,7 @@ const AXIS_COMPOSER_NODE = "LoraTesterAxisComposer";
 const ARTIST_TAG_MODE = "__lora_tester_artist_tag__";
 const ARTIST_WARNING_WIDGET = "lora_tester_anima_mixer_warning";
 const XY_WARNING_WIDGET = "lora_tester_xy_warning";
+const ANIMA_REMAP_WARNING_WIDGET = "lora_tester_anima_remap_warning";
 const MAX_STACK_INPUTS = 16;
 const MULTI_PROMPT_MIN_WIDTH = 480;
 const HIDDEN_WIDGET_TYPE = "hidden";
@@ -1435,6 +1436,17 @@ function multiPromptHasMultiArtistTest(node) {
   );
 }
 
+function xySamplerHasMultiArtistTest(node) {
+  const counts = [];
+  for (const axisInputName of ["x_axis", "y_axis"]) {
+    const input = node.inputs?.find((item) => item.name === axisInputName);
+    for (const source of sourceNodesForInput(node, input)) {
+      counts.push(...stackArtistCountsFromNode(source));
+    }
+  }
+  return counts.some((artistCount) => artistCount > 1);
+}
+
 function registeredNodeAvailable(name) {
   const defs = app.extensionManager?.nodeDefs;
   if (defs instanceof Map && defs.has(name)) return true;
@@ -1514,14 +1526,16 @@ function createWarningWidget(node) {
 }
 
 function updateMixerWarning(node, nodeName) {
-  if (nodeName !== TARGET_NODE && nodeName !== MULTI_PROMPT_NODE) return;
+  if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE].includes(nodeName)) return;
   let widget = node.widgets?.find((item) => item.name === ARTIST_WARNING_WIDGET);
   const created = !widget;
   if (!widget) widget = createWarningWidget(node);
   const visible = animaArtistMixerEnabled(node) && !externalMixerAvailable() && (
     nodeName === TARGET_NODE
       ? directSamplerHasMultiArtistTest(node)
-      : multiPromptHasMultiArtistTest(node)
+      : nodeName === MULTI_PROMPT_NODE
+        ? multiPromptHasMultiArtistTest(node)
+        : xySamplerHasMultiArtistTest(node)
   );
   const language = activeLanguage();
   if (widget.element) {
@@ -1535,6 +1549,113 @@ function updateMixerWarning(node, nodeName) {
   refreshReactiveCollection(node, "widgets");
   node.graph?.incrementVersion?.();
   if (!created || !node[WORKFLOW_SIZE_RESTORED]) resizeNodeToWidgets(node);
+}
+
+function createAnimaRemapWarningWidget(node) {
+  const element = document.createElement("div");
+  element.setAttribute("role", "alert");
+  Object.assign(element.style, {
+    boxSizing: "border-box",
+    width: "100%",
+    minHeight: "42px",
+    padding: "8px 10px",
+    borderLeft: "3px solid #f1b84b",
+    background: "rgba(47, 40, 29, 0.96)",
+    color: "#fff3cf",
+    fontSize: "12px",
+    lineHeight: "1.35",
+    whiteSpace: "normal",
+  });
+
+  let widget;
+  if (typeof node.addDOMWidget === "function") {
+    widget = node.addDOMWidget(
+      ANIMA_REMAP_WARNING_WIDGET,
+      "lora-tester-warning",
+      element,
+      {
+        serialize: false,
+        getMinHeight: () => (widget?.__loraTesterWarningVisible ? 46 : 0),
+        getMaxHeight: () => (widget?.__loraTesterWarningVisible ? 90 : 0),
+      },
+    );
+  } else {
+    widget = {
+      name: ANIMA_REMAP_WARNING_WIDGET,
+      type: "lora-tester-warning",
+      element,
+      options: { serialize: false },
+      computeSize: (width) => [width, 48],
+      draw() {},
+    };
+    if (typeof node.addCustomWidget === "function") node.addCustomWidget(widget);
+    else (node.widgets ??= []).push(widget);
+  }
+  widget.options ??= {};
+  widget.options.serialize = false;
+  widget.serialize = false;
+  return widget;
+}
+
+function anima29BModelConnected(node) {
+  for (const inputName of ["model", "model_override"]) {
+    const source = firstSourceForInput(node, inputName);
+    if (!source) continue;
+    const title = String(
+      source.title ?? source.widgets_values?.[0] ?? source.type ?? "",
+    ).toLowerCase();
+    if (title.includes("anima") && (title.includes("2.9") || title.includes("2_9"))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function anyLoraSelected(node, nodeName) {
+  if (nodeName === TARGET_NODE) {
+    return [1, 2, 3].some((index) => {
+      const slot = String.fromCharCode(96 + index);
+      const name = String(widgetValue(node, `lora_${slot}_name`) ?? "");
+      return Boolean(name) && name !== ARTIST_TAG_MODE;
+    });
+  }
+  if (nodeName === MULTI_PROMPT_NODE) {
+    const stackSource = firstSourceForInput(node, "lorastacks");
+    return stackSource != null;
+  }
+  if (nodeName === XY_SAMPLER_NODE) {
+    for (const axis of [firstSourceForInput(node, "x_axis"), firstSourceForInput(node, "y_axis")]) {
+      if (axis && nodeNameForUi(axis) === LORA_STACK_AXIS_NODE) return true;
+    }
+  }
+  return false;
+}
+
+function updateAnimaRemapWarning(node, nodeName) {
+  if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE].includes(nodeName)) return;
+  let widget = node.widgets?.find((item) => item.name === ANIMA_REMAP_WARNING_WIDGET);
+  if (!widget) widget = createAnimaRemapWarningWidget(node);
+
+  const runtimeMessage = node.__loraTesterAnimaRemapMessage;
+  const visible = Boolean(runtimeMessage) || (
+    anima29BModelConnected(node) && anyLoraSelected(node, nodeName)
+  );
+  const language = activeLanguage();
+  const message = runtimeMessage ?? (language === "zh"
+    ? "疑似 Anima 2.9B 底模 + LoRA：未安装 Anima 2.9B loraPatch 时，28-block 权重可能映射到错误层。"
+    : "Possible Anima 2.9B model + LoRA: without the Anima 2.9B loraPatch, 28-block weights may target the wrong layers.");
+  if (widget.element) widget.element.textContent = message;
+
+  const changed = widget.__loraTesterWarningVisible !== visible
+    || widget.element?.textContent !== message;
+  widget.__loraTesterWarningVisible = visible;
+  if (changed) {
+    setWidgetVisible(widget, visible);
+    refreshReactiveCollection(node, "widgets");
+    node.graph?.incrementVersion?.();
+    resizeNodeToWidgets(node);
+  }
+  node.setDirtyCanvas?.(true, true);
 }
 
 function installArtistObservers(node, nodeName) {
@@ -1663,6 +1784,7 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
     installArtistObservers(node, nodeName);
   }
   updateMixerWarning(node, nodeName);
+  updateAnimaRemapWarning(node, nodeName);
 }
 
 function scheduleNodeUi(node, nodeName = nodeNameForUi(node)) {
@@ -1712,13 +1834,18 @@ app.registerExtension({
       nodeData.name,
     );
     const hasXyObserver = nodeData.name === XY_SAMPLER_NODE;
+    const hasAnimaRemapWarning = [
+      TARGET_NODE,
+      MULTI_PROMPT_NODE,
+      XY_SAMPLER_NODE,
+    ].includes(nodeData.name);
     const hasWidgetTranslations = nodeData.name in OPTION_LABELS;
     const hasNodeLabels =
       nodeData.name in INPUT_LABELS ||
       nodeData.name in OUTPUT_LABELS ||
       nodeData.name === STACK_LISTER_NODE ||
       nodeData.name === STACK_SPLITTER_NODE;
-    if (!hasDynamicLoraCount && !hasDynamicStackCount && !hasDynamicPromptCount && !hasDynamicStackList && !hasSeedMode && !hasLongPromptLayout && !hasXyObserver && !hasWidgetTranslations && !hasNodeLabels) return;
+    if (!hasDynamicLoraCount && !hasDynamicStackCount && !hasDynamicPromptCount && !hasDynamicStackList && !hasSeedMode && !hasLongPromptLayout && !hasXyObserver && !hasWidgetTranslations && !hasNodeLabels && !hasAnimaRemapWarning) return;
 
     const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function (...args) {
@@ -1739,6 +1866,14 @@ app.registerExtension({
     nodeType.prototype.onAfterGraphConfigured = function (...args) {
       const result = originalOnAfterGraphConfigured?.apply(this, args);
       applyNodeUi(this, nodeData.name);
+      return result;
+    };
+
+    const originalOnExecuted = nodeType.prototype.onExecuted;
+    nodeType.prototype.onExecuted = function (message, ...args) {
+      const result = originalOnExecuted?.apply(this, [message, ...args]);
+      this.__loraTesterAnimaRemapMessage = message?.lora_tester_anima_remap?.[0]?.message ?? null;
+      scheduleNodeUi(this, nodeData.name);
       return result;
     };
   },
