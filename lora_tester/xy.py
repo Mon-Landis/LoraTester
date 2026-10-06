@@ -383,7 +383,7 @@ def build_lora_stack_axis(
         label = "+".join(components) or "EMPTY"
         stack_entries.append(
             AxisEntry(
-                label=label,
+                label=stack.custom_name or label,
                 parameters=(AxisParameter("lora_stack", stack),),
                 detail_label=stack.label,
             )

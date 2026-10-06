@@ -86,6 +86,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | `Lora Tester/XY/Style` | `Artist Tag Replacer` | Replaces exact artist matches with artists or LoRAs, using replacement or multiplied weights. |
 | `Lora Tester/XY/Style` | `Style Stack Splitter` | Produces every non-empty Style Stack combination. |
 | `Lora Tester/XY/Style` | `Style Stack Flattener` | Produces individual entries, optionally preceded by the original stack. |
+| `Lora Tester/XY/Style` | `Style Stack Name` | Sets a literal name for one stack; empty restores automatic naming. |
+| `Lora Tester/XY/Style` | `Style Stack List Name` | Names one index or all stacks, with `{i}` and backslash escaping. |
 | `Lora Tester/XY/Style` | `Style Stack Lister` | Dynamically merges up to 16 individual Style Stacks. |
 | `Lora Tester/XY/Style` | `Style Axis` | Directly converts a Style Stack list into grouped `XY_AXIS` data with detail tables. |
 | `Lora Tester/XY/Seed` | `Seed List / Random Seeds` | Parses seeds or generates a deterministic random list. |
@@ -121,7 +123,7 @@ The independent `AnimaFlow XY Test Sampler` in `Lora Tester/XY` requires [Comfyu
 - Axis parameters override base controls. An advanced axis changes only its selected setting, preserving other supplied settings. Parameter axes support cross merge and Axis Content Preview.
 - Native `sampler_name`/`scheduler` cannot be translated into Flow options and are rejected. The native XY sampler likewise rejects Flow-only parameters.
 - Missing or incompatible dependencies retain a workflow-compatible shell with a red dependency warning and project link. Execution is blocked, with no KSampler fallback. Install/update the dependency, restart ComfyUI and refresh the browser.
-- Flow retains its own step previews/progress; the XY layer reports completed cells without rewriting upstream model-call semantics.
+- Flow step previews are preserved while progress advances across the entire XY queue instead of restarting per image. Progress reaches 100% after final composition; only progress bars inside the active Flow cell are redirected, without changing upstream sampling semantics.
 
 Example: `Artist Tag Text Parser -> Style Stack Flattener -> Style Axis -> AnimaFlow XY Test Sampler.x_axis`, with Prompt Axis on `y_axis`. Use an AnimaFlow Parameter Axis on either socket for Flow comparisons.
 
@@ -129,9 +131,9 @@ Example: `Artist Tag Text Parser -> Style Stack Flattener -> Style Axis -> Anima
 
 Connect any axis output to `Axis Content Preview`. It accepts prompt, style, seed, composed, and custom `XY_AXIS` data. After execution, the node displays read-only multiline text with preserved indentation, selectable text, and scrolling. Choose Chinese or English using `Preview Language`.
 
-- Shows the title, group count, entry count, and parameter names, then expands every group and entry in order. BASE is identified as having no parameter overrides.
-- Expands complete prompt bodies, prefix/suffix text, combined prompts, and independent artists; style entries include files, triggers, artist tags, weights, and templates.
-- Preserves full integer seeds, nested custom parameters, detail tables, and text blocks.
+- Shows a compact header and a tab-indented group tree, with each axis element and all its details on one line. BASE is identified as having no parameter overrides.
+- Preserves complete prompt bodies, nonempty prefix/suffix text, and independent artists without duplicating the combined prompt. Style entries show files, triggers, artist tags, weights, and templates inline.
+- Preserves full integer seeds, nested custom parameters, detail tables, and text blocks. Embedded newlines and tabs appear as `⏎` and `⇥`, keeping each element on one physical line.
 - The `axis` output is the unchanged original; `text` is the complete formatted string for copying or saving. The preview is retained in workflow properties for save/reload; execute again after changing input data.
 
 For example: `Style Axis -> Axis Content Preview -> XY Test Sampler`. The preview itself never loads models or generates images; as an output node it can execute just the upstream axis construction chain.
@@ -150,6 +152,17 @@ For example: `Style Axis -> Axis Content Preview -> XY Test Sampler`. The previe
 
 Chain `Artist Tag Text Parser -> Artist Tag Replacer -> Style Stack Flattener -> Style Axis / Axis Composer` for individual artist comparisons. A parsed stack connected directly to an axis represents the complete artist combination.
 
+### Naming Style Stacks
+
+- `Style Stack` and `Artist Tag Text Parser` accept an optional single-line `Style Name`. Empty means automatic naming: the style axis still collects sources and generates labels such as `A-0.8+B-0.3`. Custom names change display metadata only, not sampling contents or source details.
+- `Style Stack Name` accepts one `LORA_STACK` and a literal name. Empty or whitespace clears the existing name. This node does not expand `{i}`.
+- `Style Stack List Name` accepts a `LORA_STACK_LIST`, integer `index`, and name template. Indices are **zero-based**; any negative index selects all; index >= list length does nothing; empty lists pass through. Axis `BASE` is not a stack-list item, so preview numbering may differ.
+- Every `{i}` inserts the original input list index: `Style-{i}` at index 2 becomes `Style-2`. `\{i}` produces literal `{i}`; `\\` produces one backslash; `\{` / `\}` produce literal braces. Expansion runs once; escaped `{i}` is not expanded again. Unknown placeholders, unknown escapes, and trailing backslashes remain literal. Expanded names are stored as plain text and do not renumber when reordered.
+- An empty template clears selected names. Duplicate names are allowed, including `BASE` on an ordinary stack without giving it baseline semantics. Names cannot contain line breaks or tabs, and naming never mutates shared input objects.
+- List collection/merge preserve names and duplicate positions. The splitter retains the original name on the complete combination; proper subsets use automatic names. Multi-entry flattening retains the optional original name and resets derived names; single-entry rules are below.
+- The advanced `Output Style Name` on `Artist Tag Replacer` is empty by default, preserving the name. Nonempty text is equivalent to naming the output afterward, even when no artist matches. It is literal, not a `{i}` template; use `Style Stack Name` to clear a name.
+- Style Axis, Axis Composer, Axis Content Preview, and native / AnimaFlow XY sheets use custom names. Source tables retain actual file/artist information; combined axes continue composing labels.
+
 ### Flattening a Style Stack
 
 Connect `Style Stack` to `Style Stack Flattener`, then connect its `lora_stack_list` output to `Style Axis` or `Axis Composer`.
@@ -158,7 +171,9 @@ Connect `Style Stack` to `Style Stack Flattener`, then connect its `lora_stack_l
 - With the switch on, the output is `[a:1.2,b:0.3,c:1]`, `[a:1.2]`, `[b:0.3]`, and `[c:1]`, with the original first.
 - `Weight Mode` defaults to `Inherit`, preserving each child's weight. `Normalize` sets every child weight to `1`. `Dual` emits adjacent weight-`1` and inherited-weight children for each non-unit entry; entries already at `1` appear once.
 - For `a:1.2,b:0.3,c:1`, Dual produces `[a:1]`, `[a:1.2]`, `[b:1]`, `[b:0.3]`, `[c:1]`. Including the original prepends the unchanged `[a:1.2,b:0.3,c:1]`, giving six entries.
-- Weight Mode never modifies the optional original stack. Entry order, trigger words, and artist templates are preserved; no pairwise combinations or deduplication occur.
+- Weight Mode never modifies the optional original stack. Entry order, trigger words, and artist templates are preserved; no pairwise combinations occur, and duplicate children from multi-entry inputs remain.
+- **Single-entry exception:** input `a:0.8` named `A` yields `a:0.8(A)` in Inherit, `a:1(A)` in Normalize, and `a:0.8(A)`, `a:1(automatic name)` in Dual. Single-entry Dual puts the original first, unlike multi-entry Dual.
+- Including the original merges identical single-entry children instead of duplicating them. Unit weights appear once in every mode. Normalize with a non-unit original and Include Original enabled retains both the unchanged original and normalized child; both inherit the name.
 
 ## Prompts and Artist Tags
 

@@ -40,7 +40,7 @@ from .node_contract import (
 )
 from .stack import (
     FLATTEN_WEIGHT_MODES, LoraStack, LoraStackItem, LoraStackList, flatten_lora_stack,
-    parse_artist_stack, replace_stack_artist, split_lora_stack,
+    parse_artist_stack, rename_lora_stack, rename_lora_stack_list, replace_stack_artist, split_lora_stack,
 )
 from .styles import StyleConfig, available_style_decorators
 from .xy import (
@@ -1734,7 +1734,10 @@ class XYTestSampler(LoraTesterSampler):
                                     total_tasks,
                                 )
                             task_index += 1
-                            progress.update_absolute(task_index, total_tasks)
+                            completed_value = task_index
+                            if sampling_backend is not None and task_index == total_tasks:
+                                completed_value = total_tasks - 0.001
+                            progress.update_absolute(completed_value, total_tasks)
                         finally:
                             if task_model is not column_model:
                                 _release_temporary_model(task_model, column_model)
@@ -1761,6 +1764,8 @@ class XYTestSampler(LoraTesterSampler):
             sheet = pil_to_comfy_image(sheet_pil)
         finally:
             sheet_pil.close()
+        if sampling_backend is not None:
+            progress.update_absolute(total_tasks, total_tasks)
         return sheet, raw_batch
 
 
@@ -2489,6 +2494,17 @@ def _stack_inputs() -> dict[str, tuple[Any, dict[str, Any]]]:
     return inputs
 
 
+STACK_CUSTOM_NAME_INPUT = (
+    "STRING",
+    {
+        "default": "",
+        "multiline": False,
+        "dynamicPrompts": False,
+        "tooltip": "Optional single-line style name. Empty resets to automatic naming when the axis is built; text is literal.",
+    },
+)
+
+
 class LoraStackNode:
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
@@ -2498,7 +2514,8 @@ class LoraStackNode:
                 "artist_tag_template": (
                     "ARTIST_TAG_TEMPLATE",
                     {"tooltip": "Optional artist syntax stored with this stack."},
-                )
+                ),
+                "custom_name": STACK_CUSTOM_NAME_INPUT,
             },
         }
 
@@ -2511,10 +2528,12 @@ class LoraStackNode:
     @classmethod
     def IS_CHANGED(cls, lora_count: int = 1, **values: Any) -> Any:
         count = _bounded_count(lora_count, MAX_STACK_ITEMS)
-        return _lora_input_fingerprint(
+        fingerprint = _lora_input_fingerprint(
             values.get(f"lora_{index}_name", "")
             for index in range(1, count + 1)
         )
+        name = str(values.get("custom_name", "") or "").strip()
+        return fingerprint + (("custom_name", name),) if name else fingerprint
 
     @classmethod
     def VALIDATE_INPUTS(
@@ -2564,6 +2583,7 @@ class LoraStackNode:
         self,
         lora_count: int,
         artist_tag_template: ArtistTagTemplate | None = None,
+        custom_name: str = "",
         **values: Any,
     ) -> tuple[LoraStack]:
         count = int(lora_count)
@@ -2581,7 +2601,7 @@ class LoraStackNode:
                     strength=float(values.get(f"lora_{index}_strength", 1.0)),
                 )
             )
-        return (LoraStack(tuple(items), artist_template=artist_tag_template),)
+        return (LoraStack(tuple(items), artist_template=artist_tag_template, custom_name=custom_name),)
 
 
 class ArtistTagTextParserNode:
@@ -2604,6 +2624,7 @@ class ArtistTagTextParserNode:
                     "ARTIST_TAG_TEMPLATE",
                     {"tooltip": "Optional artist syntax stored with the parsed stack."},
                 ),
+                "custom_name": STACK_CUSTOM_NAME_INPUT,
             },
         }
 
@@ -2616,9 +2637,9 @@ class ArtistTagTextParserNode:
 
     @staticmethod
     def parse_text(
-        artist_text: str, artist_tag_template: ArtistTagTemplate | None = None
+        artist_text: str, artist_tag_template: ArtistTagTemplate | None = None, custom_name: str = ""
     ) -> tuple[LoraStack]:
-        return (parse_artist_stack(artist_text, artist_template=artist_tag_template),)
+        return (parse_artist_stack(artist_text, artist_template=artist_tag_template, custom_name=custom_name),)
 
 
 class ArtistTagReplacerNode:
@@ -2633,6 +2654,15 @@ class ArtistTagReplacerNode:
                 "lora_1_trigger": stack_inputs["lora_1_trigger"],
                 "lora_1_strength": stack_inputs["lora_1_strength"],
                 "strength_mode": (["replace", "multiply"], {"default": "replace", "tooltip": "Replace uses the configured strength; multiply scales each matched entry's original strength."}),
+            },
+            "optional": {
+                "custom_name": (
+                    "STRING",
+                    {
+                        "default": "", "multiline": False, "dynamicPrompts": False, "advanced": True,
+                        "tooltip": "Optional output name, even when no artist matches. Empty preserves the input name; use Style Stack Name to clear it. Text is literal.",
+                    },
+                ),
             },
         }
 
@@ -2649,7 +2679,9 @@ class ArtistTagReplacerNode:
 
     @classmethod
     def IS_CHANGED(cls, lora_1_name: str = "", **values: Any) -> Any:
-        return _lora_input_fingerprint((lora_1_name,))
+        fingerprint = _lora_input_fingerprint((lora_1_name,))
+        name = str(values.get("custom_name", "") or "").strip()
+        return fingerprint + (("custom_name", name),) if name else fingerprint
 
     @staticmethod
     def replace_artist(
@@ -2659,10 +2691,65 @@ class ArtistTagReplacerNode:
         lora_1_trigger: str,
         lora_1_strength: float,
         strength_mode: str = "replace",
+        custom_name: str = "",
     ) -> tuple[LoraStack]:
-        return (replace_stack_artist(
+        output = replace_stack_artist(
             lora_stack, match_tag, lora_1_name, lora_1_trigger, lora_1_strength, strength_mode
-        ),)
+        )
+        if custom_name.strip():
+            output = rename_lora_stack(output, custom_name)
+        return (output,)
+
+
+class LoraStackNameNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {"required": {
+            "lora_stack": ("LORA_STACK", {"tooltip": "The style stack to name, without changing its contents."}),
+            "custom_name": STACK_CUSTOM_NAME_INPUT,
+        }}
+
+    RETURN_TYPES = ("LORA_STACK",)
+    RETURN_NAMES = ("lora_stack",)
+    OUTPUT_TOOLTIPS = ("A stack with the requested display name; parameters and artist template are unchanged.",)
+    FUNCTION = "set_name"
+    CATEGORY = "Lora Tester/XY/Style"
+    DESCRIPTION = "Sets a literal style stack name. Empty clears the custom name and restores automatic axis naming."
+
+    @staticmethod
+    def set_name(lora_stack: LoraStack, custom_name: str) -> tuple[LoraStack]:
+        return (rename_lora_stack(lora_stack, custom_name),)
+
+
+class LoraStackListNameNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {"required": {
+            "lora_stack_list": ("LORA_STACK_LIST", {"tooltip": "The ordered list to name; order and duplicate entries are preserved."}),
+            "index": ("INT", {
+                "default": -1, "min": -2147483648, "max": 2147483647, "step": 1,
+                "tooltip": "Zero-based stack index: 0 is the first. Any negative value names all; an out-of-range index does nothing. Axis BASE is not a list item.",
+            }),
+            "name_template": ("STRING", {
+                "default": "", "multiline": False, "dynamicPrompts": False,
+                "tooltip": r"Single-line name: {i} inserts the original zero-based list index; \{i} keeps literal {i}, and \\ keeps one backslash. Other placeholders stay literal. Empty clears selected names.",
+            }),
+        }}
+
+    RETURN_TYPES = ("LORA_STACK_LIST",)
+    RETURN_NAMES = ("lora_stack_list",)
+    OUTPUT_TOOLTIPS = ("Names changed only at the selected list positions; sampling contents remain unchanged.",)
+    FUNCTION = "set_names"
+    CATEGORY = "Lora Tester/XY/Style"
+    DESCRIPTION = (
+        r"Names one zero-based list position or all positions when index < 0. {i} inserts the input list index; "
+        r"\{i} produces literal {i}; \\ produces one backslash. Expansion runs once and unknown placeholders stay literal. "
+        "Out-of-range indices do nothing. Empty resets selected items to automatic axis naming. BASE is not included."
+    )
+
+    @staticmethod
+    def set_names(lora_stack_list: LoraStackList, index: int, name_template: str) -> tuple[LoraStackList]:
+        return (rename_lora_stack_list(lora_stack_list, index, name_template),)
 
 
 class LoraStackSplitterNode:
@@ -2694,14 +2781,14 @@ class LoraStackFlattenerNode:
                     "BOOLEAN",
                     {
                         "default": False,
-                        "tooltip": "Prepend the original stack before its individual entries.",
+                        "tooltip": "Prepend the unchanged original stack. A matching single-entry child is merged with it instead of duplicated.",
                     },
                 ),
                 "weight_mode": (
                     list(FLATTEN_WEIGHT_MODES),
                     {
                         "default": "inherit",
-                        "tooltip": "Choose whether flattened child stacks inherit, normalize, or duplicate non-unit weights.",
+                        "tooltip": "Multi-entry stacks: inherit, normalize, or weight 1 then inherited. Single-entry stacks retain the name; dual emits original first then an unnamed weight-1 variant.",
                     },
                 ),
             }
@@ -2986,6 +3073,8 @@ NODE_CLASS_MAPPINGS = {
     "LoraStack": LoraStackNode,
     "ArtistTagTextParser": ArtistTagTextParserNode,
     "ArtistTagReplacer": ArtistTagReplacerNode,
+    "LoraStackName": LoraStackNameNode,
+    "LoraStackListName": LoraStackListNameNode,
     "LoraStackSplitter": LoraStackSplitterNode,
     "LoraStackFlattener": LoraStackFlattenerNode,
     "LoraStackLister": LoraStackListerNode,
@@ -3011,6 +3100,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LoraStack": "Style Stack",
     "ArtistTagTextParser": "Artist Tag Text Parser",
     "ArtistTagReplacer": "Artist Tag Replacer",
+    "LoraStackName": "Style Stack Name",
+    "LoraStackListName": "Style Stack List Name",
     "LoraStackSplitter": "Style Stack Splitter",
     "LoraStackFlattener": "Style Stack Flattener",
     "LoraStackLister": "Style Stack Lister",
@@ -3037,6 +3128,8 @@ __all__ = [
     "LoraStackNode",
     "ArtistTagTextParserNode",
     "ArtistTagReplacerNode",
+    "LoraStackNameNode",
+    "LoraStackListNameNode",
     "LoraStackSplitterNode",
     "LoraStackFlattenerNode",
     "LoraStackListerNode",

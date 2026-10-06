@@ -25,6 +25,8 @@ from .nodes import (
     ArtistTagTemplateNode,
     ArtistTagTextParserNode,
     ArtistTagReplacerNode,
+    LoraStackNameNode,
+    LoraStackListNameNode,
     LoraStackListerNode,
     LoraStackFlattenerNode,
     LoraStackNode,
@@ -47,7 +49,7 @@ from .nodes import (
 )
 from .stack import (
     LoraStack, LoraStackItem, LoraStackList, flatten_lora_stack,
-    parse_artist_stack, replace_stack_artist, split_lora_stack,
+    parse_artist_stack, rename_lora_stack, rename_lora_stack_list, replace_stack_artist, split_lora_stack,
 )
 from .stack_compositor import LoraStackMatrixCompositor, LoraStackMatrixSession
 from .axis_preview import format_axis_preview
@@ -97,6 +99,8 @@ __all__ = [
     "LoraStackNode",
     "ArtistTagTextParserNode",
     "ArtistTagReplacerNode",
+    "LoraStackNameNode",
+    "LoraStackListNameNode",
     "LoraStackSplitterNode",
     "LoraStackFlattenerNode",
     "LoraStackListerNode",
@@ -130,6 +134,8 @@ __all__ = [
     "flatten_lora_stack",
     "parse_artist_stack",
     "replace_stack_artist",
+    "rename_lora_stack",
+    "rename_lora_stack_list",
     "submit_comfy_batch",
     "AxisEntry",
     "AxisParameter",

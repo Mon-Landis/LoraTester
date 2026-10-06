@@ -99,8 +99,12 @@ class Vae:
 
 
 class Progress:
+    def __init__(self):
+        self.events = []
+        self.node_id = "xy"
+
     def update_absolute(self, *args):
-        pass
+        self.events.append(args)
 
 
 class AnimaFlowTests(unittest.TestCase):
@@ -132,10 +136,10 @@ class AnimaFlowTests(unittest.TestCase):
             use_anima_artist_mixer=False, max_canvas_megapixels=10.0, **self.controls(),
         )
 
-    def run_sampler(self, node=None, **changes):
+    def run_sampler(self, node=None, progress=None, **changes):
         arguments = {**self.sample_arguments(), **changes}
         with (
-            patch("lora_tester.nodes._make_progress_bar", return_value=Progress()),
+            patch("lora_tester.nodes._make_progress_bar", return_value=progress or Progress()),
             patch("lora_tester.nodes._throw_if_interrupted"),
             patch("lora_tester.nodes._common_ksampler", side_effect=AssertionError("native sampler used")),
             patch("lora_tester.nodes._decode_vae", side_effect=AssertionError("native VAE decoder used")),
@@ -263,10 +267,68 @@ class AnimaFlowTests(unittest.TestCase):
             with self.assertRaisesRegex(AnimaFlowDependencyError, "LATENT result"):
                 adapter.sample_cell(model=None, positive=None, negative=None, latent={}, values=self.controls())
 
+    def test_xy_progress_aggregates_upstream_steps_and_finishes_after_composition(self):
+        from lora_tester.comfy_adapter import pil_to_comfy_image
+
+        direct_events = []
+
+        class UpstreamProgressBar:
+            def __init__(self, total, node_id=None):
+                self.total = total
+                self.current = 0
+                self.node_id = node_id
+
+            def update_absolute(self, value, total=None, preview=None):
+                if total is not None:
+                    self.total = total
+                self.current = value
+                direct_events.append((value, self.total, preview))
+
+        original_sample = FakeFlowSampler.sample
+        overall = Progress()
+        composition_progress = []
+
+        def upstream_sample(**arguments):
+            steps = arguments["steps"]
+            inner = UpstreamProgressBar(steps)
+            for step in range(1, steps + 1):
+                inner.update_absolute(step, steps, f"preview-{step}")
+            return original_sample(None, **arguments)
+
+        def compose(image):
+            composition_progress.append(overall.events[-1][0])
+            return pil_to_comfy_image(image)
+
+        steps_axis = AnimaFlowParameterAxisNode().build_axis("steps", "2, 5", "STEPS")[0]
+        with (
+            patch.dict(sys.modules, {"comfy.utils": SimpleNamespace(ProgressBar=UpstreamProgressBar)}),
+            patch.object(FakeFlowSampler, "sample", side_effect=upstream_sample),
+            patch("lora_tester.nodes.pil_to_comfy_image", side_effect=compose),
+        ):
+            self.run_sampler(x_axis=steps_axis, progress=overall)
+        values = [event[0] for event in overall.events]
+        self.assertEqual(values, sorted(values))
+        self.assertTrue(all(event[1] == 4 for event in overall.events))
+        self.assertEqual(overall.events[-1], (4, 4))
+        self.assertLess(composition_progress[0], 4)
+        self.assertTrue(any(len(event) == 3 and event[2] == "preview-1" for event in overall.events))
+        self.assertEqual(direct_events, [])
+
     def test_missing_settings_node_keeps_basic_sampler_available(self):
         self.registry.NODE_CLASS_MAPPINGS.pop("AnimaFlowSettings")
         self.assertTrue(anima_flow_status()["available"])
         self.assertNotIn("final_clean_pass", AnimaFlowParameterAxisNode.INPUT_TYPES()["required"]["parameter"][0])
+
+    def test_named_duplicate_style_entries_remain_separate_flow_cells(self):
+        first = LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@wlop", 0.8),), custom_name="风格甲")
+        second = LoraStack(first.items, custom_name="风格乙")
+        axis = build_lora_stack_axis(LoraStackList((first, second)), include_base=False)
+        output = self.run_sampler(x_axis=axis)
+        self.assertEqual([entry.label for entry in axis.entries], ["风格甲", "风格乙"])
+        self.assertEqual(len(FakeFlowSampler.calls), 4)
+        self.assertEqual(output[1].shape[0], 4)
+        self.assertEqual(FakeFlowSampler.calls[0]["positive"], FakeFlowSampler.calls[1]["positive"])
+        self.assertEqual(FakeFlowSampler.calls[2]["positive"], FakeFlowSampler.calls[3]["positive"])
 
     def test_numeric_validation_does_not_accept_fractional_integer_or_nonfinite(self):
         with self.assertRaises(ValueError):

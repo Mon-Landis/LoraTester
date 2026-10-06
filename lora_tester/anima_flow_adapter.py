@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
+from .sampling_progress import aggregate_cell_progress
+
 
 PROJECT_URL = "https://github.com/KeithZ117/Comfyui-anima-sampler"
 SAMPLER_NODE = "AnimaFlowCorrectiveSampler"
@@ -150,13 +152,14 @@ class AnimaFlowAdapter:
             }
         return resolved
 
-    def sample_cell(self, *, model: Any, positive: Any, negative: Any, latent: dict, values: dict, vae: Any = None, **context: Any) -> tuple[dict, Any]:
+    def sample_cell(self, *, model: Any, positive: Any, negative: Any, latent: dict, values: dict, vae: Any = None, progress: Any = None, completed_tasks: int = 0, total_tasks: int = 1) -> tuple[dict, Any]:
         node = self.sampler_class()
-        result = getattr(node, self.function_name)(
-            model=model, positive=positive, negative=negative,
-            latent_image=latent.copy(), flow_settings=deepcopy(values.get("flow_settings")), vae=vae,
-            **{name: values[name] for name in FLOW_CONTROLS},
-        )
+        with aggregate_cell_progress(progress, completed_tasks, total_tasks):
+            result = getattr(node, self.function_name)(
+                model=model, positive=positive, negative=negative,
+                latent_image=latent.copy(), flow_settings=deepcopy(values.get("flow_settings")), vae=vae,
+                **{name: values[name] for name in FLOW_CONTROLS},
+            )
         if isinstance(result, dict):
             result = result.get("result")
         if not isinstance(result, (tuple, list)) or len(result) < 2 or not isinstance(result[0], dict) or "samples" not in result[0]:

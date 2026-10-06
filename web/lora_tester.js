@@ -6,6 +6,9 @@ const TARGET_NODE = "LoraTesterSampler";
 const STACK_NODE = "LoraStack";
 const ARTIST_TEXT_NODE = "ArtistTagTextParser";
 const ARTIST_REPLACER_NODE = "ArtistTagReplacer";
+const STACK_NAME_NODE = "LoraStackName";
+const STACK_LIST_NAME_NODE = "LoraStackListName";
+const REPLACER_ADVANCED_WIDGET = "lora_tester_replacer_advanced";
 const STACK_SPLITTER_NODE = "LoraStackSplitter";
 const STACK_FLATTENER_NODE = "LoraStackFlattener";
 const STACK_LISTER_NODE = "LoraStackLister";
@@ -42,6 +45,7 @@ const ARTIST_OBSERVER = Symbol("loraTesterArtistObserver");
 const ARTIST_CONNECTION_OBSERVER = Symbol("loraTesterArtistConnectionObserver");
 const ARTIST_WIDGET_CHANGE_OBSERVER = Symbol("loraTesterArtistWidgetChangeObserver");
 const GRAPH_UI_SCHEDULED = Symbol("loraTesterGraphUiScheduled");
+const NODE_UI_SCHEDULED = Symbol("loraTesterNodeUiScheduled");
 const DYNAMIC_LAYOUT_STATE = Symbol("loraTesterDynamicLayoutState");
 const WORKFLOW_SIZE_RESTORED = Symbol("loraTesterWorkflowSizeRestored");
 const MIN_WIDTH_APPLIED = Symbol("loraTesterMinWidthApplied");
@@ -216,6 +220,7 @@ const INPUT_LABELS = {
   },
   ArtistTagTextParser: {
     artist_text: { en: "Artist Tag Text", zh: "画师 Tag 文本" },
+    custom_name: { en: "Style Name", zh: "风格名称" },
     artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
   },
   ArtistTagReplacer: {
@@ -225,6 +230,7 @@ const INPUT_LABELS = {
     lora_1_trigger: { en: "Replacement Trigger / Artist Tag", zh: "替换触发词 / 画师 Tag" },
     lora_1_strength: { en: "Replacement Strength / Multiplier", zh: "替换强度 / 倍率" },
     strength_mode: { en: "Strength Mode", zh: "强度模式" },
+    custom_name: { en: "Output Style Name", zh: "输出风格名称" },
   },
   LoraTesterSampler: {
     lora_count: { en: "Test Item Count", zh: "测试项数量" },
@@ -236,7 +242,17 @@ const INPUT_LABELS = {
   },
   LoraStack: {
     lora_count: { en: "Style Item Count", zh: "风格项数量" },
+    custom_name: { en: "Style Name", zh: "风格名称" },
     artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
+  },
+  LoraStackName: {
+    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    custom_name: { en: "Style Name", zh: "风格名称" },
+  },
+  LoraStackListName: {
+    lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
+    index: { en: "Index (0-based; negative = all)", zh: "索引（从 0 开始；负数为全部）" },
+    name_template: { en: "Name Template", zh: "名称模板" },
   },
   LoraStackSplitter: {
     lora_stack: { en: "Style Stack", zh: "风格组合" },
@@ -337,6 +353,12 @@ const ARTIST_MODE_OPTION_LABELS = {
 };
 
 const OUTPUT_LABELS = {
+  LoraStackName: {
+    lora_stack: { en: "Style Stack", zh: "风格组合" },
+  },
+  LoraStackListName: {
+    lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
+  },
   LoraTesterAxisPreview: {
     axis: { en: "Axis", zh: "轴" },
     text: { en: "Formatted Text", zh: "格式化文本" },
@@ -577,7 +599,9 @@ function localizedInputLabel(nodeName, inputName) {
 function installNodeLabels(node, nodeName) {
   let changed = false;
   for (const widget of node.widgets ?? []) {
-    const label = localizedInputLabel(nodeName, String(widget.name ?? ""));
+    const inputName = String(widget.name ?? "");
+    const label = artistModeInputLabel(node, nodeName, inputName)
+      ?? localizedInputLabel(nodeName, inputName);
     if (!label) continue;
     changed = setWidgetLabel(widget, label) || changed;
     const isPromptTextWidget = (
@@ -618,7 +642,9 @@ function installNodeLabels(node, nodeName) {
     }
   }
   for (const input of node.inputs ?? []) {
-    const label = localizedInputLabel(nodeName, String(input.name ?? ""));
+    const inputName = String(input.name ?? "");
+    const label = artistModeInputLabel(node, nodeName, inputName)
+      ?? localizedInputLabel(nodeName, inputName);
     if (label) changed = setWidgetLabel(input, label) || changed;
   }
   for (const output of node.outputs ?? []) {
@@ -634,52 +660,56 @@ function setWidgetLabel(widget, label) {
   const changed = widget.label !== label || (
     widget._state != null && widget._state.label !== label
   );
-  widget.label = label;
-  if (widget._state) widget._state.label = label;
+  if (widget.label !== label) widget.label = label;
+  if (widget._state && widget._state.label !== label) widget._state.label = label;
   return changed;
+}
+
+function artistModeInputLabel(node, nodeName, inputName) {
+  if (nodeName !== TARGET_NODE && nodeName !== STACK_NODE) return null;
+  const match = /^lora_([abc]|\d+)_(trigger|strength|min_strength|max_strength)$/.exec(inputName);
+  if (!match) return null;
+  const nameWidget = node.widgets?.find((widget) => widget.name === `lora_${match[1]}_name`);
+  if (!nameWidget) return null;
+  const language = activeLanguage();
+  const isArtist = String(nameWidget.value ?? "") === ARTIST_TAG_MODE;
+  const title = nodeName === TARGET_NODE ? match[1].toUpperCase() : match[1];
+  const styleTitle = nodeName === STACK_NODE
+    ? (language === "zh" ? `风格 ${title}` : `Style ${title}`)
+    : `LoRA ${title}`;
+  const labels = isArtist
+    ? {
+        trigger: language === "zh" ? `画师 ${title} Tag` : `Artist ${title} Tag`,
+        strength: language === "zh" ? `画师 ${title} Tag 权重` : `Artist ${title} Tag Weight`,
+        min_strength: language === "zh" ? `画师 ${title} 最低权重` : `Artist ${title} Minimum Weight`,
+        max_strength: language === "zh" ? `画师 ${title} 最高权重` : `Artist ${title} Maximum Weight`,
+      }
+    : {
+        trigger: language === "zh" ? `${styleTitle} 触发词` : `${styleTitle} Trigger Words`,
+        strength: language === "zh" ? `${styleTitle} 强度` : `${styleTitle} Strength`,
+        min_strength: language === "zh" ? `${styleTitle} 最低强度` : `${styleTitle} Minimum Strength`,
+        max_strength: language === "zh" ? `${styleTitle} 最高强度` : `${styleTitle} Maximum Strength`,
+      };
+  return labels[match[2]];
 }
 
 function artistModeLabels(node, nodeName) {
   let changed = false;
-  const language = activeLanguage();
-  const slots = nodeName === TARGET_NODE ? ["a", "b", "c"] : Array.from(
-    { length: MAX_STACK_INPUTS },
-    (_, index) => String(index + 1),
-  );
-  for (const slot of slots) {
-    const prefix = `lora_${slot}_`;
-    const nameWidget = node.widgets?.find((widget) => widget.name === `${prefix}name`);
-    if (!nameWidget) continue;
-    const isArtist = String(nameWidget.value ?? "") === ARTIST_TAG_MODE;
-    const title = nodeName === TARGET_NODE ? String(slot).toUpperCase() : String(slot);
-    const styleTitle = nodeName === STACK_NODE
-      ? (language === "zh" ? `风格 ${title}` : `Style ${title}`)
-      : `LoRA ${title}`;
-    const labels = isArtist
-      ? {
-          trigger: language === "zh" ? `画师 ${title} Tag` : `Artist ${title} Tag`,
-          strength: language === "zh" ? `画师 ${title} Tag 权重` : `Artist ${title} Tag Weight`,
-          min_strength: language === "zh" ? `画师 ${title} 最低权重` : `Artist ${title} Minimum Weight`,
-          max_strength: language === "zh" ? `画师 ${title} 最高权重` : `Artist ${title} Maximum Weight`,
-        }
-      : {
-          trigger: language === "zh" ? `${styleTitle} 触发词` : `${styleTitle} Trigger Words`,
-          strength: language === "zh" ? `${styleTitle} 强度` : `${styleTitle} Strength`,
-          min_strength: language === "zh" ? `${styleTitle} 最低强度` : `${styleTitle} Minimum Strength`,
-          max_strength: language === "zh" ? `${styleTitle} 最高强度` : `${styleTitle} Maximum Strength`,
-        };
-    for (const [field, label] of Object.entries(labels)) {
-      const widget = node.widgets?.find((item) => item.name === `${prefix}${field}`);
-      changed = setWidgetLabel(widget, label) || changed;
-      if (field === "trigger") {
-        for (const options of widgetOptionTargets(widget)) options.placeholder = label;
-        for (const element of widgetElements(widget)) {
-          const input = element.matches?.("textarea, input")
-            ? element
-            : element.querySelector?.("textarea, input");
-          input?.setAttribute("placeholder", label);
-          input?.setAttribute("aria-label", label);
-        }
+  for (const widget of node.widgets ?? []) {
+    const inputName = String(widget.name ?? "");
+    const label = artistModeInputLabel(node, nodeName, inputName);
+    if (!label) continue;
+    changed = setWidgetLabel(widget, label) || changed;
+    if (inputName.endsWith("_trigger")) {
+      for (const options of widgetOptionTargets(widget)) {
+        if (options.placeholder !== label) options.placeholder = label;
+      }
+      for (const element of widgetElements(widget)) {
+        const input = element.matches?.("textarea, input")
+          ? element
+          : element.querySelector?.("textarea, input");
+        if (input?.getAttribute("placeholder") !== label) input?.setAttribute("placeholder", label);
+        if (input?.getAttribute("aria-label") !== label) input?.setAttribute("aria-label", label);
       }
     }
   }
@@ -860,10 +890,17 @@ function setXyDomOverride(node, widgetName, disabled) {
   if (disabled) XY_DOM_OVERRIDES.set(key, { nodeId: node.id, widgetName });
   else XY_DOM_OVERRIDES.delete(key);
   if (!xyDomObserver && typeof MutationObserver !== "undefined") {
-    xyDomObserver = new MutationObserver(() => {
-      if (xyDomApplyScheduled) return;
+    xyDomObserver = new MutationObserver((mutations) => {
+      if (xyDomApplyScheduled || XY_DOM_OVERRIDES.size === 0) return;
+      const selector = "[node-id], [node-id] [aria-label]";
+      const controlsMounted = mutations.some((mutation) => Array.from(mutation.addedNodes).some(
+        (element) => element.nodeType === 1 && (
+          element.matches?.(selector) || element.querySelector?.(selector)
+        ),
+      ));
+      if (!controlsMounted) return;
       xyDomApplyScheduled = true;
-      queueMicrotask(() => {
+      requestAnimationFrame(() => {
         xyDomApplyScheduled = false;
         applyXyDomOverrides();
       });
@@ -1329,8 +1366,18 @@ function seedCountFromAxis(node) {
 
 function loraStackCountFromAxis(node) {
   const source = firstSourceForInput(node, "lorastacks");
-  if (!source) return null;
+  const count = styleStackCountFromSource(source);
+  return count == null ? null : count + (widgetValue(node, "include_base") === false ? 0 : 1);
+}
+
+function styleStackCountFromSource(source, visited = new Set()) {
+  if (!source || visited.has(source) || visited.size > 64) return null;
+  visited.add(source);
   const sourceName = nodeNameForUi(source);
+  if (sourceName === STACK_LIST_NAME_NODE) {
+    return styleStackCountFromSource(firstSourceForInput(source, "lora_stack_list"), visited);
+  }
+  if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE].includes(sourceName)) return 1;
   let count = null;
   if (sourceName === STACK_LISTER_NODE) {
     count = (source.inputs ?? []).filter(inputIsConnected).length;
@@ -1343,12 +1390,12 @@ function loraStackCountFromAxis(node) {
         ? flattenedStackChildren(source)?.length ?? null
         : (2 ** stackCount) - 1;
       if (count != null && sourceName === STACK_FLATTENER_NODE) {
-        count += widgetValue(source, "include_original") === true ? 1 : 0;
+        count += flattenedStackHasSeparateOriginal(source) ? 1 : 0;
       }
     }
   }
   if (count == null) return null;
-  return count + (widgetValue(node, "include_base") === false ? 0 : 1);
+  return count;
 }
 
 function axisMetadataFromSource(source, visited = new Set()) {
@@ -1399,23 +1446,9 @@ function axisMetadataFromSource(source, visited = new Set()) {
           .split(/[,，;；\s]+/).filter(Boolean).length;
       return { parameters: new Set(["seed"]), count };
     }
-    if (rawName === STACK_NODE || rawName === ARTIST_TEXT_NODE || rawName === ARTIST_REPLACER_NODE || rawName === STACK_SPLITTER_NODE || rawName === STACK_FLATTENER_NODE || rawName === STACK_LISTER_NODE) {
+    if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE, STACK_LIST_NAME_NODE, STACK_SPLITTER_NODE, STACK_FLATTENER_NODE, STACK_LISTER_NODE].includes(rawName)) {
       const includeBase = widgetValue(source, "include_base") !== false;
-      const count = rawName === STACK_NODE || rawName === ARTIST_TEXT_NODE || rawName === ARTIST_REPLACER_NODE
-        ? 1
-        : rawName === STACK_LISTER_NODE
-          ? (rawSource.inputs ?? []).filter(inputIsConnected).length
-          : (() => {
-              const stack = firstSourceForInput(rawSource, "lora_stack");
-              const stackCount = artistEntriesFromStackSource(stack)?.length ?? null;
-              if (stackCount == null) return null;
-              return rawName === STACK_FLATTENER_NODE
-                ? (() => {
-                    const children = flattenedStackChildren(rawSource);
-                    return children ? children.length + (widgetValue(rawSource, "include_original") === true ? 1 : 0) : null;
-                  })()
-                : (2 ** stackCount) - 1;
-            })();
+      const count = styleStackCountFromSource(rawSource);
       return {
         parameters: new Set(["lora_stack"]),
         count: count == null ? null : count + (includeBase ? 1 : 0),
@@ -1513,8 +1546,8 @@ function updateXyAxisState(node) {
     ? { text: widget.element?.textContent ?? "", visible: Boolean(widget.__loraTesterWarningVisible) }
     : null;
   if (!widget) widget = createXyWarningWidget(node);
-  widget.element.textContent = warning;
-  widget.element.title = warning;
+  if (widget.element.textContent !== warning) widget.element.textContent = warning;
+  if (widget.element.title !== warning) widget.element.title = warning;
   const visible = Boolean(warning);
   widget.__loraTesterWarningVisible = visible;
   const visibilityChanged = setWidgetVisible(widget, visible);
@@ -1560,6 +1593,8 @@ function installXySourceObservers(node, nodeName) {
         ? new Set(["artist_text"])
       : nodeName === ARTIST_REPLACER_NODE
         ? new Set(["match_tag", "lora_1_name", "lora_1_trigger", "lora_1_strength", "strength_mode"])
+      : nodeName === STACK_NAME_NODE || nodeName === STACK_LIST_NAME_NODE
+        ? new Set()
       : nodeName === AXIS_PREVIEW_NODE
         ? new Set()
       : nodeName === FLOW_AXIS_NODE
@@ -1602,6 +1637,9 @@ function stackEntryDataFromSource(node, visited = new Set()) {
   if (!node || visited.has(node) || visited.size > 64) return null;
   visited.add(node);
   const nodeName = nodeNameForUi(node);
+  if (nodeName === STACK_NAME_NODE) {
+    return stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited);
+  }
   if (nodeName === ARTIST_TEXT_NODE) {
     return splitArtistTags(widgetValue(node, "artist_text")).map((tag) => {
       const weighted = tag.match(/^\(\s*(.*?)\s*:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*\)$/);
@@ -1648,11 +1686,26 @@ function flattenedStackChildren(node) {
   const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"));
   if (!entries || entries.some((entry) => !Number.isFinite(entry.strength))) return null;
   const mode = widgetValue(node, "weight_mode") ?? "inherit";
+  if (entries.length === 1) {
+    const entry = entries[0];
+    if (mode === "inherit" || entry.strength === 1) return [entry];
+    if (mode === "normalize") return [{ ...entry, strength: 1 }];
+    return [entry, { ...entry, strength: 1 }];
+  }
   return entries.flatMap((entry) => {
     if (mode === "normalize") return [{ ...entry, strength: 1 }];
     if (mode === "dual" && entry.strength !== 1) return [{ ...entry, strength: 1 }, entry];
     return [entry];
   });
+}
+
+function flattenedStackHasSeparateOriginal(node) {
+  if (widgetValue(node, "include_original") !== true) return false;
+  const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"));
+  if (!entries) return false;
+  return entries.length > 1 || (
+    widgetValue(node, "weight_mode") === "normalize" && entries[0]?.strength !== 1
+  );
 }
 
 function stackArtistCountsFromNode(node, visited = new Set()) {
@@ -1668,7 +1721,7 @@ function stackArtistCountsFromNode(node, visited = new Set()) {
     const children = flattenedStackChildren(node);
     if (!stackEntries || !children) return [];
     const counts = children.map((entry) => entry.artists.length);
-    if (widgetValue(node, "include_original") === true) counts.unshift(stackEntries.reduce((total, tags) => total + tags.length, 0));
+    if (flattenedStackHasSeparateOriginal(node)) counts.unshift(stackEntries.reduce((total, tags) => total + tags.length, 0));
     return counts;
   }
 
@@ -1821,9 +1874,10 @@ function updateMixerWarning(node, nodeName) {
   );
   const language = activeLanguage();
   if (widget.element) {
-    widget.element.textContent = language === "zh"
+    const message = language === "zh"
       ? "Anima 多画师测试未检测到 Anima Artist Mixer；原生画师串混合效果可能不稳定。若不是 Anima 底模，可在高级设置中关闭 Mixer 开关。"
       : "Anima multi-artist test: Anima Artist Mixer was not found. Native artist-tag blending may be unstable; disable the advanced Mixer switch for non-Anima models.";
+    if (widget.element.textContent !== message) widget.element.textContent = message;
   }
   if (widget.__loraTesterWarningVisible === visible) return;
   widget.__loraTesterWarningVisible = visible;
@@ -1926,18 +1980,17 @@ function updateAnimaRemapWarning(node, nodeName) {
   const message = runtimeMessage ?? (language === "zh"
     ? "疑似 Anima 2.9B 底模 + LoRA：未安装 Anima 2.9B loraPatch 时，28-block 权重可能映射到错误层。"
     : "Possible Anima 2.9B model + LoRA: without the Anima 2.9B loraPatch, 28-block weights may target the wrong layers.");
-  if (widget.element) widget.element.textContent = message;
-
   const changed = widget.__loraTesterWarningVisible !== visible
     || widget.element?.textContent !== message;
+  if (widget.element && widget.element.textContent !== message) widget.element.textContent = message;
   widget.__loraTesterWarningVisible = visible;
   if (changed) {
     setWidgetVisible(widget, visible);
     refreshReactiveCollection(node, "widgets");
     node.graph?.incrementVersion?.();
     resizeNodeToWidgets(node);
+    node.setDirtyCanvas?.(true, true);
   }
-  node.setDirtyCanvas?.(true, true);
 }
 
 function installArtistObservers(node, nodeName) {
@@ -2025,11 +2078,11 @@ function installAxisPreview(node) {
     textarea.readOnly = true;
     textarea.spellcheck = false;
     textarea.wrap = "off";
-    textarea.value = text;
+    if (textarea.value !== text) textarea.value = text;
     textarea.setAttribute("aria-label", label);
     textarea.setAttribute("title", label);
     textarea.placeholder = language === "zh" ? "执行节点后显示轴内容。" : "Run this node to inspect the axis.";
-    Object.assign(textarea.style, { fontFamily: "monospace", whiteSpace: "pre", overflow: "auto" });
+    Object.assign(textarea.style, { fontFamily: "monospace", whiteSpace: "pre", overflow: "auto", tabSize: "4" });
   }
   if (!node[WORKFLOW_SIZE_RESTORED] && !node[MIN_WIDTH_APPLIED]) {
     node[MIN_WIDTH_APPLIED] = true;
@@ -2042,6 +2095,8 @@ function updateAxisPreview(node, message) {
   const value = message?.text;
   if (value == null) return;
   const text = Array.isArray(value) ? value.map(String).join("\n\n") : String(value);
+  const widget = node.widgets?.find((item) => item.name === AXIS_PREVIEW_WIDGET);
+  if (node.properties?.loraTesterAxisPreviewText === text && widget?.value === text) return;
   (node.properties ??= {}).loraTesterAxisPreviewText = text;
   installAxisPreview(node);
   node.setDirtyCanvas?.(true, true);
@@ -2068,6 +2123,43 @@ function supportsNodeUi(nodeName) {
     nodeName in INPUT_LABELS ||
     nodeName in OUTPUT_LABELS
   );
+}
+
+function updateReplacerAdvancedInput(node, nodeName) {
+  if (nodeName !== ARTIST_REPLACER_NODE) return;
+  const nameWidget = node.widgets?.find((widget) => widget.name === "custom_name");
+  if (!nameWidget) return;
+  const modern = app.extensionManager?.setting?.get?.("Comfy.VueNodes.Enabled") ??
+    app.ui?.settings?.getSettingValue?.("Comfy.VueNodes.Enabled") ?? false;
+  let toggle = node.widgets?.find((widget) => widget.name === REPLACER_ADVANCED_WIDGET);
+  let changed = false;
+  if (modern) {
+    changed = setWidgetVisible(nameWidget, true);
+    if (toggle) {
+      node.widgets = node.widgets.filter((widget) => widget !== toggle);
+      changed = true;
+    }
+  } else {
+    const properties = node.properties ??= {};
+    const visible = properties.loraTesterReplacerAdvanced === true;
+    if (!toggle) {
+      toggle = node.addWidget("button", REPLACER_ADVANCED_WIDGET, "", () => {
+        properties.loraTesterReplacerAdvanced = properties.loraTesterReplacerAdvanced !== true;
+        updateReplacerAdvancedInput(node, nodeName);
+      }, { serialize: false });
+      toggle.serialize = false;
+      changed = true;
+    }
+    const label = activeLanguage() === "zh"
+      ? (visible ? "隐藏高级配置" : "显示高级配置")
+      : (visible ? "Hide Advanced Inputs" : "Show Advanced Inputs");
+    changed = setWidgetLabel(toggle, label) || changed;
+    changed = setWidgetVisible(nameWidget, visible) || changed;
+  }
+  if (!changed) return;
+  refreshReactiveCollection(node, "widgets");
+  node.graph?.incrementVersion?.();
+  node.setDirtyCanvas?.(true, true);
 }
 
 function updateAnimaFlowWarning(node, nodeName) {
@@ -2160,6 +2252,7 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
   preserveUnavailableLoraValues(node);
   installWidgetTranslations(node, nodeName);
   const labelsChanged = installNodeLabels(node, nodeName);
+  updateReplacerAdvancedInput(node, nodeName);
   if (nodeName === TARGET_NODE) installDynamicLoraCount(node);
   if (nodeName === STACK_NODE) {
     installDynamicCount(node, "lora_count", STACK_ITEM_GROUPS, 16);
@@ -2211,14 +2304,17 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
 }
 
 function scheduleNodeUi(node, nodeName = nodeNameForUi(node)) {
-  if (!supportsNodeUi(nodeName)) return;
-  queueMicrotask(() => {
-    applyNodeUi(node, nodeName);
-    requestAnimationFrame(() => {
+  if (!supportsNodeUi(nodeName) || node[NODE_UI_SCHEDULED]) return;
+  node[NODE_UI_SCHEDULED] = true;
+  const applyPass = (remaining) => {
+    try {
       applyNodeUi(node, nodeName);
-      requestAnimationFrame(() => applyNodeUi(node, nodeName));
-    });
-  });
+    } finally {
+      if (remaining > 0) requestAnimationFrame(() => applyPass(remaining - 1));
+      else delete node[NODE_UI_SCHEDULED];
+    }
+  };
+  queueMicrotask(() => applyPass(2));
 }
 
 function scheduleGraphNodeUi(graph) {
@@ -2234,6 +2330,9 @@ app.registerExtension({
   name: "LoraTester.NodeUi",
   setup() {
     refreshAnimaFlowStatus();
+    app.ui?.settings?.addEventListener?.("Comfy.VueNodes.Enabled.change", () => {
+      scheduleGraphNodeUi(app.canvas?.graph ?? app.graph);
+    });
     const canvas = app.canvas;
     if (!canvas?.setGraph || canvas[GRAPH_SYNC_INSTALLED]) return;
     canvas[GRAPH_SYNC_INSTALLED] = true;
@@ -2307,8 +2406,11 @@ app.registerExtension({
     nodeType.prototype.onExecuted = function (message, ...args) {
       const result = originalOnExecuted?.apply(this, [message, ...args]);
       if (nodeData.name === AXIS_PREVIEW_NODE) updateAxisPreview(this, message);
-      this.__loraTesterAnimaRemapMessage = message?.lora_tester_anima_remap?.[0]?.message ?? null;
-      scheduleNodeUi(this, nodeData.name);
+      const runtimeMessage = message?.lora_tester_anima_remap?.[0]?.message ?? null;
+      if ((this.__loraTesterAnimaRemapMessage ?? null) !== runtimeMessage) {
+        this.__loraTesterAnimaRemapMessage = runtimeMessage;
+        updateAnimaRemapWarning(this, nodeData.name);
+      }
       return result;
     };
   },

@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
 from .artist import ARTIST_TAG_MODE, ArtistTagTemplate, parse_artist_tag_entries, split_artist_tags
@@ -14,6 +14,16 @@ def _display_name(value: str) -> str:
     filename = normalized.rsplit("/", 1)[-1]
     stem, _ = os.path.splitext(filename)
     return stem or filename or value
+
+
+def _normalize_stack_name(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("Style stack name must be text or None")
+    if any(character in value for character in ("\r", "\n", "\t")):
+        raise ValueError("Style stack name must be a single line without tabs")
+    return value.strip() or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +63,7 @@ class LoraStack:
 
     items: tuple[LoraStackItem, ...]
     artist_template: ArtistTagTemplate | None = None
+    custom_name: str | None = None
 
     def __post_init__(self) -> None:
         normalized = tuple(self.items)
@@ -65,6 +76,7 @@ class LoraStack:
         ):
             raise TypeError("artist_template must come from an Artist Tag Template node")
         object.__setattr__(self, "items", normalized)
+        object.__setattr__(self, "custom_name", _normalize_stack_name(self.custom_name))
 
     @classmethod
     def from_values(cls, values: Iterable[tuple[str, str, float]]) -> "LoraStack":
@@ -119,8 +131,48 @@ class LoraStackList:
         return cls(tuple(merged))
 
 
+def rename_lora_stack(stack: LoraStack, name: str | None) -> LoraStack:
+    if not isinstance(stack, LoraStack):
+        raise TypeError("rename_lora_stack expects a LoraStack")
+    normalized = _normalize_stack_name(name)
+    return stack if stack.custom_name == normalized else replace(stack, custom_name=normalized)
+
+
+def _expand_stack_name(template: str, index: int) -> str:
+    result: list[str] = []
+    position = 0
+    while position < len(template):
+        character = template[position]
+        if character == "\\" and position + 1 < len(template) and template[position + 1] in "\\{}":
+            result.append(template[position + 1])
+            position += 2
+        elif template.startswith("{i}", position):
+            result.append(str(index))
+            position += 3
+        else:
+            result.append(character)
+            position += 1
+    return "".join(result)
+
+
+def rename_lora_stack_list(stacks: LoraStackList, index: int, name: str) -> LoraStackList:
+    if not isinstance(stacks, LoraStackList):
+        raise TypeError("rename_lora_stack_list expects a LoraStackList")
+    if not isinstance(index, int) or isinstance(index, bool):
+        raise TypeError("Style stack index must be an integer")
+    if not stacks.stacks or index >= len(stacks.stacks):
+        return stacks
+    template = _normalize_stack_name(name) or ""
+    updated = tuple(
+        rename_lora_stack(stack, _expand_stack_name(template, position))
+        if index < 0 or position == index else stack
+        for position, stack in enumerate(stacks.stacks)
+    )
+    return stacks if all(first is second for first, second in zip(updated, stacks.stacks)) else LoraStackList(updated)
+
+
 def parse_artist_stack(
-    text: str, artist_template: ArtistTagTemplate | None = None
+    text: str, artist_template: ArtistTagTemplate | None = None, custom_name: str | None = None
 ) -> LoraStack:
     """Parse artist-only prompt text into one weighted stack entry per tag."""
 
@@ -133,6 +185,7 @@ def parse_artist_stack(
     return LoraStack(
         tuple(LoraStackItem(ARTIST_TAG_MODE, tag, weight) for tag, weight in entries),
         artist_template=artist_template,
+        custom_name=custom_name,
     )
 
 
@@ -168,7 +221,7 @@ def replace_stack_artist(
                 items.append(LoraStackItem(replacement.name, replacement.trigger_word, effective_strength))
             else:
                 items.append(LoraStackItem(ARTIST_TAG_MODE, tag, item.strength))
-    return LoraStack(tuple(items), artist_template=stack.artist_template) if changed else stack
+    return replace(stack, items=tuple(items)) if changed else stack
 
 
 def split_lora_stack(stack: LoraStack) -> LoraStackList:
@@ -180,7 +233,7 @@ def split_lora_stack(stack: LoraStack) -> LoraStackList:
     for size in range(1, len(stack.items) + 1):
         for indexes in itertools.combinations(range(len(stack.items)), size):
             combinations.append(
-                LoraStack(
+                stack if size == len(stack.items) else LoraStack(
                     tuple(stack.items[index] for index in indexes),
                     artist_template=stack.artist_template,
                 )
@@ -204,6 +257,15 @@ def flatten_lora_stack(
         raise ValueError(
             f"weight_mode must be one of {', '.join(FLATTEN_WEIGHT_MODES)}"
         )
+    if len(stack.items) == 1:
+        item = stack.items[0]
+        if weight_mode == "inherit" or float(item.strength) == 1.0:
+            return LoraStackList((stack,))
+        normalized = replace(item, strength=1.0)
+        if weight_mode == "normalize":
+            child = replace(stack, items=(normalized,))
+            return LoraStackList((stack, child) if include_original else (child,))
+        return LoraStackList((stack, LoraStack((normalized,), artist_template=stack.artist_template)))
     stacks = [stack] if include_original else []
     for item in stack.items:
         inherited = item
@@ -226,4 +288,5 @@ def flatten_lora_stack(
 __all__ = [
     "LoraStack", "LoraStackItem", "LoraStackList", "split_lora_stack",
     "flatten_lora_stack", "FLATTEN_WEIGHT_MODES", "parse_artist_stack", "replace_stack_artist",
+    "rename_lora_stack", "rename_lora_stack_list",
 ]

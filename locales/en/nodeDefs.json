@@ -1,4 +1,48 @@
 {
+  "LoraStackName": {
+    "display_name": "Style Stack Name",
+    "description": "Sets a literal style stack name without changing sampling contents. Empty clears the name and restores automatic naming when an axis is built.",
+    "inputs": {
+      "lora_stack": {
+        "name": "Style Stack",
+        "tooltip": "The style stack to name; entries, weights, and artist template are unchanged."
+      },
+      "custom_name": {
+        "name": "Style Name",
+        "tooltip": "Single-line literal name. Empty clears the custom name; {i} is not expanded in this node."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Style Stack",
+        "tooltip": "The named stack with unchanged sampling contents."
+      }
+    }
+  },
+  "LoraStackListName": {
+    "display_name": "Style Stack List Name",
+    "description": "Names a zero-based list position, or all positions when index is negative. {i} inserts the original list index; \\{i} keeps literal {i}; \\\\ keeps one backslash. Expansion runs once; other placeholders stay literal. Out-of-range indices do nothing. Empty clears selected names. Axis BASE is not a list item.",
+    "inputs": {
+      "lora_stack_list": {
+        "name": "Style Stack List",
+        "tooltip": "Ordered list; duplicate stack positions are preserved."
+      },
+      "index": {
+        "name": "Index (0-based; negative = all)",
+        "tooltip": "0 selects the first stack; any negative value selects all; index >= list length does nothing. Axis BASE is excluded."
+      },
+      "name_template": {
+        "name": "Name Template",
+        "tooltip": "Single-line name: {i} inserts the original zero-based list index, \\{i} produces literal {i}, and \\\\ produces one backslash. Unknown placeholders and unrecognized escapes stay literal. Empty clears selected names."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Style Stack List",
+        "tooltip": "Only selected names change; order and sampling contents are preserved."
+      }
+    }
+  },
   "LoraTesterAnimaFlowXYSampler": {
     "display_name": "AnimaFlow XY Test Sampler",
     "description": "Runs every XY cell through the installed Anima Flow Corrective Sampler. Missing dependency is an error; no KSampler fallback.",
@@ -487,6 +531,7 @@
     "display_name": "Style Stack",
     "description": "Configures Style files and artist tags that are applied together as one style stack.",
     "inputs": {
+      "custom_name": {"name":"Style Name","tooltip":"Optional single-line display name. Empty restores automatic axis naming. Text is literal; sampling contents stay unchanged."},
       "lora_count": {
         "name": "Test Item Count",
         "tooltip": "Number of enabled Style or artist-tag entries in this stack."
@@ -552,6 +597,7 @@
     "display_name": "Artist Tag Text Parser",
     "description": "Parses artist-only prompt text into a weighted style stack, preserving order and duplicates.",
     "inputs": {
+      "custom_name": {"name":"Style Name","tooltip":"Optional single-line display name. Empty restores automatic axis naming. Text is literal; sampling contents stay unchanged."},
       "artist_text": {
         "name": "Artist Tag Text",
         "tooltip": "Comma/newline-separated tags, e.g. @wlop, (@ask_(askzy):0.55). Unweighted tags use 1.0; tag-name parentheses are preserved."
@@ -572,6 +618,7 @@
     "display_name": "Artist Tag Replacer",
     "description": "Replaces all exact artist matches with another artist or LoRA. Other entries and the artist template are preserved.",
     "inputs": {
+      "custom_name": {"name":"Output Style Name","tooltip":"Advanced: empty preserves the input name. Nonempty text renames the output even if no artist matches; use Style Stack Name to clear a name."},
       "lora_stack": {
         "name": "Style Stack",
         "tooltip": "Input stack to modify. Ordinary LoRA trigger text is never matched."
@@ -626,7 +673,7 @@
   },
   "LoraStackFlattener": {
     "display_name": "Style Stack Flattener",
-    "description": "Flattens a style stack using inherited, normalized, or dual child weights; the optional original stack is unchanged.",
+    "description": "Flattens a style stack. Multi-entry children use automatic names; originals retain names. Single-entry stacks retain names and merge duplicate originals; Dual emits original weight then weight 1.",
     "inputs": {
       "lora_stack": {
         "name": "Style Stack",
@@ -634,11 +681,11 @@
       },
       "include_original": {
         "name": "Include Original Stack",
-        "tooltip": "Off: individual entries only. On: prepend the original stack, unchanged by Weight Mode."
+        "tooltip": "Include the unchanged original; merge identical single-entry children instead of duplicating them. Different normalized weights remain separate."
       },
       "weight_mode": {
         "name": "Weight Mode",
-        "tooltip": "Inherit keeps original weights. Normalize sets child weights to 1. Dual emits weight 1 then the inherited weight for each non-unit entry; unit-weight entries appear once.",
+        "tooltip": "Multi-entry: Inherit, Normalize to 1, or Dual weight 1 then original. Single-entry: Inherit/Normalize keep the name; Dual emits named original then unnamed weight 1. Unit weights appear once.",
         "values": {
           "inherit": "Inherit",
           "normalize": "Normalize",

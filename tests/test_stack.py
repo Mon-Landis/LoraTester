@@ -87,7 +87,7 @@ class StackModelTests(unittest.TestCase):
         self.assertEqual(len(flatten_lora_stack(stack).stacks), 2)
         single = LoraStack((item,))
         self.assertEqual(flatten_lora_stack(single).stacks, (single,))
-        self.assertEqual(flatten_lora_stack(single, True).stacks, (single, single))
+        self.assertEqual(flatten_lora_stack(single, True).stacks, (single,))
 
     def test_flattener_rejects_non_stack_values(self) -> None:
         for value in (None, [], LoraStackList(()), self.make_stack().items):
@@ -134,7 +134,7 @@ class StackModelTests(unittest.TestCase):
     def test_flattener_unit_weight_dual_emits_once_and_legacy_calls_inherit(self) -> None:
         stack = LoraStack((LoraStackItem("A.safetensors", strength=1.0),))
         self.assertEqual(len(flatten_lora_stack(stack, weight_mode="dual").stacks), 1)
-        self.assertEqual(flatten_lora_stack(stack, True, "dual").stacks, (stack, stack))
+        self.assertEqual(flatten_lora_stack(stack, True, "dual").stacks, (stack,))
         legacy = self.make_stack()
         self.assertEqual(flatten_lora_stack(legacy), flatten_lora_stack(legacy, weight_mode="inherit"))
 
