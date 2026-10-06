@@ -111,6 +111,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - 原始图片批次会占用 CPU 内存。矩阵规模和单图分辨率较大时，应先减小轴长度或 latent 尺寸，再考虑提高画布上限。
 - `extra_footer_text` 非空时会在所有轴详情后增加 `NOTES`；风格轴底部只显示代号来源表，提示词正文不会重复显示。
 
+### AnimaFlow XY 测试器
+
+`AnimaFlow XY 测试器`（`Lora Tester/XY`）是独立的 f 采测试入口，依赖 [Comfyui-anima-sampler](https://github.com/KeithZ117/Comfyui-anima-sampler) 的 `AnimaFlowCorrectiveSampler`。现有提示词、风格/画师、种子、组合轴和平铺后的风格轴继续使用 `XY_AXIS`；输出仍为对比图和行优先的原始图片批次。
+
+- 求解器、调度器、CFG 模式的选项和数值范围、默认值来自当前外部节点定义，不复制求解器或调度器实现。
+- `flow_settings` 可直接连接外部 `Anima Flow Settings`。每个单元格调用外部节点的公开 `sample()`；LoRA/画师路由和图表合成复用 XY 核心，VAE 每格只解码一次。
+- 新增 `AnimaFlow 参数轴`（`Lora Tester/XY/Axis`）：选择参数后输入每行一个值或逗号分隔的值。例如 `flow_solver` 填写 `flow_euler, flow_heun`，`flow_shift` 填写 `3, 5`。高级参数列表来自外部 Settings 节点；布尔参数使用 `true/false/1/0`。
+- 参数轴覆盖基础配置；高级参数轴只覆盖对应设置，保留其余已连接的设置。可进行交叉合并，也可先接入轴内容预览。
+- 原生 `sampler_name`、`scheduler` 不能自动翻译为 Flow 参数；误接时明确报错。普通 XY 测试器也不会接受 Flow 专用参数。
+- 缺少依赖或接口不兼容时保留兼容壳，工作流仍可识别节点；显示红色依赖提示和项目链接，执行被阻止，绝不回退到 KSampler。安装/更新依赖后重启 ComfyUI 并刷新浏览器。
+- f 采保持自己的步进预览和进度语义，XY 层报告完成格数，不干预其内部模型调用次数。
+
+推荐连线：`画师文本解析 -> 风格组合平铺 -> Style Axis -> AnimaFlow XY 测试器.x_axis`，提示词轴接 `y_axis`；比较 Flow 参数时，将 `AnimaFlow 参数轴` 接任一轴。
+
 ### 轴内容预览
 
 将任意轴节点的 `axis` 输出接入 `轴内容预览`（`Axis Content Preview`）。支持提示词轴、风格轴、种子轴、组合轴和采用 `XY_AXIS` 类型的自定义轴。执行后，节点内显示可选择、复制和滚动的只读多行文本，不会将结构压平；`预览文本语言` 可选择中文或英文。

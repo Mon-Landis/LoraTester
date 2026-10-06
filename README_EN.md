@@ -111,6 +111,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - The original image batch consumes CPU memory. For large matrices and high resolutions, reduce axis lengths or latent dimensions before increasing the canvas limit.
 - Non-empty `extra_footer_text` adds a final `NOTES` section. Style footers only show the code-to-source map; prompt bodies are not repeated below the sheet.
 
+### AnimaFlow XY Test Sampler
+
+The independent `AnimaFlow XY Test Sampler` in `Lora Tester/XY` requires [Comfyui-anima-sampler](https://github.com/KeithZ117/Comfyui-anima-sampler) and its `AnimaFlowCorrectiveSampler`. Existing prompt, style/artist, seed and combined `XY_AXIS` sources remain reusable. Outputs remain a comparison sheet and a row-major decoded image batch.
+
+- Solver, schedule and CFG-mode options, numeric limits and defaults come from the installed external node schema. No solver or scheduler implementation is copied.
+- Connect the external `Anima Flow Settings` to `flow_settings`. Every cell calls the public `sample()`; LoRA/artist routing and composition reuse the XY core, with one VAE decode per cell.
+- `AnimaFlow Parameter Axis` in `Lora Tester/XY/Axis` accepts one value per line or comma-separated values. Examples: `flow_solver` = `flow_euler, flow_heun`, `flow_shift` = `3, 5`. Advanced parameter names come from the external Settings node. Booleans use `true/false/1/0`.
+- Axis parameters override base controls. An advanced axis changes only its selected setting, preserving other supplied settings. Parameter axes support cross merge and Axis Content Preview.
+- Native `sampler_name`/`scheduler` cannot be translated into Flow options and are rejected. The native XY sampler likewise rejects Flow-only parameters.
+- Missing or incompatible dependencies retain a workflow-compatible shell with a red dependency warning and project link. Execution is blocked, with no KSampler fallback. Install/update the dependency, restart ComfyUI and refresh the browser.
+- Flow retains its own step previews/progress; the XY layer reports completed cells without rewriting upstream model-call semantics.
+
+Example: `Artist Tag Text Parser -> Style Stack Flattener -> Style Axis -> AnimaFlow XY Test Sampler.x_axis`, with Prompt Axis on `y_axis`. Use an AnimaFlow Parameter Axis on either socket for Flow comparisons.
+
 ### Axis Content Preview
 
 Connect any axis output to `Axis Content Preview`. It accepts prompt, style, seed, composed, and custom `XY_AXIS` data. After execution, the node displays read-only multiline text with preserved indentation, selectable text, and scrolling. Choose Chinese or English using `Preview Language`.

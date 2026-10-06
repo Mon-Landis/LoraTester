@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { ComfyWidgets } from "../../scripts/widgets.js";
+import { api } from "../../scripts/api.js";
 
 const TARGET_NODE = "LoraTesterSampler";
 const STACK_NODE = "LoraStack";
@@ -10,6 +11,12 @@ const STACK_FLATTENER_NODE = "LoraStackFlattener";
 const STACK_LISTER_NODE = "LoraStackLister";
 const MULTI_PROMPT_NODE = "MultiPromptSample";
 const XY_SAMPLER_NODE = "LoraTesterXYSampler";
+const FLOW_XY_NODE = "LoraTesterAnimaFlowXYSampler";
+const FLOW_AXIS_NODE = "LoraTesterAnimaFlowParameterAxis";
+const FLOW_WARNING_WIDGET = "lora_tester_anima_flow_warning";
+const FLOW_DEPENDENCY_URL = "https://github.com/KeithZ117/Comfyui-anima-sampler";
+const FLOW_COLOR_STATE = Symbol("loraTesterFlowColorState");
+let animaFlowDependencyStatus = null;
 const MULTI_PROMPT_INPUT_NODE = "LoraTesterMultiPromptInput";
 const GLOBAL_PROMPT_APPEND_NODE = "LoraTesterGlobalPromptAppend";
 const PROMPT_AXIS_NODE = "LoraTesterPromptAxis";
@@ -382,6 +389,31 @@ const OUTPUT_LABELS = {
   },
 };
 
+OPTION_LABELS[FLOW_XY_NODE] = {
+  ...OPTION_LABELS.LoraTesterXYSampler,
+  cfg_mode: {
+    const: { en: "Constant CFG", zh: "恒定 CFG" },
+    "bump cfg": { en: "Bump CFG", zh: "凸峰 CFG" },
+    "ramp cfg": { en: "Ramp CFG", zh: "渐升 CFG" },
+  },
+};
+INPUT_LABELS[FLOW_XY_NODE] = {
+  ...INPUT_LABELS.LoraTesterXYSampler,
+  cfg_mode: { en: "CFG Mode", zh: "CFG 模式" },
+  flow_solver: { en: "Flow Solver", zh: "Flow 求解器" },
+  flow_schedule: { en: "Flow Schedule", zh: "Flow 调度器" },
+  flow_shift: { en: "Flow Shift", zh: "Flow 偏移" },
+  add_noise: { en: "Add Noise", zh: "加入噪声" },
+  flow_settings: { en: "Anima Flow Settings", zh: "Anima Flow 高级设置" },
+};
+INPUT_LABELS[FLOW_AXIS_NODE] = {
+  parameter: { en: "Parameter", zh: "参数" },
+  values_text: { en: "Parameter Values", zh: "参数值文本" },
+  axis_title: { en: "Axis Title", zh: "轴标题" },
+};
+OUTPUT_LABELS[FLOW_XY_NODE] = OUTPUT_LABELS.LoraTesterXYSampler;
+OUTPUT_LABELS[FLOW_AXIS_NODE] = { axis: { en: "Axis", zh: "轴" } };
+
 const LORA_GROUPS = [
   {
     minimumCount: 2,
@@ -486,7 +518,9 @@ function installWidgetTranslations(node, nodeName) {
 
 function preserveUnavailableLoraValues(node) {
   for (const widget of node.widgets ?? []) {
-    if (!/^lora_(?:[abc]|\d+)_name$/.test(String(widget.name ?? ""))) continue;
+    const isFlowCombo = [FLOW_XY_NODE, FLOW_AXIS_NODE].includes(nodeNameForUi(node)) &&
+      ["cfg_mode", "flow_solver", "flow_schedule", "parameter"].includes(widget.name);
+    if (!isFlowCombo && !/^lora_(?:[abc]|\d+)_name$/.test(String(widget.name ?? ""))) continue;
     const value = widget.value;
     if (value == null || value === "") continue;
     for (const options of widgetOptionTargets(widget)) {
@@ -1323,6 +1357,12 @@ function axisMetadataFromSource(source, visited = new Set()) {
   }
   visited.add(source);
   const sourceName = nodeNameForUi(source);
+  if (sourceName === FLOW_AXIS_NODE) {
+    return {
+      parameters: new Set([String(widgetValue(source, "parameter") ?? "flow_solver")]),
+      count: String(widgetValue(source, "values_text") ?? "").split(/[,\r\n]+/).filter((value) => value.trim()).length,
+    };
+  }
   if (sourceName === AXIS_PREVIEW_NODE) {
     return axisMetadataFromSource(firstSourceForInput(source, "axis"), visited);
   }
@@ -1348,7 +1388,7 @@ function axisMetadataFromSource(source, visited = new Set()) {
         count: promptCountFromSource(rawSource),
       };
     }
-    if (rawName === PROMPT_AXIS_NODE || rawName === SEED_AXIS_NODE || rawName === LORA_STACK_AXIS_NODE || rawName === AXIS_COMPOSER_NODE || rawName === AXIS_PREVIEW_NODE) {
+    if (rawName === PROMPT_AXIS_NODE || rawName === SEED_AXIS_NODE || rawName === LORA_STACK_AXIS_NODE || rawName === AXIS_COMPOSER_NODE || rawName === AXIS_PREVIEW_NODE || rawName === FLOW_AXIS_NODE) {
       return axisMetadataFromSource(rawSource, visited);
     }
     if (rawName === SEED_LIST_NODE) {
@@ -1441,6 +1481,11 @@ function updateXyAxisState(node) {
     sampler_name: "sampler_name",
     scheduler: "scheduler",
     denoise: "denoise",
+    cfg_mode: "cfg_mode",
+    flow_solver: "flow_solver",
+    flow_schedule: "flow_schedule",
+    flow_shift: "flow_shift",
+    add_noise: "add_noise",
   };
   for (const [parameter, widgetName] of Object.entries(widgetByParameter)) {
     setWidgetDisabled(
@@ -1517,6 +1562,8 @@ function installXySourceObservers(node, nodeName) {
         ? new Set(["match_tag", "lora_1_name", "lora_1_trigger", "lora_1_strength", "strength_mode"])
       : nodeName === AXIS_PREVIEW_NODE
         ? new Set()
+      : nodeName === FLOW_AXIS_NODE
+        ? new Set(["parameter", "values_text", "axis_title"])
       : null;
   if (!relevantNames) return;
   node[XY_SOURCE_OBSERVER] = true;
@@ -1761,7 +1808,7 @@ function createWarningWidget(node) {
 }
 
 function updateMixerWarning(node, nodeName) {
-  if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE].includes(nodeName)) return;
+  if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE, FLOW_XY_NODE].includes(nodeName)) return;
   let widget = node.widgets?.find((item) => item.name === ARTIST_WARNING_WIDGET);
   const created = !widget;
   if (!widget) widget = createWarningWidget(node);
@@ -1786,7 +1833,7 @@ function updateMixerWarning(node, nodeName) {
   if (!created || !node[WORKFLOW_SIZE_RESTORED]) resizeNodeToWidgets(node);
 }
 
-function createAnimaRemapWarningWidget(node) {
+function createAnimaRemapWarningWidget(node, widgetName = ANIMA_REMAP_WARNING_WIDGET) {
   const element = document.createElement("div");
   element.setAttribute("role", "alert");
   Object.assign(element.style, {
@@ -1805,7 +1852,7 @@ function createAnimaRemapWarningWidget(node) {
   let widget;
   if (typeof node.addDOMWidget === "function") {
     widget = node.addDOMWidget(
-      ANIMA_REMAP_WARNING_WIDGET,
+      widgetName,
       "lora-tester-warning",
       element,
       {
@@ -1816,7 +1863,7 @@ function createAnimaRemapWarningWidget(node) {
     );
   } else {
     widget = {
-      name: ANIMA_REMAP_WARNING_WIDGET,
+      name: widgetName,
       type: "lora-tester-warning",
       element,
       options: { serialize: false },
@@ -1858,7 +1905,7 @@ function anyLoraSelected(node, nodeName) {
     const stackSource = firstSourceForInput(node, "lorastacks");
     return stackSource != null;
   }
-  if (nodeName === XY_SAMPLER_NODE) {
+  if (nodeName === XY_SAMPLER_NODE || nodeName === FLOW_XY_NODE) {
     for (const axis of [firstSourceForInput(node, "x_axis"), firstSourceForInput(node, "y_axis")]) {
       if (axis && nodeNameForUi(axis) === LORA_STACK_AXIS_NODE) return true;
     }
@@ -1867,7 +1914,7 @@ function anyLoraSelected(node, nodeName) {
 }
 
 function updateAnimaRemapWarning(node, nodeName) {
-  if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE].includes(nodeName)) return;
+  if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE, FLOW_XY_NODE].includes(nodeName)) return;
   let widget = node.widgets?.find((item) => item.name === ANIMA_REMAP_WARNING_WIDGET);
   if (!widget) widget = createAnimaRemapWarningWidget(node);
 
@@ -2023,9 +2070,93 @@ function supportsNodeUi(nodeName) {
   );
 }
 
+function updateAnimaFlowWarning(node, nodeName) {
+  if (nodeName !== FLOW_XY_NODE && nodeName !== FLOW_AXIS_NODE) return;
+  const available = animaFlowDependencyStatus?.available ?? registeredNodeAvailable("AnimaFlowCorrectiveSampler");
+  const savedColors = node.properties?.loraTesterFlowOriginalColors;
+  if (available && savedColors) {
+    node.color = savedColors.color;
+    node.bgcolor = savedColors.bgcolor;
+    delete node.properties.loraTesterFlowOriginalColors;
+    delete node[FLOW_COLOR_STATE];
+  }
+  let widget = node.widgets?.find((item) => item.name === FLOW_WARNING_WIDGET);
+  if (!widget && available) return;
+  if (!widget) {
+    widget = createAnimaRemapWarningWidget(node, FLOW_WARNING_WIDGET);
+    widget.element.style.borderLeftColor = "#ef4444";
+    widget.element.style.background = "rgba(75, 20, 20, 0.96)";
+    widget.element.style.color = "#ffe0e0";
+  }
+  const visible = !available;
+  const message = activeLanguage() === "zh"
+    ? "需要安装/更新 Comfyui-anima-sampler 并重启 ComfyUI；不会回退到普通采样器。"
+    : "Install/update Comfyui-anima-sampler and restart ComfyUI; no KSampler fallback.";
+  const warningKey = visible ? activeLanguage() + ":" + (animaFlowDependencyStatus?.error ?? "") : "";
+  if (widget.__loraTesterFlowWarningKey === warningKey) return;
+  widget.__loraTesterFlowWarningKey = warningKey;
+  widget.element.replaceChildren();
+  if (visible) {
+    const text = document.createElement("div");
+    text.textContent = message;
+    const link = document.createElement("a");
+    link.href = FLOW_DEPENDENCY_URL;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Comfyui-anima-sampler";
+    link.style.color = "#ffb4b4";
+    widget.element.append(text, link);
+    widget.element.title = animaFlowDependencyStatus?.error ?? message;
+    if (!node[FLOW_COLOR_STATE]) node[FLOW_COLOR_STATE] = savedColors ?? { color: node.color, bgcolor: node.bgcolor };
+    (node.properties ??= {}).loraTesterFlowOriginalColors = node[FLOW_COLOR_STATE];
+    node.color = "#7f1d1d";
+    node.bgcolor = "#3b1515";
+  } else if (node[FLOW_COLOR_STATE]) {
+    node.color = node[FLOW_COLOR_STATE].color;
+    node.bgcolor = node[FLOW_COLOR_STATE].bgcolor;
+    delete node[FLOW_COLOR_STATE];
+  }
+  widget.__loraTesterWarningVisible = visible;
+  setWidgetVisible(widget, visible);
+  refreshReactiveCollection(node, "widgets");
+  node.graph?.incrementVersion?.();
+  node.setDirtyCanvas?.(true, true);
+}
+
+function updateAnimaFlowAxisHint(node) {
+  const name = String(widgetValue(node, "parameter") ?? "flow_solver");
+  const schema = animaFlowDependencyStatus?.schema?.[name];
+  if (!schema) return;
+  const lead = activeLanguage() === "zh" ? "每行一个值或逗号分隔。" : "One value per line or comma-separated. ";
+  const hint = schema.values
+    ? lead + schema.values.join(", ")
+    : lead + (schema.kind === "BOOLEAN" ? "true, false, 1, 0" : name + " [" + (schema.min ?? "-∞") + ", " + (schema.max ?? "∞") + "]");
+  const widget = node.widgets?.find((item) => item.name === "values_text");
+  if (!widget) return;
+  for (const options of widgetOptionTargets(widget)) options.tooltip = hint;
+  for (const element of widgetElements(widget)) {
+    const textarea = element.matches?.("textarea") ? element : element.querySelector?.("textarea");
+    if (!textarea) continue;
+    textarea.title = hint;
+    textarea.placeholder = hint;
+  }
+}
+
+async function refreshAnimaFlowStatus() {
+  try {
+    const response = await api.fetchApi("/lora_tester/anima_flow/status");
+    if (!response.ok) return;
+    animaFlowDependencyStatus = await response.json();
+    scheduleGraphNodeUi(app.canvas?.graph);
+  } catch (error) {
+    console.warn("[LoraTester] Could not check AnimaFlow dependency", error);
+  }
+}
+
 function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
   if (!supportsNodeUi(nodeName)) return;
   if (nodeName === AXIS_PREVIEW_NODE) installAxisPreview(node);
+  if (nodeName === FLOW_AXIS_NODE) updateAnimaFlowAxisHint(node);
   preserveUnavailableLoraValues(node);
   installWidgetTranslations(node, nodeName);
   const labelsChanged = installNodeLabels(node, nodeName);
@@ -2037,7 +2168,7 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
     installMultiPromptLayout(node);
     installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
   }
-  if (nodeName === MULTI_PROMPT_INPUT_NODE || nodeName === GLOBAL_PROMPT_APPEND_NODE || nodeName === ARTIST_TEXT_NODE) {
+  if (nodeName === MULTI_PROMPT_INPUT_NODE || nodeName === GLOBAL_PROMPT_APPEND_NODE || nodeName === ARTIST_TEXT_NODE || nodeName === FLOW_AXIS_NODE) {
     installMultiPromptLayout(node);
   }
   if (nodeName === MULTI_PROMPT_INPUT_NODE) {
@@ -2057,7 +2188,7 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
       };
     }
   }
-  if (nodeName === XY_SAMPLER_NODE) installXyObservers(node);
+  if (nodeName === XY_SAMPLER_NODE || nodeName === FLOW_XY_NODE) installXyObservers(node);
   if (nodeName === STACK_LISTER_NODE) installDynamicStackList(node);
   const artistLabelsChanged = (
     nodeName === TARGET_NODE || nodeName === STACK_NODE
@@ -2076,6 +2207,7 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
   }
   updateMixerWarning(node, nodeName);
   updateAnimaRemapWarning(node, nodeName);
+  updateAnimaFlowWarning(node, nodeName);
 }
 
 function scheduleNodeUi(node, nodeName = nodeNameForUi(node)) {
@@ -2101,6 +2233,7 @@ function scheduleGraphNodeUi(graph) {
 app.registerExtension({
   name: "LoraTester.NodeUi",
   setup() {
+    refreshAnimaFlowStatus();
     const canvas = app.canvas;
     if (!canvas?.setGraph || canvas[GRAPH_SYNC_INSTALLED]) return;
     canvas[GRAPH_SYNC_INSTALLED] = true;
@@ -2130,14 +2263,15 @@ app.registerExtension({
     const hasDynamicPromptCount = nodeData.name === MULTI_PROMPT_NODE;
     const hasDynamicStackList = nodeData.name === STACK_LISTER_NODE;
     const hasSeedMode = nodeData.name === SEED_LIST_NODE;
-    const hasLongPromptLayout = [MULTI_PROMPT_INPUT_NODE, GLOBAL_PROMPT_APPEND_NODE, ARTIST_TEXT_NODE].includes(
+    const hasLongPromptLayout = [MULTI_PROMPT_INPUT_NODE, GLOBAL_PROMPT_APPEND_NODE, ARTIST_TEXT_NODE, FLOW_AXIS_NODE].includes(
       nodeData.name,
     );
-    const hasXyObserver = nodeData.name === XY_SAMPLER_NODE;
+    const hasXyObserver = nodeData.name === XY_SAMPLER_NODE || nodeData.name === FLOW_XY_NODE;
     const hasAnimaRemapWarning = [
       TARGET_NODE,
       MULTI_PROMPT_NODE,
       XY_SAMPLER_NODE,
+      FLOW_XY_NODE,
     ].includes(nodeData.name);
     const hasWidgetTranslations = nodeData.name in OPTION_LABELS;
     const hasNodeLabels =

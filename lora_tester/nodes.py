@@ -24,6 +24,10 @@ from .artist import (
     split_artist_tags,
 )
 from .anima_patch import anima_remap_diagnosis, warn_missing_anima_remap
+from .anima_flow_adapter import (
+    FLOW_CONTROLS, PROJECT_URL, AnimaFlowAdapter, AnimaFlowDependencyError,
+    anima_flow_status, missing_control_schema, register_anima_flow_routes, validate_control,
+)
 from .axis_preview import format_axis_preview
 from .comfy_adapter import pil_to_comfy_image
 from .compositor import LoraComparisonCompositor, image_to_pil
@@ -40,6 +44,8 @@ from .stack import (
 )
 from .styles import StyleConfig, available_style_decorators
 from .xy import (
+    AxisEntry,
+    AxisParameter,
     MAX_AXIS_ENTRIES,
     MAX_SEED,
     RANDOM_GENERATOR_SEED,
@@ -1315,6 +1321,10 @@ class XYTestSampler(LoraTesterSampler):
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
+        return cls._input_types()
+
+    @classmethod
+    def _input_types(cls, native_choices: bool = True) -> dict[str, Any]:
         return {
             "required": {
                 "model": ("MODEL",),
@@ -1350,8 +1360,8 @@ class XYTestSampler(LoraTesterSampler):
                     "FLOAT",
                     {"default": 8.0, "min": 0.0, "max": 100.0, "step": 0.1, "round": 0.01},
                 ),
-                "sampler_name": (_get_sampler_names(),),
-                "scheduler": (_get_scheduler_names(),),
+                "sampler_name": (_get_sampler_names() if native_choices else [],),
+                "scheduler": (_get_scheduler_names() if native_choices else [],),
                 "denoise": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "color_mode": COLOR_MODE_INPUT,
                 "show_axis_details": (
@@ -1520,6 +1530,9 @@ class XYTestSampler(LoraTesterSampler):
         return_raw: bool,
         log_label: str,
         x_group_gap: int | None = None,
+        sampling_backend: Callable | None = None,
+        base_parameters: dict[str, Any] | None = None,
+        parameter_resolver: Callable | None = None,
     ) -> tuple[Any, Any]:
         _validate_single_latent(latent_image)
         if not isinstance(x_axis, XYAxis) or not isinstance(y_axis, XYAxis):
@@ -1540,14 +1553,18 @@ class XYTestSampler(LoraTesterSampler):
             "scheduler": str(scheduler),
             "denoise": float(denoise),
         }
-        _set_int_parameter("seed", 0, MAX_SEED)(base_values, seed)
-        _set_int_parameter("steps", 1, 10000)(base_values, steps)
-        _set_float_parameter("cfg", 0.0, 100.0)(base_values, cfg)
-        _set_float_parameter("denoise", 0.0, 1.0)(base_values, denoise)
+        if sampling_backend is None:
+            _set_int_parameter("seed", 0, MAX_SEED)(base_values, seed)
+            _set_int_parameter("steps", 1, 10000)(base_values, steps)
+            _set_float_parameter("cfg", 0.0, 100.0)(base_values, cfg)
+            _set_float_parameter("denoise", 0.0, 1.0)(base_values, denoise)
+        if base_parameters is not None:
+            base_values.update(base_parameters)
+        resolve_values = parameter_resolver or _resolve_xy_values
         tasks: list[tuple[int, int, dict[str, Any]]] = []
         for row, y_entry in enumerate(y_axis.entries):
             for column, x_entry in enumerate(x_axis.entries):
-                tasks.append((row, column, _resolve_xy_values(base_values, x_entry, y_entry)))
+                tasks.append((row, column, resolve_values(base_values, x_entry, y_entry)))
         if not tasks:
             raise ValueError("XY axes must produce at least one sampling cell")
 
@@ -1667,22 +1684,29 @@ class XYTestSampler(LoraTesterSampler):
                                         "column reuse" if group_task_index else "column build"
                                     ),
                                 )
-                            sampled = _common_ksampler(
-                                task_model,
-                                int(values["seed"]),
-                                int(values["steps"]),
-                                float(values["cfg"]),
-                                values["sampler_name"],
-                                values["scheduler"],
-                                positive,
-                                negative,
-                                latent_image,
-                                float(values["denoise"]),
-                                progress=progress,
-                                completed_tasks=task_index,
-                                total_tasks=total_tasks,
-                            )
-                            decoded = _decode_vae(vae, sampled)
+                            if sampling_backend is None:
+                                sampled = _common_ksampler(
+                                    task_model,
+                                    int(values["seed"]),
+                                    int(values["steps"]),
+                                    float(values["cfg"]),
+                                    values["sampler_name"],
+                                    values["scheduler"],
+                                    positive,
+                                    negative,
+                                    latent_image,
+                                    float(values["denoise"]),
+                                    progress=progress,
+                                    completed_tasks=task_index,
+                                    total_tasks=total_tasks,
+                                )
+                                decoded = _decode_vae(vae, sampled)
+                            else:
+                                sampled, decoded = sampling_backend(
+                                    model=task_model, positive=positive, negative=negative,
+                                    latent=latent_image, values=values, vae=vae,
+                                    progress=progress, completed_tasks=task_index, total_tasks=total_tasks,
+                                )
                             shape = getattr(decoded, "shape", None)
                             if shape is None or len(shape) != 4 or int(shape[0]) != 1:
                                 raise ValueError("VAE decode must return shape [1,H,W,C] for each XY cell")
@@ -1738,6 +1762,133 @@ class XYTestSampler(LoraTesterSampler):
         finally:
             sheet_pil.close()
         return sheet, raw_batch
+
+
+class AnimaFlowXYTestSampler(XYTestSampler):
+    DESCRIPTION = (
+        "XY testing through the installed Anima Flow Corrective Sampler. "
+        "Requires Comfyui-anima-sampler; never falls back to KSampler. " + PROJECT_URL
+    )
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        inputs = XYTestSampler._input_types(native_choices=False)
+        try:
+            controls = AnimaFlowAdapter().controls
+        except AnimaFlowDependencyError:
+            controls = missing_control_schema()
+        required = inputs["required"]
+        required.pop("sampler_name")
+        required.pop("scheduler")
+        controls["seed"] = (controls["seed"][0], {**controls["seed"][1], "control_after_generate": True})
+        inputs["required"] = {}
+        for name, specification in required.items():
+            if name == "seed":
+                inputs["required"].update(controls)
+            elif name not in FLOW_CONTROLS:
+                inputs["required"][name] = specification
+        inputs["optional"]["flow_settings"] = (
+            "ANIMA_FLOW_SETTINGS", {"tooltip": "Connect the external Anima Flow Settings node; settings are passed to f-sampler."},
+        )
+        return inputs
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, **values: Any) -> bool | str:
+        status = anima_flow_status()
+        return True if status["available"] else status["error"]
+
+    @classmethod
+    def IS_CHANGED(cls, **values: Any) -> Any:
+        return (super().IS_CHANGED(**values), repr(anima_flow_status()))
+
+    def sample(
+        self, model: Any, clip: Any, vae: Any, latent_image: dict[str, Any],
+        x_axis: XYAxis, y_axis: XYAxis, positive_prompt: str, negative_prompt: str,
+        seed: int, steps: int, cfg: float, cfg_mode: str, flow_solver: str,
+        flow_schedule: str, flow_shift: float, denoise: float, add_noise: bool,
+        color_mode: str, show_axis_details: bool, log_test_details: bool = True,
+        use_anima_artist_mixer: bool = True,
+        max_canvas_megapixels: float = DEFAULT_MAX_CANVAS_MEGAPIXELS,
+        extra_footer_text: str = "", custom_style: StyleConfig | None = None,
+        artist_tag_template: ArtistTagTemplate | None = None,
+        anima_mixer_config: AnimaArtistMixerConfig | None = None,
+        flow_settings: Any = None, unique_id: Any = None,
+    ) -> Any:
+        adapter = AnimaFlowAdapter()
+        controls = dict(
+            seed=seed, steps=steps, cfg=cfg, cfg_mode=cfg_mode,
+            flow_solver=flow_solver, flow_schedule=flow_schedule,
+            flow_shift=flow_shift, denoise=denoise, add_noise=add_noise,
+            flow_settings=flow_settings,
+        )
+
+        def resolve(base_values, x_entry, y_entry):
+            values = dict(base_values)
+            parameters = dict(merge_axis_parameters(x_entry, y_entry))
+            for name in ("prompt", "lora_stack"):
+                if name in parameters:
+                    _XY_PARAMETER_HANDLERS[name](values, parameters.pop(name))
+            return adapter.resolve_parameters(values, parameters)
+
+        result = self._sample_xy(
+            model=model, clip=clip, vae=vae, latent_image=latent_image,
+            x_axis=x_axis, y_axis=y_axis, positive_prompt=positive_prompt,
+            negative_prompt=negative_prompt, seed=seed, steps=steps, cfg=cfg,
+            sampler_name="", scheduler="", denoise=denoise,
+            color_mode=color_mode, show_axis_details=show_axis_details,
+            log_test_details=log_test_details, use_anima_artist_mixer=use_anima_artist_mixer,
+            max_canvas_megapixels=max_canvas_megapixels, extra_footer_text=extra_footer_text,
+            custom_style=custom_style, artist_tag_template=artist_tag_template,
+            anima_mixer_config=anima_mixer_config, unique_id=unique_id,
+            return_raw=True, log_label="AnimaFlow XY image",
+            sampling_backend=adapter.sample_cell, base_parameters=controls, parameter_resolver=resolve,
+        )
+        return self._with_anima_remap_ui(model, result)
+
+
+class AnimaFlowParameterAxisNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        try:
+            names = list(AnimaFlowAdapter().parameter_schema)
+        except AnimaFlowDependencyError:
+            names = list(FLOW_CONTROLS)
+        return {"required": {
+            "parameter": (names, {"default": "flow_solver"}),
+            "values_text": ("STRING", {"default": "", "multiline": True, "tooltip": "One value per line, or comma-separated; options come from the installed Anima sampler."}),
+            "axis_title": ("STRING", {"default": "FLOW", "tooltip": "Display title for this parameter axis."}),
+        }}
+
+    RETURN_TYPES = ("XY_AXIS",)
+    RETURN_NAMES = ("axis",)
+    FUNCTION = "build_axis"
+    CATEGORY = "Lora Tester/XY/Axis"
+    DESCRIPTION = "Builds an XY axis for basic or advanced Anima Flow parameters. " + PROJECT_URL
+
+    def build_axis(self, parameter: str, values_text: str, axis_title: str) -> tuple[XYAxis]:
+        adapter = AnimaFlowAdapter()
+        if parameter not in adapter.parameter_schema:
+            raise ValueError(f"Unsupported AnimaFlow parameter: {parameter}")
+        specification = adapter.parameter_schema[parameter]
+        tokens = [value.strip() for value in str(values_text).replace(",", "\n").splitlines() if value.strip()]
+        if not tokens or len(tokens) > MAX_AXIS_ENTRIES:
+            raise ValueError(f"AnimaFlow axis requires 1..{MAX_AXIS_ENTRIES} values")
+        entries = []
+        for token in tokens:
+            kind = specification[0]
+            if kind == "INT":
+                value = int(token)
+            elif kind == "FLOAT":
+                value = float(token)
+            elif kind == "BOOLEAN":
+                if token.lower() not in {"true", "false", "1", "0"}:
+                    raise ValueError(f"Invalid boolean: {token}; use true/false/1/0")
+                value = token.lower() in {"true", "1"}
+            else:
+                value = token
+            value = validate_control(parameter, value, specification)
+            entries.append(AxisEntry(label=token, parameters=(AxisParameter(parameter, value),), detail_label=f"{parameter} = {token}"))
+        return (XYAxis(title=str(axis_title).strip() or parameter, groups=(tuple(entries),)),)
 
 
 class MultiPromptInputNode:
@@ -2840,6 +2991,8 @@ NODE_CLASS_MAPPINGS = {
     "LoraStackLister": LoraStackListerNode,
     "MultiPromptSample": MultiPromptSampleNode,
     "LoraTesterXYSampler": XYTestSampler,
+    "LoraTesterAnimaFlowXYSampler": AnimaFlowXYTestSampler,
+    "LoraTesterAnimaFlowParameterAxis": AnimaFlowParameterAxisNode,
     "LoraTesterMultiPromptInput": MultiPromptInputNode,
     "LoraTesterGlobalPromptAppend": GlobalPromptAppendNode,
     "LoraTesterPromptAxis": PromptAxisNode,
@@ -2863,6 +3016,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LoraStackLister": "Style Stack Lister",
     "MultiPromptSample": "Style Combination Tester",
     "LoraTesterXYSampler": "XY Test Sampler",
+    "LoraTesterAnimaFlowXYSampler": "AnimaFlow XY Test Sampler",
+    "LoraTesterAnimaFlowParameterAxis": "AnimaFlow Parameter Axis",
     "LoraTesterMultiPromptInput": "Multi Prompt Input",
     "LoraTesterGlobalPromptAppend": "Global Prompt Append",
     "LoraTesterPromptAxis": "Prompt Axis",
@@ -2887,6 +3042,8 @@ __all__ = [
     "LoraStackListerNode",
     "MultiPromptSampleNode",
     "XYTestSampler",
+    "AnimaFlowXYTestSampler",
+    "AnimaFlowParameterAxisNode",
     "MultiPromptInputNode",
     "GlobalPromptAppendNode",
     "PromptAxisNode",
@@ -2900,3 +3057,5 @@ __all__ = [
     "compose_positive_prompt",
     "register_xy_parameter_handler",
 ]
+
+register_anima_flow_routes()

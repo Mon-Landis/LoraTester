@@ -169,19 +169,19 @@ class FrontendContractTests(unittest.TestCase):
     def test_anima_remap_warning_tracks_static_and_runtime_diagnosis(self) -> None:
         source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
         self.assertIn('const ANIMA_REMAP_WARNING_WIDGET =', source)
-        self.assertIn("function createAnimaRemapWarningWidget(node)", source)
+        self.assertIn("function createAnimaRemapWarningWidget(node, widgetName = ANIMA_REMAP_WARNING_WIDGET)", source)
         self.assertIn("function anima29BModelConnected(node)", source)
         self.assertIn("function anyLoraSelected(node, nodeName)", source)
         self.assertIn("function updateAnimaRemapWarning(node, nodeName)", source)
         self.assertIn("function xySamplerHasMultiArtistTest(node)", source)
         self.assertIn(
-            'if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE].includes(nodeName)) return;',
+            'if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE, FLOW_XY_NODE].includes(nodeName)) return;',
             source,
         )
         self.assertIn("__loraTesterAnimaRemapMessage", source)
         self.assertIn("message?.lora_tester_anima_remap?.[0]?.message", source)
         self.assertIn("originalOnExecuted", source)
-        self.assertIn("[TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE]", source)
+        self.assertIn("[TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE, FLOW_XY_NODE]", source)
 
     def test_flattener_frontend_labels_and_axis_metadata(self) -> None:
         source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
@@ -234,6 +234,22 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("if (nodeData.name === AXIS_PREVIEW_NODE) updateAxisPreview(this, message)", source)
         self.assertIn("onNodeOutputsUpdated(nodeOutputs)", source)
         self.assertIn('axisMetadataFromSource(firstSourceForInput(source, "axis"), visited)', source)
+
+    def test_anima_flow_nodes_share_xy_lifecycle_and_missing_dependency_ui(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        for contract in (
+            'const FLOW_XY_NODE = "LoraTesterAnimaFlowXYSampler"',
+            'const FLOW_AXIS_NODE = "LoraTesterAnimaFlowParameterAxis"',
+            'api.fetchApi("/lora_tester/anima_flow/status")',
+            "function updateAnimaFlowWarning(node, nodeName)",
+            'node.color = "#7f1d1d"',
+            "link.href = FLOW_DEPENDENCY_URL",
+            "loraTesterFlowOriginalColors",
+            "const isFlowCombo",
+            'nodeData.name === XY_SAMPLER_NODE || nodeData.name === FLOW_XY_NODE',
+            "function updateAnimaFlowAxisHint(node)",
+        ):
+            self.assertIn(contract, source)
 
     def test_english_and_chinese_locales_cover_all_nodes(self) -> None:
         with (

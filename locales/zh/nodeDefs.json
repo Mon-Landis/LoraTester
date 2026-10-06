@@ -1,4 +1,152 @@
 {
+  "LoraTesterAnimaFlowXYSampler": {
+    "display_name": "AnimaFlow XY 测试器",
+    "description": "使用已安装的 Anima Flow Corrective Sampler 执行所有 XY 单元格。缺少依赖时明确报错，不回退到普通采样器。",
+    "inputs": {
+      "model": {
+        "name": "基础模型",
+        "tooltip": "整轮 XY 测试复用的基础 MODEL。"
+      },
+      "clip": {
+        "name": "CLIP",
+        "tooltip": "用于提示词编码与可选 LoRA 二次处理的基础 CLIP。"
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "解码每个采样结果。"
+      },
+      "latent_image": {
+        "name": "潜空间图像",
+        "tooltip": "所有 XY 测试格复用的单张 latent 尺寸与批次。"
+      },
+      "x_axis": {
+        "name": "X 轴",
+        "tooltip": "渲染为图片列的轴条目。"
+      },
+      "y_axis": {
+        "name": "Y 轴",
+        "tooltip": "渲染为图片行的轴条目。"
+      },
+      "positive_prompt": {
+        "name": "基础正面提示词",
+        "tooltip": "两轴均未提供提示词时使用的默认正面提示词。"
+      },
+      "negative_prompt": {
+        "name": "负面提示词",
+        "tooltip": "所有 XY 测试格共用的负面提示词。"
+      },
+      "seed": {
+        "name": "基础种子",
+        "tooltip": "两轴均未提供种子时使用的默认值。"
+      },
+      "steps": {
+        "name": "基础步数",
+        "tooltip": "两轴均未提供步数时使用的默认值。"
+      },
+      "cfg": {
+        "name": "基础 CFG",
+        "tooltip": "两轴均未提供 CFG 时使用的默认值。"
+      },
+      "denoise": {
+        "name": "基础降噪强度",
+        "tooltip": "两轴均未提供降噪强度时使用的默认值。"
+      },
+      "color_mode": {
+        "name": "颜色模式",
+        "tooltip": "最终 XY 对比图的配色预设。"
+      },
+      "show_axis_details": {
+        "name": "显示轴详情区",
+        "tooltip": "在网格下方渲染按分类组织的表格与纯文字详情。"
+      },
+      "log_test_details": {
+        "name": "输出测试详情日志",
+        "tooltip": "逐格输出解析后的参数、LoRA、画师 Tag 与路由。"
+      },
+      "use_anima_artist_mixer": {
+        "name": "使用 Anima Artist Mixer",
+        "tooltip": "对符合条件的 Anima 多画师测试格使用可选外部 Mixer。"
+      },
+      "max_canvas_megapixels": {
+        "name": "最大画布（百万像素）",
+        "tooltip": "带标注对比图超过该像素数量时在分配前中止。"
+      },
+      "extra_footer_text": {
+        "name": "额外底部信息",
+        "tooltip": "可选文本，显示在轴详情区下方的 NOTES 区域。"
+      },
+      "custom_style": {
+        "name": "自定义样式",
+        "tooltip": "颜色模式为自定义时使用的 LoRA 测试器样式。"
+      },
+      "artist_tag_template": {
+        "name": "画师 Tag 模板",
+        "tooltip": "覆盖模型内置和组合自带的画师 Tag 语法。"
+      },
+      "anima_mixer_config": {
+        "name": "Anima Mixer 配置",
+        "tooltip": "符合条件的 Anima 多画师测试格使用的可选配置。"
+      },
+      "cfg_mode": {
+        "name": "CFG 模式",
+        "tooltip": "沿用外部 AnimaFlowSampler 的选项和执行语义。"
+      },
+      "flow_solver": {
+        "name": "Flow 求解器",
+        "tooltip": "沿用外部 AnimaFlowSampler 的选项和执行语义。"
+      },
+      "flow_schedule": {
+        "name": "Flow 调度器",
+        "tooltip": "沿用外部 AnimaFlowSampler 的选项和执行语义。"
+      },
+      "flow_shift": {
+        "name": "Flow 偏移",
+        "tooltip": "沿用外部 AnimaFlowSampler 的选项和执行语义。"
+      },
+      "add_noise": {
+        "name": "加入噪声",
+        "tooltip": "沿用外部 AnimaFlowSampler 的选项和执行语义。"
+      },
+      "flow_settings": {
+        "name": "Anima Flow 高级设置",
+        "tooltip": "沿用外部 AnimaFlowSampler 的选项和执行语义。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "XY 对比图",
+        "tooltip": "按照 X/Y 轴排列并标注的解码图片。"
+      },
+      "1": {
+        "name": "原始图片序列",
+        "tooltip": "不含图表标注、按行优先顺序排列的全部单格 IMAGE 批次。"
+      }
+    }
+  },
+  "LoraTesterAnimaFlowParameterAxis": {
+    "display_name": "AnimaFlow 参数轴",
+    "description": "将基础或高级 Flow 参数构造成 XY_AXIS；选项和数值范围来自已安装的外部采样器。",
+    "inputs": {
+      "parameter": {
+        "name": "参数",
+        "tooltip": "选择基础或高级 Flow 参数名称。"
+      },
+      "values_text": {
+        "name": "参数值文本",
+        "tooltip": "每行一个值或用逗号分隔；布尔值使用 true/false/1/0。"
+      },
+      "axis_title": {
+        "name": "轴标题",
+        "tooltip": "图表和预览中显示的轴标题。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "轴",
+        "tooltip": "可接入 AnimaFlow XY 测试器任一轴接口。"
+      }
+    }
+  },
   "LoraTesterSampler": {
     "display_name": "风格组件测试器",
     "description": "使用完全一致的采样参数测试一至三个 LoRA 或画师 Tag 风格组件，在节点内完成提示词编码、采样、解码并拼合为带标注的对比图。",

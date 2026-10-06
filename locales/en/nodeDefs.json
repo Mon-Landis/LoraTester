@@ -1,4 +1,152 @@
 {
+  "LoraTesterAnimaFlowXYSampler": {
+    "display_name": "AnimaFlow XY Test Sampler",
+    "description": "Runs every XY cell through the installed Anima Flow Corrective Sampler. Missing dependency is an error; no KSampler fallback.",
+    "inputs": {
+      "model": {
+        "name": "Base Model",
+        "tooltip": "Base MODEL reused across the complete XY run."
+      },
+      "clip": {
+        "name": "CLIP",
+        "tooltip": "Base CLIP used for prompt encoding and optional LoRA patches."
+      },
+      "vae": {
+        "name": "VAE",
+        "tooltip": "Decodes every sampled result."
+      },
+      "latent_image": {
+        "name": "Latent",
+        "tooltip": "Single latent size and batch reused by every XY cell."
+      },
+      "x_axis": {
+        "name": "X Axis",
+        "tooltip": "Axis entries rendered as image columns."
+      },
+      "y_axis": {
+        "name": "Y Axis",
+        "tooltip": "Axis entries rendered as image rows."
+      },
+      "positive_prompt": {
+        "name": "Base Positive Prompt",
+        "tooltip": "Fallback positive prompt when neither axis supplies a prompt."
+      },
+      "negative_prompt": {
+        "name": "Negative Prompt",
+        "tooltip": "Negative prompt shared by every XY cell."
+      },
+      "seed": {
+        "name": "Base Seed",
+        "tooltip": "Fallback seed when neither axis supplies one."
+      },
+      "steps": {
+        "name": "Base Steps",
+        "tooltip": "Fallback sampling steps when neither axis supplies them."
+      },
+      "cfg": {
+        "name": "Base CFG",
+        "tooltip": "Fallback guidance strength when neither axis supplies it."
+      },
+      "denoise": {
+        "name": "Base Denoise",
+        "tooltip": "Fallback denoising strength when neither axis supplies it."
+      },
+      "color_mode": {
+        "name": "Color Mode",
+        "tooltip": "Color preset for the final XY sheet."
+      },
+      "show_axis_details": {
+        "name": "Show Axis Details",
+        "tooltip": "Renders categorized axis tables and text below the XY grid."
+      },
+      "log_test_details": {
+        "name": "Log Test Details",
+        "tooltip": "Logs the resolved parameters, LoRAs, artists, and route for every XY cell."
+      },
+      "use_anima_artist_mixer": {
+        "name": "Use Anima Artist Mixer",
+        "tooltip": "Uses the optional external Mixer for eligible multi-artist Anima cells."
+      },
+      "max_canvas_megapixels": {
+        "name": "Maximum Canvas (MP)",
+        "tooltip": "Stops before allocating an XY sheet above this pixel count."
+      },
+      "extra_footer_text": {
+        "name": "Extra Footer Text",
+        "tooltip": "Optional text rendered in a final NOTES section below axis details."
+      },
+      "custom_style": {
+        "name": "Custom Style",
+        "tooltip": "LoRA Tester style used when Color Mode is Custom."
+      },
+      "artist_tag_template": {
+        "name": "Artist Tag Template",
+        "tooltip": "Overrides model-specific and stack-specific artist syntax."
+      },
+      "anima_mixer_config": {
+        "name": "Anima Mixer Configuration",
+        "tooltip": "Optional settings for eligible multi-artist Anima cells."
+      },
+      "cfg_mode": {
+        "name": "CFG Mode",
+        "tooltip": "Uses the installed AnimaFlowSampler options and execution semantics."
+      },
+      "flow_solver": {
+        "name": "Flow Solver",
+        "tooltip": "Uses the installed AnimaFlowSampler options and execution semantics."
+      },
+      "flow_schedule": {
+        "name": "Flow Schedule",
+        "tooltip": "Uses the installed AnimaFlowSampler options and execution semantics."
+      },
+      "flow_shift": {
+        "name": "Flow Shift",
+        "tooltip": "Uses the installed AnimaFlowSampler options and execution semantics."
+      },
+      "add_noise": {
+        "name": "Add Noise",
+        "tooltip": "Uses the installed AnimaFlowSampler options and execution semantics."
+      },
+      "flow_settings": {
+        "name": "Anima Flow Settings",
+        "tooltip": "Uses the installed AnimaFlowSampler options and execution semantics."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "XY Comparison Sheet",
+        "tooltip": "Decoded images arranged and labeled by the X and Y axes."
+      },
+      "1": {
+        "name": "Raw Images",
+        "tooltip": "Every decoded cell as a row-major IMAGE batch without labels."
+      }
+    }
+  },
+  "LoraTesterAnimaFlowParameterAxis": {
+    "display_name": "AnimaFlow Parameter Axis",
+    "description": "Builds XY_AXIS entries for basic or advanced Flow parameters using the installed sampler schema.",
+    "inputs": {
+      "parameter": {
+        "name": "Parameter",
+        "tooltip": "Select a basic or advanced Flow parameter."
+      },
+      "values_text": {
+        "name": "Parameter Values",
+        "tooltip": "One value per line or comma-separated; booleans use true/false/1/0."
+      },
+      "axis_title": {
+        "name": "Axis Title",
+        "tooltip": "Axis title shown in the sheet and preview."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Axis",
+        "tooltip": "Connect to either axis socket of the AnimaFlow XY sampler."
+      }
+    }
+  },
   "LoraTesterSampler": {
     "display_name": "Style Component Tester",
     "description": "Tests one to three LoRA or artist-tag style components with fixed sampling inputs and assembles a labeled comparison sheet.",
