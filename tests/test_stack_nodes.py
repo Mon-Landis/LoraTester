@@ -14,10 +14,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from lora_tester.nodes import (
+    AxisComposerNode,
+    LoraStackAxisNode,
+    LoraStackFlattenerNode,
     LoraStackListerNode,
     LoraStackNode,
     LoraStackSplitterNode,
     MultiPromptSampleNode,
+    NODE_CLASS_MAPPINGS,
+    NODE_DISPLAY_NAME_MAPPINGS,
 )
 from lora_tester.artist import ARTIST_TAG_MODE, ArtistTagTemplate
 from lora_tester.stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
@@ -149,6 +154,45 @@ class StackNodeTests(unittest.TestCase):
         result = LoraStackListerNode.list_stacks(split.stacks[0], stack_2=split.stacks[1])[0]
         self.assertIsInstance(result, LoraStackList)
         self.assertEqual([item.label for item in result.stacks], ["A", "B"])
+
+    def test_flattener_node_contract_and_axis_connections(self):
+        self.assertIs(NODE_CLASS_MAPPINGS["LoraStackFlattener"], LoraStackFlattenerNode)
+        self.assertEqual(NODE_DISPLAY_NAME_MAPPINGS["LoraStackFlattener"], "Style Stack Flattener")
+        inputs = LoraStackFlattenerNode.INPUT_TYPES()["required"]
+        self.assertEqual(inputs["lora_stack"][0], "LORA_STACK")
+        self.assertEqual(inputs["include_original"][0], "BOOLEAN")
+        self.assertFalse(inputs["include_original"][1]["default"])
+        self.assertNotIn("label_on", inputs["include_original"][1])
+        self.assertNotIn("label_off", inputs["include_original"][1])
+        self.assertEqual(inputs["weight_mode"][0], ["inherit", "normalize", "dual"])
+        self.assertEqual(inputs["weight_mode"][1]["default"], "inherit")
+        self.assertEqual(LoraStackFlattenerNode.RETURN_TYPES, ("LORA_STACK_LIST",))
+        self.assertEqual(LoraStackFlattenerNode.RETURN_NAMES, ("lora_stack_list",))
+        stack = LoraStack.from_values(
+            (("a.safetensors", "alpha", 1.2), ("b.safetensors", "beta", 0.3), ("c.safetensors", "gamma", 1.0))
+        )
+        node = LoraStackFlattenerNode()
+        for mode, child_count in (("inherit", 3), ("normalize", 3), ("dual", 5)):
+            for include_original in (False, True):
+                with self.subTest(mode=mode, include_original=include_original):
+                    self.check_flattener_axis_connections(node, stack, include_original, mode, child_count)
+
+    def check_flattener_axis_connections(self, node, stack, include_original, mode, child_count):
+        expected_count = child_count + int(include_original)
+        outputs = getattr(node, node.FUNCTION)(stack, include_original, mode)
+        self.assertIsInstance(outputs, tuple)
+        self.assertEqual(len(outputs), 1)
+        result = outputs[0]
+        self.assertIsInstance(result, LoraStackList)
+        self.assertEqual(len(result.stacks), expected_count)
+        style_axis = LoraStackAxisNode().build_axis(result, include_base=False, axis_title="STYLE")[0]
+        composed_axis = AxisComposerNode().compose_axis("STYLE", include_base=False, source=result)[0]
+        self.assertEqual(len(style_axis.entries), expected_count)
+        self.assertEqual(len(composed_axis.entries), expected_count)
+
+    def test_flattener_node_rejects_invalid_input(self):
+        with self.assertRaisesRegex(TypeError, "expects a LoraStack"):
+            LoraStackFlattenerNode.flatten_stack(None)
 
     def test_multi_prompt_sample_uses_base_column_and_shared_seed(self):
         stack = LoraStack((LoraStackItem("A.safetensors", "alpha", 0.8),))

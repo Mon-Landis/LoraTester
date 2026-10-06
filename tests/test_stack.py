@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from lora_tester.stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
+from lora_tester.artist import ARTIST_TAG_MODE, ArtistTagTemplate
+from lora_tester.stack import LoraStack, LoraStackItem, LoraStackList, flatten_lora_stack, split_lora_stack
 from lora_tester.stack_compositor import (
     LoraStackMatrixCompositor,
     LoraStackMatrixSession,
@@ -46,6 +47,100 @@ class StackModelTests(unittest.TestCase):
             [stack.label for stack in result.stacks],
             ["A", "B", "C", "A + B", "A + C", "B + C", "A + B + C"],
         )
+
+    def test_flattener_preserves_entry_order_and_configuration(self) -> None:
+        stack = self.make_stack()
+        result = flatten_lora_stack(stack)
+        self.assertIsInstance(result, LoraStackList)
+        self.assertEqual([entry.label for entry in result.stacks], ["A", "B", "C"])
+        self.assertEqual(tuple(entry.items[0] for entry in result.stacks), stack.items)
+        self.assertTrue(all(len(entry.items) == 1 for entry in result.stacks))
+        self.assertEqual(len(stack.items), 3)
+
+    def test_flattener_prepends_original_only_when_enabled(self) -> None:
+        stack = self.make_stack()
+        result = flatten_lora_stack(stack, include_original=True)
+        self.assertEqual(len(result.stacks), 4)
+        self.assertIs(result.stacks[0], stack)
+        self.assertEqual([entry.label for entry in result.stacks], ["A + B + C", "A", "B", "C"])
+
+    def test_flattener_preserves_artist_entries_and_template(self) -> None:
+        template = ArtistTagTemplate("@{tag}", "(@{tag}:{weight})")
+        stack = LoraStack(
+            (
+                LoraStackItem("A.safetensors", "@ordinary_trigger", -0.3),
+                LoraStackItem(ARTIST_TAG_MODE, "artist_a, artist_b", 1.2),
+            ),
+            artist_template=template,
+        )
+        for include_original in (False, True):
+            with self.subTest(include_original=include_original):
+                result = flatten_lora_stack(stack, include_original)
+                self.assertTrue(all(entry.artist_template is template for entry in result.stacks))
+                self.assertEqual(result.stacks[-2].trigger_words, ("@ordinary_trigger",))
+                self.assertEqual(result.stacks[-2].artist_entries, ())
+                self.assertEqual(result.stacks[-1].artist_entries, (("artist_a", 1.2), ("artist_b", 1.2)))
+
+    def test_flattener_preserves_duplicates_and_single_entry_original(self) -> None:
+        item = LoraStackItem("A.safetensors", "alpha", 0.0)
+        stack = LoraStack((item, item))
+        self.assertEqual(len(flatten_lora_stack(stack).stacks), 2)
+        single = LoraStack((item,))
+        self.assertEqual(flatten_lora_stack(single).stacks, (single,))
+        self.assertEqual(flatten_lora_stack(single, True).stacks, (single, single))
+
+    def test_flattener_rejects_non_stack_values(self) -> None:
+        for value in (None, [], LoraStackList(()), self.make_stack().items):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(TypeError, "expects a LoraStack"):
+                    flatten_lora_stack(value)
+
+    def test_flattener_weight_modes_order_children_and_leave_original_unchanged(self) -> None:
+        template = ArtistTagTemplate("@{tag}", "(@{tag}:{weight})")
+        stack = LoraStack(
+            (
+                LoraStackItem("a.safetensors", "alpha", 1.2),
+                LoraStackItem(ARTIST_TAG_MODE, "artist_b, artist_c", 0.3),
+                LoraStackItem("c.safetensors", "@ordinary_trigger", 1.0),
+            ),
+            artist_template=template,
+        )
+        expected = {
+            "inherit": ((0, 1.2), (1, 0.3), (2, 1.0)),
+            "normalize": ((0, 1.0), (1, 1.0), (2, 1.0)),
+            "dual": ((0, 1.0), (0, 1.2), (1, 1.0), (1, 0.3), (2, 1.0)),
+        }
+        for mode, configurations in expected.items():
+            for include_original in (False, True):
+                with self.subTest(mode=mode, include_original=include_original):
+                    result = flatten_lora_stack(stack, include_original, mode)
+                    children = result.stacks[1:] if include_original else result.stacks
+                    if include_original:
+                        self.assertIs(result.stacks[0], stack)
+                        self.assertEqual([item.strength for item in result.stacks[0].items], [1.2, 0.3, 1.0])
+                    self.assertEqual(len(children), len(configurations))
+                    for child, (index, weight) in zip(children, configurations):
+                        original = stack.items[index]
+                        self.assertEqual(child.items, (LoraStackItem(original.name, original.trigger_word, weight),))
+                        self.assertIs(child.artist_template, template)
+        self.assertEqual([item.strength for item in stack.items], [1.2, 0.3, 1.0])
+
+    def test_flattener_dual_handles_unit_zero_negative_and_near_unit_weights(self) -> None:
+        weights = (1.0, 0.0, -0.5, 1.000000001)
+        stack = LoraStack(tuple(LoraStackItem("A.safetensors", strength=weight) for weight in weights))
+        result = flatten_lora_stack(stack, weight_mode="dual")
+        self.assertEqual([entry.items[0].strength for entry in result.stacks], [1.0, 1.0, 0.0, 1.0, -0.5, 1.0, 1.000000001])
+
+    def test_flattener_unit_weight_dual_emits_once_and_legacy_calls_inherit(self) -> None:
+        stack = LoraStack((LoraStackItem("A.safetensors", strength=1.0),))
+        self.assertEqual(len(flatten_lora_stack(stack, weight_mode="dual").stacks), 1)
+        self.assertEqual(flatten_lora_stack(stack, True, "dual").stacks, (stack, stack))
+        legacy = self.make_stack()
+        self.assertEqual(flatten_lora_stack(legacy), flatten_lora_stack(legacy, weight_mode="inherit"))
+
+    def test_flattener_rejects_unknown_weight_modes(self) -> None:
+        with self.assertRaisesRegex(ValueError, "weight_mode"):
+            flatten_lora_stack(self.make_stack(), weight_mode="unknown")
 
     def test_lister_merges_in_order_and_preserves_explicit_duplicates(self) -> None:
         first = self.make_stack()

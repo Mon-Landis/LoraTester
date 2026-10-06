@@ -43,6 +43,12 @@ Multi Prompt Input -> Global Prompt Append                    -> Axis Composer -
 
 所有轴节点的输出均名为 `axis`，轴本身不绑定方向，可自由接入采样器的 `x_axis` 或 `y_axis`。`axis_title` 是整条轴的总标题；每行或每列顶端显示的文字来自各个 `AxisEntry.label`。`Axis Composer` 的 `include_base` 可将风格 BASE 放入单独分组，使基线列与其余测试列之间自动留出间隔。`Prompt Axis`、`Style Axis` 和 `Seed Axis` 仍作为对应数据类型的快捷构造器提供。
 
+### 种子列表的使用
+
+在 `Seed List / Random Seeds` 节点中选择“指定列表”，然后在“种子列表”里输入十进制非负整数；可用英文逗号、空格或换行分隔，例如 `1, 42, 123456`。输入顺序就是轴上的顺序，每个值对应一行或一列。将节点输出接入 `Seed Axis` 的 `seed_list`，或直接接入 `Axis Composer` 的 `source`，再把生成的 `axis` 接到 `XY Test Sampler` 的 `x_axis` 或 `y_axis`。
+
+选择“确定性随机生成”时，“随机种子数量”控制轴长度；相同的“生成器种子”会得到相同的种子序列，便于复现。将“生成器种子”设为 `-1` 会在每次执行时随机选择新的生成器种子，因此生成的序列不再可复现。
+
 ## 安装
 
 在 ComfyUI 的 `custom_nodes` 目录克隆仓库：
@@ -76,12 +82,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | `Lora Tester/XY/Prompt` | `Global Prompt Append` | 为全部提示词统一前置/后置文本，并追加独立画师 Tag。 |
 | `Lora Tester/XY/Prompt` | `Prompt Axis` | 将提示词列表直接转换为方向无关的 `XY_AXIS`。 |
 | `Lora Tester/XY/Style` | `Style Stack` | 配置最多 16 个 LoRA 或画师 Tag 风格项。 |
+| `Lora Tester/XY/Style` | `Artist Tag Text Parser` / `画师 Tag-文本解析` | 将画师提示词文本解析为含权重的风格组合。 |
+| `Lora Tester/XY/Style` | `Artist Tag Replacer` / `画师替换` | 精确匹配画师并替换为画师或 LoRA，支持替换权重与倍率。 |
 | `Lora Tester/XY/Style` | `Style Stack Splitter` | 生成风格组合的全部非空组合。 |
+| `Lora Tester/XY/Style` | `Style Stack Flattener` / `风格组合平铺` | 将组合平铺为独立单项，可选择在首位加入原始组合。 |
 | `Lora Tester/XY/Style` | `Style Stack Lister` | 动态合并最多 16 个独立风格组合。 |
 | `Lora Tester/XY/Style` | `Style Axis` | 将风格组合列表直接转换为带分组和详情表的 `XY_AXIS`。 |
 | `Lora Tester/XY/Seed` | `Seed List / Random Seeds` | 解析种子列表或确定性生成随机种子。 |
 | `Lora Tester/XY/Seed` | `Seed Axis` | 将种子列表直接转换为方向无关的 `XY_AXIS`。 |
 | `Lora Tester/XY/Axis` | `Axis Composer` | 将任一受支持的原始数据源或完整轴转换为通用 `axis`。 |
+| `Lora Tester/XY/Axis` | `Axis Content Preview` / `轴内容预览` | 将任意完整轴展开为保留分组与缩进的可读文本，同时原样传递轴。 |
 | `Lora Tester` | `Style Component Tester` | 专用的 1 至 3 LoRA 权重与混合测试器。 |
 | `Lora Tester` | `LoRA Tester Style` | 为采样器提供自定义视觉样式。 |
 | `Lora Tester/Artist Tags` | `Artist Tag Template` | 覆盖普通权重和加权画师 Tag 的格式。 |
@@ -100,6 +110,42 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - 输入 latent 必须只有一个样本。轴条目过多或 latent 空间过大时会产生非阻断警告；最终拼接图默认受 `150 MP` 的 `max_canvas_megapixels` 限制。
 - 原始图片批次会占用 CPU 内存。矩阵规模和单图分辨率较大时，应先减小轴长度或 latent 尺寸，再考虑提高画布上限。
 - `extra_footer_text` 非空时会在所有轴详情后增加 `NOTES`；风格轴底部只显示代号来源表，提示词正文不会重复显示。
+
+### 轴内容预览
+
+将任意轴节点的 `axis` 输出接入 `轴内容预览`（`Axis Content Preview`）。支持提示词轴、风格轴、种子轴、组合轴和采用 `XY_AXIS` 类型的自定义轴。执行后，节点内显示可选择、复制和滚动的只读多行文本，不会将结构压平；`预览文本语言` 可选择中文或英文。
+
+- 总览包含轴标题、分组数、总项数和参数名称。
+- 按原顺序展开各组、各项、标签、详情标签和全部参数；BASE 显示为无参数覆盖。
+- 提示词展开正文、前置 / 后置文本、合并提示词和独立画师 Tag；LoRA / 画师项展开文件、触发词 / Tag、权重与画师模板。
+- 种子保留完整整数；其他参数与嵌套数据按结构展开，详情表和文本单独列出。
+- 输出 `axis` 为原轴，输出 `text` 为完整格式化字符串，可串接采样器或文本保存节点。预览结果保存在工作流属性中，保存 / 重载后可继续检查；修改输入后重新执行即可更新。
+
+例如：`Style Axis -> 轴内容预览 -> XY Test Sampler`。本节点只检查轴数据，不加载模型或生成图片；单独连接该输出节点可只运行上游轴构造链路。
+
+### 画师文本解析与替换
+
+`画师 Tag-文本解析` 接收专门的画师文本，例如 `@wlop, (@ask_(askzy):0.55)`，输出一个 `LORA_STACK`：每个画师独立存为画师模式项，未指定权重时使用 `1.0`。支持逗号、中文逗号和换行分隔，保留名称中的括号、顺序、重复项以及可选的画师模板。该字段只用于画师文本，不会从普通提示词中自动提取画师。
+
+`画师替换` 接收一个 `LORA_STACK`；配置一个完整的匹配画师名（可带或不带 `@`），选择替换 LoRA 文件或画师 Tag 模式，填写替换触发词 / 画师 Tag，再设置强度与模式：
+
+- `替换`：匹配项的新权重直接使用配置的强度。
+- `倍率`：匹配项的新权重为原权重乘以配置的倍率。例如原权重 `0.3`、倍率 `2`，输出权重 `0.6`。
+- 精确匹配、区分大小写，并替换全部匹配项；不会误匹配普通 LoRA 触发词或画师名的子串。无匹配时原样返回。
+- 替换物、触发词和强度控件复用 `Style Stack` 构造器的同一代码路径；替换成画师时填写画师 Tag，替换成 LoRA 时填写该文件的触发词。
+- 保留未匹配项、顺序与画师模板；一项包含多个画师时只替换匹配画师，其余画师保留原权重。
+
+可连接为 `画师 Tag-文本解析 -> 画师替换 -> 风格组合平铺 -> Style Axis / Axis Composer`。解析输出直接接入轴时代表完整画师组合；通过平铺节点可分别测试每个画师。
+
+### 风格组合平铺
+
+将 `Style Stack` 接入 `风格组合平铺`（`Style Stack Flattener`），其 `lora_stack_list` 输出可直接接入 `Style Axis` 或 `Axis Composer`。
+
+- 默认关闭 `加入原始组合`：`a:1.2,b:0.3,c:1` 输出 `[a:1.2]`、`[b:0.3]`、`[c:1]` 三项。
+- 开启开关：输出 `[a:1.2,b:0.3,c:1]`、`[a:1.2]`、`[b:0.3]`、`[c:1]` 四项，原始组合在首位。
+- `权重模式` 默认选择 `继承`，子项保留原权重；`归一化` 将每个子项权重设为 `1`；`双行` 对原权重非 `1` 的项相邻输出权重 `1`、原权重两个子项，原权重为 `1` 时只输出一次。
+- 例如 `a:1.2,b:0.3,c:1` 在双行模式下输出 `[a:1]`、`[a:1.2]`、`[b:1]`、`[b:0.3]`、`[c:1]`。加入原始组合时，仍在首位输出未修改的 `[a:1.2,b:0.3,c:1]`，共六项。
+- 权重模式不影响加入的原始组合；每项保留原始顺序、触发词和画师 Tag 模板。不生成两两组合，也不自动去重。
 
 ## 提示词与画师 Tag
 

@@ -23,7 +23,10 @@ from .layout import AxisSpec, LayoutPlan, LoraSpec, RenderTask, build_layout
 from .nodes import (
     AnimaArtistMixerConfigNode,
     ArtistTagTemplateNode,
+    ArtistTagTextParserNode,
+    ArtistTagReplacerNode,
     LoraStackListerNode,
+    LoraStackFlattenerNode,
     LoraStackNode,
     LoraStackSplitterNode,
     LoraTesterSampler,
@@ -37,10 +40,15 @@ from .nodes import (
     SeedListNode,
     SeedAxisNode,
     AxisComposerNode,
+    AxisPreviewNode,
     register_xy_parameter_handler,
 )
-from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
+from .stack import (
+    LoraStack, LoraStackItem, LoraStackList, flatten_lora_stack,
+    parse_artist_stack, replace_stack_artist, split_lora_stack,
+)
 from .stack_compositor import LoraStackMatrixCompositor, LoraStackMatrixSession
+from .axis_preview import format_axis_preview
 from .styles import (
     StyleConfig,
     available_style_decorators,
@@ -85,7 +93,10 @@ __all__ = [
     "LoraStackItem",
     "LoraStackList",
     "LoraStackNode",
+    "ArtistTagTextParserNode",
+    "ArtistTagReplacerNode",
     "LoraStackSplitterNode",
+    "LoraStackFlattenerNode",
     "LoraStackListerNode",
     "LoraStackMatrixCompositor",
     "LoraStackMatrixSession",
@@ -98,6 +109,8 @@ __all__ = [
     "SeedListNode",
     "SeedAxisNode",
     "AxisComposerNode",
+    "AxisPreviewNode",
+    "format_axis_preview",
     "register_xy_parameter_handler",
     "RenderTask",
     "StyleConfig",
@@ -110,6 +123,9 @@ __all__ = [
     "pil_to_comfy_image",
     "register_style_decorator",
     "split_lora_stack",
+    "flatten_lora_stack",
+    "parse_artist_stack",
+    "replace_stack_artist",
     "submit_comfy_batch",
     "AxisEntry",
     "AxisParameter",

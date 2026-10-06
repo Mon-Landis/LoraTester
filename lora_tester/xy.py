@@ -13,6 +13,7 @@ from .stack import LoraStack, LoraStackItem, LoraStackList
 
 MAX_AXIS_ENTRIES = 64
 MAX_SEED = 0xFFFFFFFFFFFFFFFF
+RANDOM_GENERATOR_SEED = -1
 
 
 def axis_token(index: int) -> str:
@@ -169,7 +170,16 @@ class SeedList:
             raise ValueError(
                 f"Random seed count must be between 1 and {MAX_AXIS_ENTRIES}"
             )
-        generator = random.Random(int(source_seed))
+        normalized_source_seed = int(source_seed)
+        if normalized_source_seed < RANDOM_GENERATOR_SEED or normalized_source_seed > MAX_SEED:
+            raise ValueError(
+                f"Generator seed must be {RANDOM_GENERATOR_SEED} or between 0 and {MAX_SEED}"
+            )
+        # -1 deliberately opts out of reproducibility: choose the actual generator
+        # seed from the operating system, then use the normal deterministic stream.
+        if normalized_source_seed == RANDOM_GENERATOR_SEED:
+            normalized_source_seed = random.SystemRandom().randrange(MAX_SEED + 1)
+        generator = random.Random(normalized_source_seed)
         return cls(tuple(generator.randrange(MAX_SEED + 1) for _ in range(normalized_count)))
 
 
@@ -495,6 +505,7 @@ __all__ = [
     "DetailBlock",
     "MAX_AXIS_ENTRIES",
     "MAX_SEED",
+    "RANDOM_GENERATOR_SEED",
     "PromptEntry",
     "PromptList",
     "SeedList",

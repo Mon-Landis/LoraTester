@@ -158,6 +158,14 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("refreshReactiveCollection(node, \"inputs\")", source)
         self.assertIn("refreshReactiveCollection(node, \"outputs\")", source)
 
+    def test_random_generator_seed_has_localized_sentinel_display(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn("function installRandomGeneratorSeedDisplay(node)", source)
+        self.assertIn("Number(widget.value) === -1", source)
+        self.assertIn('activeLanguage() === "zh" ? "随机" : "Random"', source)
+        self.assertIn("data-lora-tester-seed-display", source)
+        self.assertIn("installRandomGeneratorSeedDisplay(node)", source)
+
     def test_anima_remap_warning_tracks_static_and_runtime_diagnosis(self) -> None:
         source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
         self.assertIn('const ANIMA_REMAP_WARNING_WIDGET =', source)
@@ -174,6 +182,58 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("message?.lora_tester_anima_remap?.[0]?.message", source)
         self.assertIn("originalOnExecuted", source)
         self.assertIn("[TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE]", source)
+
+    def test_flattener_frontend_labels_and_axis_metadata(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn('const STACK_FLATTENER_NODE = "LoraStackFlattener"', source)
+        self.assertEqual(source.count("LoraStackFlattener: {"), 3)
+        self.assertNotIn('label_on: "加入原始组合"', source)
+        self.assertNotIn('label_off: "仅输出独立单项"', source)
+        self.assertIn("sourceName === STACK_FLATTENER_NODE", source)
+        self.assertIn("rawName === STACK_FLATTENER_NODE", source)
+        self.assertIn('widgetValue(source, "include_original") === true ? 1 : 0', source)
+        self.assertIn('widgetValue(rawSource, "include_original") === true ? 1 : 0', source)
+        self.assertIn("nodeName === STACK_FLATTENER_NODE", source)
+        self.assertIn('new Set(["include_original", "weight_mode"])', source)
+        self.assertIn('inherit: { en: "Inherit", zh: "继承" }', source)
+        self.assertIn('normalize: { en: "Normalize", zh: "归一化" }', source)
+        self.assertIn('dual: { en: "Dual", zh: "双行" }', source)
+        self.assertIn("flattenedStackChildren(source)", source)
+        self.assertIn("flattenedStackChildren(rawSource)", source)
+        self.assertIn("name|trigger|strength", source)
+        self.assertIn("entry.strength !== 1", source)
+
+    def test_artist_text_and_replacement_nodes_use_shared_frontend_paths(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn('const ARTIST_TEXT_NODE = "ArtistTagTextParser"', source)
+        self.assertIn('const ARTIST_REPLACER_NODE = "ArtistTagReplacer"', source)
+        self.assertIn('replace: { en: "Replace", zh: "替换" }', source)
+        self.assertIn('multiply: { en: "Multiply", zh: "倍率" }', source)
+        self.assertIn('lora_1_name: { en: "Replacement LoRA / Artist Mode"', source)
+        self.assertIn("artistEntriesFromStackSource", source)
+        self.assertIn("normalizeArtistMatchTag", source)
+        self.assertIn('new Set(["artist_text"])', source)
+        self.assertIn('new Set(["match_tag", "lora_1_name", "lora_1_trigger", "lora_1_strength", "strength_mode"])', source)
+        self.assertIn("GLOBAL_PROMPT_APPEND_NODE, ARTIST_TEXT_NODE", source)
+        self.assertIn('installOptionLabels(widget, ARTIST_MODE_OPTION_LABELS)', source)
+        self.assertIn("widgetOptionTargets(widget)", source)
+
+    def test_axis_preview_uses_readonly_multiline_widgets_and_preserves_outputs(self) -> None:
+        source = (ROOT / "web" / "lora_tester.js").read_text(encoding="utf-8")
+        self.assertIn('const AXIS_PREVIEW_NODE = "LoraTesterAxisPreview"', source)
+        self.assertIn('import { ComfyWidgets } from "../../scripts/widgets.js"', source)
+        self.assertIn("function installAxisPreview(node)", source)
+        self.assertIn("function updateAxisPreview(node, message)", source)
+        self.assertIn("widget.serialize = false", source)
+        self.assertIn("options.read_only = true", source)
+        self.assertIn('options.wrap = "off"', source)
+        self.assertIn("options.minNodeSize = [560, 340]", source)
+        self.assertIn("textarea.readOnly = true", source)
+        self.assertIn('whiteSpace: "pre"', source)
+        self.assertIn("loraTesterAxisPreviewText", source)
+        self.assertIn("if (nodeData.name === AXIS_PREVIEW_NODE) updateAxisPreview(this, message)", source)
+        self.assertIn("onNodeOutputsUpdated(nodeOutputs)", source)
+        self.assertIn('axisMetadataFromSource(firstSourceForInput(source, "axis"), visited)', source)
 
     def test_english_and_chinese_locales_cover_all_nodes(self) -> None:
         with (
@@ -248,6 +308,7 @@ class FrontendContractTests(unittest.TestCase):
                 for node_name in (
                     "LoraStack",
                     "LoraStackSplitter",
+                    "LoraStackFlattener",
                     "LoraStackLister",
                     "MultiPromptSample",
                 ):

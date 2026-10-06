@@ -24,6 +24,7 @@ from .artist import (
     split_artist_tags,
 )
 from .anima_patch import anima_remap_diagnosis, warn_missing_anima_remap
+from .axis_preview import format_axis_preview
 from .comfy_adapter import pil_to_comfy_image
 from .compositor import LoraComparisonCompositor, image_to_pil
 from .layout import LoraSpec, RenderTask, build_layout
@@ -33,11 +34,15 @@ from .node_contract import (
     SHOW_LORA_DETAILS_INPUT,
     USE_ANIMA_ARTIST_MIXER_INPUT,
 )
-from .stack import LoraStack, LoraStackItem, LoraStackList, split_lora_stack
+from .stack import (
+    FLATTEN_WEIGHT_MODES, LoraStack, LoraStackItem, LoraStackList, flatten_lora_stack,
+    parse_artist_stack, replace_stack_artist, split_lora_stack,
+)
 from .styles import StyleConfig, available_style_decorators
 from .xy import (
     MAX_AXIS_ENTRIES,
     MAX_SEED,
+    RANDOM_GENERATOR_SEED,
     PromptEntry,
     PromptList,
     SeedList,
@@ -1876,7 +1881,19 @@ class SeedListNode:
                 "mode": (["list", "random"], {"default": "list"}),
                 "seed_text": ("STRING", {"default": "0", "multiline": False, "tooltip": "Comma/space separated decimal seeds in list mode."}),
                 "random_count": ("INT", {"default": 4, "min": 1, "max": MAX_AXIS_ENTRIES, "step": 1}),
-                "random_source_seed": ("INT", {"default": 0, "min": 0, "max": MAX_SEED}),
+                "random_source_seed": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": RANDOM_GENERATOR_SEED,
+                        "max": MAX_SEED,
+                        "step": 1,
+                        "tooltip": (
+                            "Generator seed for the deterministic sequence. "
+                            "Set to -1 to choose a new random generator seed on every execution."
+                        ),
+                    },
+                ),
             }
         }
 
@@ -1992,6 +2009,33 @@ class AxisComposerNode:
                 "Axis Composer expects a PromptList, LoraStack, LoraStackList, SeedList, or XYAxis source"
             )
         return (axis,)
+
+
+class AxisPreviewNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "axis": ("XY_AXIS", {"tooltip": "Any prompt, style, seed, composed, or custom XY axis to inspect."}),
+                "language": (["zh", "en"], {"default": "zh", "tooltip": "Language of the formatted preview text."}),
+            },
+        }
+
+    RETURN_TYPES = ("XY_AXIS", "STRING")
+    RETURN_NAMES = ("axis", "text")
+    OUTPUT_TOOLTIPS = (
+        "The unchanged input axis, ready for either sampler socket.",
+        "Complete formatted multiline text for copying or saving.",
+    )
+    OUTPUT_NODE = True
+    FUNCTION = "preview_axis"
+    CATEGORY = "Lora Tester/XY/Axis"
+    DESCRIPTION = "Previews any XY axis as readable grouped text with complete parameter values, prompts, style weights, and detail blocks."
+
+    @staticmethod
+    def preview_axis(axis: XYAxis, language: str = "zh") -> dict[str, Any]:
+        text = format_axis_preview(axis, language=language)
+        return {"ui": {"text": [text]}, "result": (axis, text)}
 
 
 class LoraTesterStyleNode:
@@ -2389,6 +2433,87 @@ class LoraStackNode:
         return (LoraStack(tuple(items), artist_template=artist_tag_template),)
 
 
+class ArtistTagTextParserNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "artist_text": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": False,
+                        "tooltip": "Artist-only prompt text, e.g. @wlop, (@ask_(askzy):0.55). Unweighted tags use 1.0.",
+                    },
+                ),
+            },
+            "optional": {
+                "artist_tag_template": (
+                    "ARTIST_TAG_TEMPLATE",
+                    {"tooltip": "Optional artist syntax stored with the parsed stack."},
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("LORA_STACK",)
+    RETURN_NAMES = ("lora_stack",)
+    OUTPUT_TOOLTIPS = ("Ordered artist entries with parsed weights, one entry per tag.",)
+    FUNCTION = "parse_text"
+    CATEGORY = "Lora Tester/XY/Style"
+    DESCRIPTION = "Parses comma/newline-separated artist prompt text into a weighted style stack."
+
+    @staticmethod
+    def parse_text(
+        artist_text: str, artist_tag_template: ArtistTagTemplate | None = None
+    ) -> tuple[LoraStack]:
+        return (parse_artist_stack(artist_text, artist_template=artist_tag_template),)
+
+
+class ArtistTagReplacerNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        stack_inputs = _stack_inputs()
+        return {
+            "required": {
+                "lora_stack": ("LORA_STACK", {"tooltip": "The stack whose matching artist entries will be replaced."}),
+                "match_tag": ("STRING", {"default": "", "multiline": False, "tooltip": "One exact artist name, with or without @. Replaces all matches; ordinary LoRA triggers are ignored."}),
+                "lora_1_name": stack_inputs["lora_1_name"],
+                "lora_1_trigger": stack_inputs["lora_1_trigger"],
+                "lora_1_strength": stack_inputs["lora_1_strength"],
+                "strength_mode": (["replace", "multiply"], {"default": "replace", "tooltip": "Replace uses the configured strength; multiply scales each matched entry's original strength."}),
+            },
+        }
+
+    RETURN_TYPES = ("LORA_STACK",)
+    RETURN_NAMES = ("lora_stack",)
+    OUTPUT_TOOLTIPS = ("The replacement stack, preserving other entries and the artist template.",)
+    FUNCTION = "replace_artist"
+    CATEGORY = "Lora Tester/XY/Style"
+    DESCRIPTION = "Replaces exact artist matches with another artist or LoRA, using replacement or multiplied strength."
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, lora_1_name: str = "") -> bool | str:
+        return _validate_active_lora_names(1, 1, (lora_1_name,))
+
+    @classmethod
+    def IS_CHANGED(cls, lora_1_name: str = "", **values: Any) -> Any:
+        return _lora_input_fingerprint((lora_1_name,))
+
+    @staticmethod
+    def replace_artist(
+        lora_stack: LoraStack,
+        match_tag: str,
+        lora_1_name: str,
+        lora_1_trigger: str,
+        lora_1_strength: float,
+        strength_mode: str = "replace",
+    ) -> tuple[LoraStack]:
+        return (replace_stack_artist(
+            lora_stack, match_tag, lora_1_name, lora_1_trigger, lora_1_strength, strength_mode
+        ),)
+
+
 class LoraStackSplitterNode:
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
@@ -2403,6 +2528,48 @@ class LoraStackSplitterNode:
     @staticmethod
     def split_stack(lora_stack: LoraStack) -> tuple[LoraStackList]:
         return (split_lora_stack(lora_stack),)
+
+
+class LoraStackFlattenerNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "lora_stack": (
+                    "LORA_STACK",
+                    {"tooltip": "The style stack to flatten into single-entry stacks."},
+                ),
+                "include_original": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": "Prepend the original stack before its individual entries.",
+                    },
+                ),
+                "weight_mode": (
+                    list(FLATTEN_WEIGHT_MODES),
+                    {
+                        "default": "inherit",
+                        "tooltip": "Choose whether flattened child stacks inherit, normalize, or duplicate non-unit weights.",
+                    },
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("LORA_STACK_LIST",)
+    RETURN_NAMES = ("lora_stack_list",)
+    OUTPUT_TOOLTIPS = ("Single-entry stacks in input order, optionally preceded by the original stack.",)
+    FUNCTION = "flatten_stack"
+    CATEGORY = "Lora Tester/XY/Style"
+    DESCRIPTION = "Flattens a style stack into individual entries, optionally keeping the original first."
+
+    @staticmethod
+    def flatten_stack(
+        lora_stack: LoraStack, include_original: bool = False, weight_mode: str = "inherit"
+    ) -> tuple[LoraStackList]:
+        return (flatten_lora_stack(
+            lora_stack, include_original=include_original, weight_mode=weight_mode
+        ),)
 
 
 class LoraStackListerNode:
@@ -2666,7 +2833,10 @@ NODE_CLASS_MAPPINGS = {
     "ArtistTagTemplate": ArtistTagTemplateNode,
     "AnimaArtistMixerConfig": AnimaArtistMixerConfigNode,
     "LoraStack": LoraStackNode,
+    "ArtistTagTextParser": ArtistTagTextParserNode,
+    "ArtistTagReplacer": ArtistTagReplacerNode,
     "LoraStackSplitter": LoraStackSplitterNode,
+    "LoraStackFlattener": LoraStackFlattenerNode,
     "LoraStackLister": LoraStackListerNode,
     "MultiPromptSample": MultiPromptSampleNode,
     "LoraTesterXYSampler": XYTestSampler,
@@ -2677,6 +2847,7 @@ NODE_CLASS_MAPPINGS = {
     "LoraTesterSeedList": SeedListNode,
     "LoraTesterSeedAxis": SeedAxisNode,
     "LoraTesterAxisComposer": AxisComposerNode,
+    "LoraTesterAxisPreview": AxisPreviewNode,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -2685,7 +2856,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ArtistTagTemplate": "Artist Tag Template",
     "AnimaArtistMixerConfig": "Anima Artist Mixer Configuration",
     "LoraStack": "Style Stack",
+    "ArtistTagTextParser": "Artist Tag Text Parser",
+    "ArtistTagReplacer": "Artist Tag Replacer",
     "LoraStackSplitter": "Style Stack Splitter",
+    "LoraStackFlattener": "Style Stack Flattener",
     "LoraStackLister": "Style Stack Lister",
     "MultiPromptSample": "Style Combination Tester",
     "LoraTesterXYSampler": "XY Test Sampler",
@@ -2696,6 +2870,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LoraTesterSeedList": "Seed List / Random Seeds",
     "LoraTesterSeedAxis": "Seed Axis",
     "LoraTesterAxisComposer": "Axis Composer",
+    "LoraTesterAxisPreview": "Axis Content Preview",
 }
 
 
@@ -2705,7 +2880,10 @@ __all__ = [
     "ArtistTagTemplateNode",
     "AnimaArtistMixerConfigNode",
     "LoraStackNode",
+    "ArtistTagTextParserNode",
+    "ArtistTagReplacerNode",
     "LoraStackSplitterNode",
+    "LoraStackFlattenerNode",
     "LoraStackListerNode",
     "MultiPromptSampleNode",
     "XYTestSampler",
@@ -2716,6 +2894,7 @@ __all__ = [
     "SeedListNode",
     "SeedAxisNode",
     "AxisComposerNode",
+    "AxisPreviewNode",
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
     "compose_positive_prompt",

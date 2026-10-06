@@ -1,8 +1,12 @@
 import { app } from "../../scripts/app.js";
+import { ComfyWidgets } from "../../scripts/widgets.js";
 
 const TARGET_NODE = "LoraTesterSampler";
 const STACK_NODE = "LoraStack";
+const ARTIST_TEXT_NODE = "ArtistTagTextParser";
+const ARTIST_REPLACER_NODE = "ArtistTagReplacer";
 const STACK_SPLITTER_NODE = "LoraStackSplitter";
+const STACK_FLATTENER_NODE = "LoraStackFlattener";
 const STACK_LISTER_NODE = "LoraStackLister";
 const MULTI_PROMPT_NODE = "MultiPromptSample";
 const XY_SAMPLER_NODE = "LoraTesterXYSampler";
@@ -13,6 +17,8 @@ const LORA_STACK_AXIS_NODE = "LoraTesterLoraStackAxis";
 const SEED_LIST_NODE = "LoraTesterSeedList";
 const SEED_AXIS_NODE = "LoraTesterSeedAxis";
 const AXIS_COMPOSER_NODE = "LoraTesterAxisComposer";
+const AXIS_PREVIEW_NODE = "LoraTesterAxisPreview";
+const AXIS_PREVIEW_WIDGET = "axis_preview_text";
 const ARTIST_TAG_MODE = "__lora_tester_artist_tag__";
 const ARTIST_WARNING_WIDGET = "lora_tester_anima_mixer_warning";
 const XY_WARNING_WIDGET = "lora_tester_xy_warning";
@@ -33,6 +39,7 @@ const DYNAMIC_LAYOUT_STATE = Symbol("loraTesterDynamicLayoutState");
 const WORKFLOW_SIZE_RESTORED = Symbol("loraTesterWorkflowSizeRestored");
 const MIN_WIDTH_APPLIED = Symbol("loraTesterMinWidthApplied");
 const SEED_MODE_OBSERVER = Symbol("loraTesterSeedModeObserver");
+const RANDOM_SEED_DISPLAY = Symbol("loraTesterRandomSeedDisplay");
 const DISABLED_STATE = Symbol("loraTesterDisabledState");
 const DISABLED_ELEMENT_STATE = Symbol("loraTesterDisabledElementState");
 const XY_OBSERVER = Symbol("loraTesterXyObserver");
@@ -42,6 +49,25 @@ let xyDomObserver = null;
 let xyDomApplyScheduled = false;
 
 const OPTION_LABELS = {
+  LoraTesterAxisPreview: {
+    language: {
+      zh: { en: "Chinese", zh: "中文" },
+      en: { en: "English", zh: "英文" },
+    },
+  },
+  LoraStackFlattener: {
+    weight_mode: {
+      inherit: { en: "Inherit", zh: "继承" },
+      normalize: { en: "Normalize", zh: "归一化" },
+      dual: { en: "Dual", zh: "双行" },
+    },
+  },
+  ArtistTagReplacer: {
+    strength_mode: {
+      replace: { en: "Replace", zh: "替换" },
+      multiply: { en: "Multiply", zh: "倍率" },
+    },
+  },
   LoraTesterSampler: {
     color_mode: {
       black: { en: "Black background / white text", zh: "黑底白字" },
@@ -177,6 +203,22 @@ const TOGGLE_LABELS = {
 };
 
 const INPUT_LABELS = {
+  LoraTesterAxisPreview: {
+    axis: { en: "Axis", zh: "轴" },
+    language: { en: "Preview Language", zh: "预览文本语言" },
+  },
+  ArtistTagTextParser: {
+    artist_text: { en: "Artist Tag Text", zh: "画师 Tag 文本" },
+    artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
+  },
+  ArtistTagReplacer: {
+    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    match_tag: { en: "Match Artist Tag", zh: "匹配画师" },
+    lora_1_name: { en: "Replacement LoRA / Artist Mode", zh: "替换物：LoRA / 画师模式" },
+    lora_1_trigger: { en: "Replacement Trigger / Artist Tag", zh: "替换触发词 / 画师 Tag" },
+    lora_1_strength: { en: "Replacement Strength / Multiplier", zh: "替换强度 / 倍率" },
+    strength_mode: { en: "Strength Mode", zh: "强度模式" },
+  },
   LoraTesterSampler: {
     lora_count: { en: "Test Item Count", zh: "测试项数量" },
     independent_artist_tags: { en: "Independent Artist Tags", zh: "独立画师 Tag" },
@@ -191,6 +233,11 @@ const INPUT_LABELS = {
   },
   LoraStackSplitter: {
     lora_stack: { en: "Style Stack", zh: "风格组合" },
+  },
+  LoraStackFlattener: {
+    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    include_original: { en: "Include Original Stack", zh: "加入原始组合" },
+    weight_mode: { en: "Weight Mode", zh: "权重模式" },
   },
   MultiPromptSample: {
     model: { en: "Base Model", zh: "基础模型" },
@@ -283,10 +330,23 @@ const ARTIST_MODE_OPTION_LABELS = {
 };
 
 const OUTPUT_LABELS = {
+  LoraTesterAxisPreview: {
+    axis: { en: "Axis", zh: "轴" },
+    text: { en: "Formatted Text", zh: "格式化文本" },
+  },
+  ArtistTagTextParser: {
+    lora_stack: { en: "Style Stack", zh: "风格组合" },
+  },
+  ArtistTagReplacer: {
+    lora_stack: { en: "Style Stack", zh: "风格组合" },
+  },
   LoraStack: {
     lora_stack: { en: "Style Stack", zh: "风格组合" },
   },
   LoraStackSplitter: {
+    lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
+  },
+  LoraStackFlattener: {
     lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
   },
   LoraStackLister: {
@@ -997,6 +1057,86 @@ function installSeedMode(node) {
   };
 }
 
+function randomGeneratorSeedLabel() {
+  return activeLanguage() === "zh" ? "随机" : "Random";
+}
+
+// Keep the serialized/model value numeric (-1) while giving DOM-backed Node 2.0
+// widgets a readable label. The input is restored visually while focused so the
+// user can still edit the sentinel as a number; legacy renderers simply retain
+// the numeric value when they do not expose a DOM input.
+function updateRandomGeneratorSeedDisplay(node) {
+  const widget = node?.widgets?.find((item) => item.name === "random_source_seed");
+  if (!widget) return;
+  const isRandom = Number(widget.value) === -1;
+  const label = randomGeneratorSeedLabel();
+  widget.__loraTesterDisplayValue = isRandom ? label : String(widget.value ?? "");
+  for (const options of widgetOptionTargets(widget)) {
+    try {
+      options.getValueLabel ??= (value) => Number(value) === -1 ? randomGeneratorSeedLabel() : String(value ?? "");
+    } catch {
+      // Some renderer snapshots expose frozen option objects.
+    }
+  }
+  const renderedElements = [...widgetElements(widget)];
+  if (typeof document !== "undefined" && node?.id != null) {
+    const escape = globalThis.CSS?.escape ?? ((value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
+    const selector = `[node-id="${escape(node.id)}"] [aria-label="random_source_seed"]`;
+    const rendered = document.querySelector(selector);
+    if (rendered) renderedElements.push(rendered);
+  }
+  for (const element of new Set(renderedElements)) {
+    const input = element.matches?.("input") ? element : element.querySelector?.("input");
+    if (!input || !input.parentElement) continue;
+    const host = input.parentElement;
+    let overlay = host.querySelector("[data-lora-tester-seed-display]");
+    if (!overlay) {
+      if (!host.style.position) host.style.position = "relative";
+      overlay = document.createElement("span");
+      overlay.dataset.loraTesterSeedDisplay = "true";
+      Object.assign(overlay.style, {
+        position: "absolute",
+        inset: "0 2.25rem 0 0.5rem",
+        display: "none",
+        alignItems: "center",
+        pointerEvents: "none",
+        overflow: "hidden",
+        whiteSpace: "nowrap",
+        textOverflow: "ellipsis",
+      });
+      host.appendChild(overlay);
+    }
+    const focused = typeof document !== "undefined" && document.activeElement === input;
+    overlay.textContent = label;
+    overlay.style.display = isRandom && !focused ? "flex" : "none";
+    const state = input[RANDOM_SEED_DISPLAY] ?? {
+      color: input.style.color,
+      caretColor: input.style.caretColor,
+    };
+    input[RANDOM_SEED_DISPLAY] = state;
+    input.style.color = isRandom && !focused ? "transparent" : state.color;
+    input.style.caretColor = isRandom && !focused ? "transparent" : state.caretColor;
+    if (state.installed) continue;
+    state.installed = true;
+    input.addEventListener("focus", () => updateRandomGeneratorSeedDisplay(node));
+    input.addEventListener("blur", () => updateRandomGeneratorSeedDisplay(node));
+  }
+}
+
+function installRandomGeneratorSeedDisplay(node) {
+  const widget = node?.widgets?.find((item) => item.name === "random_source_seed");
+  if (!widget) return;
+  updateRandomGeneratorSeedDisplay(node);
+  if (widget[RANDOM_SEED_DISPLAY]) return;
+  widget[RANDOM_SEED_DISPLAY] = true;
+  const originalCallback = widget.callback;
+  widget.callback = function (value, ...args) {
+    const result = originalCallback?.apply(this, [value, ...args]);
+    updateRandomGeneratorSeedDisplay(node);
+    return result;
+  };
+}
+
 function inputIsConnected(input) {
   return input?.link != null || (Array.isArray(input?.linkIds) && input.linkIds.length > 0);
 }
@@ -1160,11 +1300,17 @@ function loraStackCountFromAxis(node) {
   let count = null;
   if (sourceName === STACK_LISTER_NODE) {
     count = (source.inputs ?? []).filter(inputIsConnected).length;
-  } else if (sourceName === STACK_SPLITTER_NODE) {
+  } else if (sourceName === STACK_SPLITTER_NODE || sourceName === STACK_FLATTENER_NODE) {
     const stack = firstSourceForInput(source, "lora_stack");
-    if (stack && nodeNameForUi(stack) === STACK_NODE) {
-      const stackCount = Math.max(1, Number.parseInt(widgetValue(stack, "lora_count"), 10) || 1);
-      count = (2 ** Math.min(stackCount, 16)) - 1;
+    const stackEntries = artistEntriesFromStackSource(stack);
+    if (stackEntries) {
+      const stackCount = stackEntries.length;
+      count = sourceName === STACK_FLATTENER_NODE
+        ? flattenedStackChildren(source)?.length ?? null
+        : (2 ** stackCount) - 1;
+      if (count != null && sourceName === STACK_FLATTENER_NODE) {
+        count += widgetValue(source, "include_original") === true ? 1 : 0;
+      }
     }
   }
   if (count == null) return null;
@@ -1177,6 +1323,9 @@ function axisMetadataFromSource(source, visited = new Set()) {
   }
   visited.add(source);
   const sourceName = nodeNameForUi(source);
+  if (sourceName === AXIS_PREVIEW_NODE) {
+    return axisMetadataFromSource(firstSourceForInput(source, "axis"), visited);
+  }
   if (sourceName === SEED_AXIS_NODE) {
     return { parameters: new Set(["seed"]), count: seedCountFromAxis(source) };
   }
@@ -1199,7 +1348,7 @@ function axisMetadataFromSource(source, visited = new Set()) {
         count: promptCountFromSource(rawSource),
       };
     }
-    if (rawName === PROMPT_AXIS_NODE || rawName === SEED_AXIS_NODE || rawName === LORA_STACK_AXIS_NODE || rawName === AXIS_COMPOSER_NODE) {
+    if (rawName === PROMPT_AXIS_NODE || rawName === SEED_AXIS_NODE || rawName === LORA_STACK_AXIS_NODE || rawName === AXIS_COMPOSER_NODE || rawName === AXIS_PREVIEW_NODE) {
       return axisMetadataFromSource(rawSource, visited);
     }
     if (rawName === SEED_LIST_NODE) {
@@ -1210,18 +1359,22 @@ function axisMetadataFromSource(source, visited = new Set()) {
           .split(/[,，;；\s]+/).filter(Boolean).length;
       return { parameters: new Set(["seed"]), count };
     }
-    if (rawName === STACK_NODE || rawName === STACK_SPLITTER_NODE || rawName === STACK_LISTER_NODE) {
+    if (rawName === STACK_NODE || rawName === ARTIST_TEXT_NODE || rawName === ARTIST_REPLACER_NODE || rawName === STACK_SPLITTER_NODE || rawName === STACK_FLATTENER_NODE || rawName === STACK_LISTER_NODE) {
       const includeBase = widgetValue(source, "include_base") !== false;
-      const count = rawName === STACK_NODE
+      const count = rawName === STACK_NODE || rawName === ARTIST_TEXT_NODE || rawName === ARTIST_REPLACER_NODE
         ? 1
         : rawName === STACK_LISTER_NODE
           ? (rawSource.inputs ?? []).filter(inputIsConnected).length
           : (() => {
               const stack = firstSourceForInput(rawSource, "lora_stack");
-              const stackCount = stack && nodeNameForUi(stack) === STACK_NODE
-                ? Math.max(1, Number.parseInt(widgetValue(stack, "lora_count"), 10) || 1)
-                : null;
-              return stackCount == null ? null : (2 ** Math.min(stackCount, 16)) - 1;
+              const stackCount = artistEntriesFromStackSource(stack)?.length ?? null;
+              if (stackCount == null) return null;
+              return rawName === STACK_FLATTENER_NODE
+                ? (() => {
+                    const children = flattenedStackChildren(rawSource);
+                    return children ? children.length + (widgetValue(rawSource, "include_original") === true ? 1 : 0) : null;
+                  })()
+                : (2 ** stackCount) - 1;
             })();
       return {
         parameters: new Set(["lora_stack"]),
@@ -1356,6 +1509,14 @@ function installXySourceObservers(node, nodeName) {
       ? new Set(["mode", "seed_text", "random_count", "random_source_seed"])
       : nodeName === AXIS_COMPOSER_NODE
         ? new Set(["include_base", "axis_title"])
+      : nodeName === STACK_FLATTENER_NODE
+        ? new Set(["include_original", "weight_mode"])
+      : nodeName === ARTIST_TEXT_NODE
+        ? new Set(["artist_text"])
+      : nodeName === ARTIST_REPLACER_NODE
+        ? new Set(["match_tag", "lora_1_name", "lora_1_trigger", "lora_1_strength", "strength_mode"])
+      : nodeName === AXIS_PREVIEW_NODE
+        ? new Set()
       : null;
   if (!relevantNames) return;
   node[XY_SOURCE_OBSERVER] = true;
@@ -1384,11 +1545,85 @@ function installXySourceObservers(node, nodeName) {
   };
 }
 
+function normalizeArtistMatchTag(value) {
+  return String(value ?? "").trim()
+    .replace(/^\(\s*(.*?)\s*:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*\)$/, "$1")
+    .replace(/^@+/, "").trim();
+}
+
+function stackEntryDataFromSource(node, visited = new Set()) {
+  if (!node || visited.has(node) || visited.size > 64) return null;
+  visited.add(node);
+  const nodeName = nodeNameForUi(node);
+  if (nodeName === ARTIST_TEXT_NODE) {
+    return splitArtistTags(widgetValue(node, "artist_text")).map((tag) => {
+      const weighted = tag.match(/^\(\s*(.*?)\s*:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*\)$/);
+      return {
+        artists: [normalizeArtistMatchTag(tag)],
+        strength: weighted ? Number(weighted[2]) : 1,
+      };
+    });
+  }
+  if (nodeName === STACK_NODE) {
+    const count = Math.min(MAX_STACK_INPUTS, Math.max(1, Number.parseInt(widgetValue(node, "lora_count"), 10) || 1));
+    return Array.from({ length: count }, (_, index) => {
+      const name = widgetValue(node, "lora_" + (index + 1) + "_name");
+      const trigger = widgetValue(node, "lora_" + (index + 1) + "_trigger");
+      return {
+        artists: String(name ?? "") === ARTIST_TAG_MODE ? splitArtistTags(trigger).map(normalizeArtistMatchTag) : [],
+        strength: Number(widgetValue(node, "lora_" + (index + 1) + "_strength") ?? 1),
+      };
+    });
+  }
+  if (nodeName === ARTIST_REPLACER_NODE) {
+    const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited);
+    if (!entries) return null;
+    const target = normalizeArtistMatchTag(widgetValue(node, "match_tag"));
+    const replacement = String(widgetValue(node, "lora_1_name") ?? "") === ARTIST_TAG_MODE
+      ? splitArtistTags(widgetValue(node, "lora_1_trigger")).map(normalizeArtistMatchTag)
+      : [];
+    const strength = Number(widgetValue(node, "lora_1_strength") ?? 1);
+    const multiply = widgetValue(node, "strength_mode") === "multiply";
+    return entries.flatMap((entry) => entry.artists.includes(target)
+      ? entry.artists.map((tag) => tag === target
+        ? { artists: replacement, strength: multiply ? entry.strength * strength : strength }
+        : { artists: [tag], strength: entry.strength })
+      : [entry]);
+  }
+  return null;
+}
+
+function artistEntriesFromStackSource(node, visited = new Set()) {
+  return stackEntryDataFromSource(node, visited)?.map((entry) => entry.artists) ?? null;
+}
+
+function flattenedStackChildren(node) {
+  const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"));
+  if (!entries || entries.some((entry) => !Number.isFinite(entry.strength))) return null;
+  const mode = widgetValue(node, "weight_mode") ?? "inherit";
+  return entries.flatMap((entry) => {
+    if (mode === "normalize") return [{ ...entry, strength: 1 }];
+    if (mode === "dual" && entry.strength !== 1) return [{ ...entry, strength: 1 }, entry];
+    return [entry];
+  });
+}
+
 function stackArtistCountsFromNode(node, visited = new Set()) {
   if (!node || visited.has(node) || visited.size > 64) return [];
   visited.add(node);
   const nodeName = nodeNameForUi(node);
-  if (nodeName === STACK_NODE) return [countStackNodeArtists(node)];
+  const entries = artistEntriesFromStackSource(node);
+  if (entries) return [entries.reduce((total, tags) => total + tags.length, 0)];
+
+  if (nodeName === STACK_FLATTENER_NODE) {
+    const stack = firstSourceForInput(node, "lora_stack");
+    const stackEntries = artistEntriesFromStackSource(stack);
+    const children = flattenedStackChildren(node);
+    if (!stackEntries || !children) return [];
+    const counts = children.map((entry) => entry.artists.length);
+    if (widgetValue(node, "include_original") === true) counts.unshift(stackEntries.reduce((total, tags) => total + tags.length, 0));
+    return counts;
+  }
 
   const inputs = node.inputs ?? [];
   const relevantInputs = nodeName === STACK_SPLITTER_NODE
@@ -1664,7 +1899,7 @@ function installArtistObservers(node, nodeName) {
       return name === "independent_artist_tags" || name === "lora_count" || name === "use_anima_artist_mixer" || /^lora_[abc]_(?:name|trigger)$/.test(name);
     }
     if (nodeName === STACK_NODE) {
-      return name === "lora_count" || /^lora_\d+_(?:name|trigger)$/.test(name);
+      return name === "lora_count" || /^lora_\d+_(?:name|trigger|strength)$/.test(name);
     }
     if (nodeName === MULTI_PROMPT_NODE) {
       return name === "independent_artist_tags" || name === "use_anima_artist_mixer";
@@ -1713,10 +1948,64 @@ function nodeNameForUi(node) {
   );
 }
 
+function installAxisPreview(node) {
+  let widget = node.widgets?.find((item) => item.name === AXIS_PREVIEW_WIDGET);
+  if (!widget) {
+    widget = ComfyWidgets.STRING(
+      node,
+      AXIS_PREVIEW_WIDGET,
+      ["STRING", { default: "", multiline: true, dynamicPrompts: false }],
+      app,
+    ).widget;
+  }
+  widget.serialize = false;
+  widget.dynamicPrompts = false;
+  const language = activeLanguage();
+  const label = language === "zh" ? "轴内容预览（只读，可复制）" : "Axis Preview (read-only, copyable)";
+  setWidgetLabel(widget, label);
+  for (const options of widgetOptionTargets(widget)) {
+    options.serialize = false;
+    options.read_only = true;
+    options.spellcheck = false;
+    options.wrap = "off";
+    options.minNodeSize = [560, 340];
+  }
+  const text = String(node.properties?.loraTesterAxisPreviewText ?? "");
+  if (widget.value !== text) widget.value = text;
+  for (const element of widgetElements(widget)) {
+    const textarea = element.matches?.("textarea") ? element : element.querySelector?.("textarea");
+    if (!textarea) continue;
+    textarea.readOnly = true;
+    textarea.spellcheck = false;
+    textarea.wrap = "off";
+    textarea.value = text;
+    textarea.setAttribute("aria-label", label);
+    textarea.setAttribute("title", label);
+    textarea.placeholder = language === "zh" ? "执行节点后显示轴内容。" : "Run this node to inspect the axis.";
+    Object.assign(textarea.style, { fontFamily: "monospace", whiteSpace: "pre", overflow: "auto" });
+  }
+  if (!node[WORKFLOW_SIZE_RESTORED] && !node[MIN_WIDTH_APPLIED]) {
+    node[MIN_WIDTH_APPLIED] = true;
+    node.setSize?.([Math.max(node.size?.[0] ?? 0, 560), Math.max(node.size?.[1] ?? 0, 340)]);
+  }
+  return widget;
+}
+
+function updateAxisPreview(node, message) {
+  const value = message?.text;
+  if (value == null) return;
+  const text = Array.isArray(value) ? value.map(String).join("\n\n") : String(value);
+  (node.properties ??= {}).loraTesterAxisPreviewText = text;
+  installAxisPreview(node);
+  node.setDirtyCanvas?.(true, true);
+}
+
 function supportsNodeUi(nodeName) {
   return (
     nodeName === TARGET_NODE ||
     nodeName === STACK_NODE ||
+    nodeName === ARTIST_TEXT_NODE ||
+    nodeName === ARTIST_REPLACER_NODE ||
     nodeName === STACK_SPLITTER_NODE ||
     nodeName === STACK_LISTER_NODE ||
     nodeName === MULTI_PROMPT_NODE ||
@@ -1736,6 +2025,7 @@ function supportsNodeUi(nodeName) {
 
 function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
   if (!supportsNodeUi(nodeName)) return;
+  if (nodeName === AXIS_PREVIEW_NODE) installAxisPreview(node);
   preserveUnavailableLoraValues(node);
   installWidgetTranslations(node, nodeName);
   const labelsChanged = installNodeLabels(node, nodeName);
@@ -1747,13 +2037,14 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
     installMultiPromptLayout(node);
     installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
   }
-  if (nodeName === MULTI_PROMPT_INPUT_NODE || nodeName === GLOBAL_PROMPT_APPEND_NODE) {
+  if (nodeName === MULTI_PROMPT_INPUT_NODE || nodeName === GLOBAL_PROMPT_APPEND_NODE || nodeName === ARTIST_TEXT_NODE) {
     installMultiPromptLayout(node);
   }
   if (nodeName === MULTI_PROMPT_INPUT_NODE) {
     installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
   }
   if (nodeName === SEED_LIST_NODE) installSeedMode(node);
+  if (nodeName === SEED_LIST_NODE) installRandomGeneratorSeedDisplay(node);
   installXySourceObservers(node, nodeName);
   if (nodeName === AXIS_COMPOSER_NODE) {
     const originalConnectionsChange = node.onConnectionsChange;
@@ -1824,13 +2115,22 @@ app.registerExtension({
     node[WORKFLOW_SIZE_RESTORED] = true;
     scheduleNodeUi(node);
   },
+  onNodeOutputsUpdated(nodeOutputs) {
+    for (const graph of new Set([app.rootGraph, app.graph])) {
+      for (const node of graph?._nodes ?? []) {
+        if (nodeNameForUi(node) !== AXIS_PREVIEW_NODE) continue;
+        const output = nodeOutputs[String(node.id)];
+        if (output) updateAxisPreview(node, output);
+      }
+    }
+  },
   beforeRegisterNodeDef(nodeType, nodeData) {
     const hasDynamicLoraCount = nodeData.name === TARGET_NODE;
     const hasDynamicStackCount = nodeData.name === STACK_NODE;
     const hasDynamicPromptCount = nodeData.name === MULTI_PROMPT_NODE;
     const hasDynamicStackList = nodeData.name === STACK_LISTER_NODE;
     const hasSeedMode = nodeData.name === SEED_LIST_NODE;
-    const hasLongPromptLayout = [MULTI_PROMPT_INPUT_NODE, GLOBAL_PROMPT_APPEND_NODE].includes(
+    const hasLongPromptLayout = [MULTI_PROMPT_INPUT_NODE, GLOBAL_PROMPT_APPEND_NODE, ARTIST_TEXT_NODE].includes(
       nodeData.name,
     );
     const hasXyObserver = nodeData.name === XY_SAMPLER_NODE;
@@ -1872,6 +2172,7 @@ app.registerExtension({
     const originalOnExecuted = nodeType.prototype.onExecuted;
     nodeType.prototype.onExecuted = function (message, ...args) {
       const result = originalOnExecuted?.apply(this, [message, ...args]);
+      if (nodeData.name === AXIS_PREVIEW_NODE) updateAxisPreview(this, message);
       this.__loraTesterAnimaRemapMessage = message?.lora_tester_anima_remap?.[0]?.message ?? null;
       scheduleNodeUi(this, nodeData.name);
       return result;

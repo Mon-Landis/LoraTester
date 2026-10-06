@@ -43,6 +43,12 @@ Multi Prompt Input -> Global Prompt Append                    -> Axis Composer -
 
 Every axis node exposes an output named `axis`. Axes are orientation-independent and may connect to either sampler input, `x_axis` or `y_axis`. `axis_title` is the heading for the entire axis; each row or column label comes from its own `AxisEntry.label`. `Axis Composer` can place a Style BASE entry in its own group with `include_base`, creating a visible gap before the remaining test entries. `Prompt Axis`, `Style Axis`, and `Seed Axis` remain available as typed convenience builders.
 
+### Using seed lists
+
+In `Seed List / Random Seeds`, choose `Explicit list` and enter non-negative decimal integers in `Seed List`, separated by commas, spaces, or new lines—for example, `1, 42, 123456`. The input order becomes the axis order, with one row or column per value. Connect the output to `Seed Axis.seed_list`, or directly to `Axis Composer.source`, then connect the resulting `axis` to either `XY Test Sampler` axis input.
+
+In `Deterministic random` mode, `Random Count` controls the axis length. A fixed `Generator Seed` reproduces the same sequence. Set `Generator Seed` to `-1` to choose a new random generator seed on every execution; that sequence is intentionally not reproducible.
+
 ## Installation
 
 Clone the repository into ComfyUI's `custom_nodes` directory:
@@ -76,12 +82,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | `Lora Tester/XY/Prompt` | `Global Prompt Append` | Adds shared text before/after every prompt and appends independent artist tags. |
 | `Lora Tester/XY/Prompt` | `Prompt Axis` | Directly converts a prompt list into an orientation-neutral `XY_AXIS`. |
 | `Lora Tester/XY/Style` | `Style Stack` | Configures up to 16 LoRA or artist-tag style entries. |
+| `Lora Tester/XY/Style` | `Artist Tag Text Parser` | Parses artist prompt text into a weighted style stack. |
+| `Lora Tester/XY/Style` | `Artist Tag Replacer` | Replaces exact artist matches with artists or LoRAs, using replacement or multiplied weights. |
 | `Lora Tester/XY/Style` | `Style Stack Splitter` | Produces every non-empty Style Stack combination. |
+| `Lora Tester/XY/Style` | `Style Stack Flattener` | Produces individual entries, optionally preceded by the original stack. |
 | `Lora Tester/XY/Style` | `Style Stack Lister` | Dynamically merges up to 16 individual Style Stacks. |
 | `Lora Tester/XY/Style` | `Style Axis` | Directly converts a Style Stack list into grouped `XY_AXIS` data with detail tables. |
 | `Lora Tester/XY/Seed` | `Seed List / Random Seeds` | Parses seeds or generates a deterministic random list. |
 | `Lora Tester/XY/Seed` | `Seed Axis` | Directly converts a seed list into an orientation-neutral `XY_AXIS`. |
 | `Lora Tester/XY/Axis` | `Axis Composer` | Converts any supported raw source or complete axis into a generic `axis`. |
+| `Lora Tester/XY/Axis` | `Axis Content Preview` | Expands any complete axis into readable grouped text and passes through the unchanged axis. |
 | `Lora Tester` | `Style Component Tester` | Specialized 1-3 LoRA weight and mixing test. |
 | `Lora Tester` | `LoRA Tester Style` | Supplies a custom visual style to samplers. |
 | `Lora Tester/Artist Tags` | `Artist Tag Template` | Overrides normal and weighted artist-tag formatting. |
@@ -100,6 +110,41 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - The input latent must contain one sample. Large axes or latent dimensions produce non-blocking warnings. The final sheet is protected by a default `150 MP` `max_canvas_megapixels` limit.
 - The original image batch consumes CPU memory. For large matrices and high resolutions, reduce axis lengths or latent dimensions before increasing the canvas limit.
 - Non-empty `extra_footer_text` adds a final `NOTES` section. Style footers only show the code-to-source map; prompt bodies are not repeated below the sheet.
+
+### Axis Content Preview
+
+Connect any axis output to `Axis Content Preview`. It accepts prompt, style, seed, composed, and custom `XY_AXIS` data. After execution, the node displays read-only multiline text with preserved indentation, selectable text, and scrolling. Choose Chinese or English using `Preview Language`.
+
+- Shows the title, group count, entry count, and parameter names, then expands every group and entry in order. BASE is identified as having no parameter overrides.
+- Expands complete prompt bodies, prefix/suffix text, combined prompts, and independent artists; style entries include files, triggers, artist tags, weights, and templates.
+- Preserves full integer seeds, nested custom parameters, detail tables, and text blocks.
+- The `axis` output is the unchanged original; `text` is the complete formatted string for copying or saving. The preview is retained in workflow properties for save/reload; execute again after changing input data.
+
+For example: `Style Axis -> Axis Content Preview -> XY Test Sampler`. The preview itself never loads models or generates images; as an output node it can execute just the upstream axis construction chain.
+
+### Artist Text Parsing and Replacement
+
+`Artist Tag Text Parser` takes dedicated artist text such as `@wlop, (@ask_(askzy):0.55)` and returns one `LORA_STACK` with a separate artist-mode entry per tag. Unweighted tags use `1.0`. Commas, Chinese commas, and newlines are supported; name parentheses, entry order, duplicates, and the optional artist template are preserved. It does not automatically extract artists from ordinary prompts.
+
+`Artist Tag Replacer` takes a stack, one complete artist name (with or without `@`), a replacement LoRA file or Artist Tag Mode, replacement trigger words / artist tags, and a strength:
+
+- `Replace` uses the configured strength directly.
+- `Multiply` uses the matched entry's original strength times the configured value; `0.3 × 2` becomes `0.6`.
+- Matching is exact and case-sensitive, replaces all occurrences, and never matches ordinary LoRA triggers or artist-name substrings. No match returns the original stack.
+- The replacement picker, trigger, and strength controls reuse the same code path as `Style Stack`.
+- Other entries, order, and the artist template are preserved. A multi-artist entry is split only when necessary to replace a matching artist; the other artists keep their original weight.
+
+Chain `Artist Tag Text Parser -> Artist Tag Replacer -> Style Stack Flattener -> Style Axis / Axis Composer` for individual artist comparisons. A parsed stack connected directly to an axis represents the complete artist combination.
+
+### Flattening a Style Stack
+
+Connect `Style Stack` to `Style Stack Flattener`, then connect its `lora_stack_list` output to `Style Axis` or `Axis Composer`.
+
+- `Include Original Stack` is off by default: `a:1.2,b:0.3,c:1` produces `[a:1.2]`, `[b:0.3]`, and `[c:1]`.
+- With the switch on, the output is `[a:1.2,b:0.3,c:1]`, `[a:1.2]`, `[b:0.3]`, and `[c:1]`, with the original first.
+- `Weight Mode` defaults to `Inherit`, preserving each child's weight. `Normalize` sets every child weight to `1`. `Dual` emits adjacent weight-`1` and inherited-weight children for each non-unit entry; entries already at `1` appear once.
+- For `a:1.2,b:0.3,c:1`, Dual produces `[a:1]`, `[a:1.2]`, `[b:1]`, `[b:0.3]`, `[c:1]`. Including the original prepends the unchanged `[a:1.2,b:0.3,c:1]`, giving six entries.
+- Weight Mode never modifies the optional original stack. Entry order, trigger words, and artist templates are preserved; no pairwise combinations or deduplication occur.
 
 ## Prompts and Artist Tags
 

@@ -193,6 +193,20 @@ class XYModelTests(unittest.TestCase):
         self.assertEqual(len(axis.entries), 5)
         self.assertEqual(axis.entries[0].parameter_map["seed"], first.seeds[0])
 
+    def test_random_generator_seed_sentinel_uses_a_fresh_source_seed(self) -> None:
+        with patch("lora_tester.xy.random.SystemRandom") as system_random:
+            system_random.return_value.randrange.return_value = 987654321
+            generated = SeedListNode.build_seeds("random", "ignored", 4, -1)[0]
+        self.assertEqual(generated, SeedList.random(4, 987654321))
+        system_random.return_value.randrange.assert_called_once_with(2**64)
+
+    def test_seed_list_node_exposes_random_generator_seed_sentinel(self) -> None:
+        options = SeedListNode.INPUT_TYPES()["required"]["random_source_seed"][1]
+        self.assertEqual(options["min"], -1)
+        self.assertIn("-1", options["tooltip"])
+        with self.assertRaisesRegex(ValueError, "Generator seed must be -1"):
+            SeedList.random(1, -2)
+
 
 class XYCompositorTests(unittest.TestCase):
     def make_axes(self) -> tuple[XYAxis, XYAxis]:

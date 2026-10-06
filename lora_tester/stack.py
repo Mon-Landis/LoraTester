@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import Iterable
 
-from .artist import ARTIST_TAG_MODE, ArtistTagTemplate, split_artist_tags
+from .artist import ARTIST_TAG_MODE, ArtistTagTemplate, parse_artist_tag_entries, split_artist_tags
 
 
 def _display_name(value: str) -> str:
@@ -119,6 +119,58 @@ class LoraStackList:
         return cls(tuple(merged))
 
 
+def parse_artist_stack(
+    text: str, artist_template: ArtistTagTemplate | None = None
+) -> LoraStack:
+    """Parse artist-only prompt text into one weighted stack entry per tag."""
+
+    entries = parse_artist_tag_entries(text)
+    if not entries:
+        raise ValueError("Artist tag text cannot be empty")
+    for tag, _weight in entries:
+        if ":" in tag or tag.count("(") != tag.count(")") or not tag.strip("@ "):
+            raise ValueError(f"Invalid artist tag or weight syntax: {tag}")
+    return LoraStack(
+        tuple(LoraStackItem(ARTIST_TAG_MODE, tag, weight) for tag, weight in entries),
+        artist_template=artist_template,
+    )
+
+
+def replace_stack_artist(
+    stack: LoraStack,
+    match_tag: str,
+    replacement_name: str,
+    replacement_trigger: str,
+    strength: float,
+    strength_mode: str = "replace",
+) -> LoraStack:
+    """Replace exact artist matches without changing ordinary LoRA triggers."""
+
+    if not isinstance(stack, LoraStack):
+        raise TypeError("replace_stack_artist expects a LoraStack")
+    matches = parse_artist_stack(match_tag).items
+    if len(matches) != 1:
+        raise ValueError("Match exactly one artist tag")
+    target = matches[0].trigger_word
+    if strength_mode not in {"replace", "multiply"}:
+        raise ValueError("strength_mode must be replace or multiply")
+    replacement = LoraStackItem(str(replacement_name).strip(), str(replacement_trigger), float(strength))
+    items: list[LoraStackItem] = []
+    changed = False
+    for item in stack.items:
+        if not item.is_artist_tag or target not in item.artist_tags:
+            items.append(item)
+            continue
+        changed = True
+        effective_strength = replacement.strength if strength_mode == "replace" else item.strength * replacement.strength
+        for tag in item.artist_tags:
+            if tag == target:
+                items.append(LoraStackItem(replacement.name, replacement.trigger_word, effective_strength))
+            else:
+                items.append(LoraStackItem(ARTIST_TAG_MODE, tag, item.strength))
+    return LoraStack(tuple(items), artist_template=stack.artist_template) if changed else stack
+
+
 def split_lora_stack(stack: LoraStack) -> LoraStackList:
     """Return all non-empty combinations in singles, pairs, ... order."""
 
@@ -136,4 +188,42 @@ def split_lora_stack(stack: LoraStack) -> LoraStackList:
     return LoraStackList(tuple(combinations))
 
 
-__all__ = ["LoraStack", "LoraStackItem", "LoraStackList", "split_lora_stack"]
+FLATTEN_WEIGHT_MODES = ("inherit", "normalize", "dual")
+
+
+def flatten_lora_stack(
+    stack: LoraStack,
+    include_original: bool = False,
+    weight_mode: str = "inherit",
+) -> LoraStackList:
+    """Return single-entry stacks with the requested child weight policy."""
+
+    if not isinstance(stack, LoraStack):
+        raise TypeError("flatten_lora_stack expects a LoraStack")
+    if weight_mode not in FLATTEN_WEIGHT_MODES:
+        raise ValueError(
+            f"weight_mode must be one of {', '.join(FLATTEN_WEIGHT_MODES)}"
+        )
+    stacks = [stack] if include_original else []
+    for item in stack.items:
+        inherited = item
+        if weight_mode == "normalize":
+            children = (LoraStackItem(item.name, item.trigger_word, 1.0),)
+        elif weight_mode == "dual" and float(item.strength) != 1.0:
+            children = (
+                LoraStackItem(item.name, item.trigger_word, 1.0),
+                inherited,
+            )
+        else:
+            children = (inherited,)
+        stacks.extend(
+            LoraStack((child,), artist_template=stack.artist_template)
+            for child in children
+        )
+    return LoraStackList(tuple(stacks))
+
+
+__all__ = [
+    "LoraStack", "LoraStackItem", "LoraStackList", "split_lora_stack",
+    "flatten_lora_stack", "FLATTEN_WEIGHT_MODES", "parse_artist_stack", "replace_stack_artist",
+]

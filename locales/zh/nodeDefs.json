@@ -400,6 +400,66 @@
       }
     }
   },
+  "ArtistTagTextParser": {
+    "display_name": "画师 Tag-文本解析",
+    "description": "将画师提示词文本解析为含权重的风格组合，保留顺序与重复项。",
+    "inputs": {
+      "artist_text": {
+        "name": "画师 Tag 文本",
+        "tooltip": "逗号或换行分隔，例如 @wlop, (@ask_(askzy):0.55)。未标权重时为 1.0；保留画师名称内的括号。"
+      },
+      "artist_tag_template": {
+        "name": "画师 Tag 模板",
+        "tooltip": "可选的画师语法模板，存储在解析出的组合中。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "风格组合",
+        "tooltip": "每个画师对应一个画师模式项，保留解析权重。"
+      }
+    }
+  },
+  "ArtistTagReplacer": {
+    "display_name": "画师替换",
+    "description": "将全部精确匹配的画师替换为指定画师或 LoRA，保留其他项和画师模板。",
+    "inputs": {
+      "lora_stack": {
+        "name": "风格组合",
+        "tooltip": "需要修改的组合；不会匹配普通 LoRA 项的触发词。"
+      },
+      "match_tag": {
+        "name": "匹配画师",
+        "tooltip": "一个完整画师名，可带或不带 @；精确匹配，区分大小写。"
+      },
+      "lora_1_name": {
+        "name": "替换物：LoRA / 画师模式",
+        "tooltip": "沿用风格组合构造器的 LoRA 文件 / 画师 Tag 模式下拉框。"
+      },
+      "lora_1_trigger": {
+        "name": "替换触发词 / 画师 Tag",
+        "tooltip": "画师模式下填写新画师 Tag；LoRA 模式下填写新触发词。"
+      },
+      "lora_1_strength": {
+        "name": "替换强度 / 倍率",
+        "tooltip": "替换模式：直接采用该权重；倍率模式：原匹配项权重乘以该值。"
+      },
+      "strength_mode": {
+        "name": "强度模式",
+        "tooltip": "选择直接替换权重或以原匹配项权重为基准缩放。",
+        "values": {
+          "replace": "替换",
+          "multiply": "倍率"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "风格组合",
+        "tooltip": "替换后的组合；无匹配画师时保持原组合不变。"
+      }
+    }
+  },
   "LoraStackSplitter": {
     "display_name": "风格组合拆分",
     "description": "将一组 风格 拆分为所有非空组合。",
@@ -413,6 +473,35 @@
       "0": {
         "name": "风格组合列表",
         "tooltip": "按单项、两两组合到完整组合排列的列表。"
+      }
+    }
+  },
+  "LoraStackFlattener": {
+    "display_name": "风格组合平铺",
+    "description": "将风格组合平铺为独立单项，支持继承、归一化和双行权重模式；原始组合始终保持原权重。",
+    "inputs": {
+      "lora_stack": {
+        "name": "风格组合",
+        "tooltip": "需要平铺的风格组合；每项保留文件、触发词和画师 Tag 模板，子项权重由权重模式决定。"
+      },
+      "include_original": {
+        "name": "加入原始组合",
+        "tooltip": "关闭时仅输出独立单项；开启时先输出原始组合，再输出各单项。原始组合不受权重模式影响。"
+      },
+      "weight_mode": {
+        "name": "权重模式",
+        "tooltip": "继承：保留各项原权重；归一化：子项权重设为 1；双行：非 1 权重项依次输出权重 1 和原权重，原权重为 1 时仅输出一次。",
+        "values": {
+          "inherit": "继承",
+          "normalize": "归一化",
+          "dual": "双行"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "风格组合列表",
+        "tooltip": "按原项顺序排列的子项列表；双行模式中非 1 权重项的两项相邻，原始组合可保持原权重放在首位。"
       }
     }
   },
@@ -590,7 +679,7 @@
       "mode": { "name": "种子来源", "tooltip": "使用指定列表或确定性随机生成。", "values": { "list": "指定列表", "random": "确定性随机生成" } },
       "seed_text": { "name": "种子列表", "tooltip": "使用逗号、空格或换行分隔的十进制种子。" },
       "random_count": { "name": "随机种子数量", "tooltip": "随机模式下生成的种子数量。" },
-      "random_source_seed": { "name": "生成器种子", "tooltip": "以确定性方式控制随机种子序列。" }
+      "random_source_seed": { "name": "生成器种子", "tooltip": "以确定性方式控制随机种子序列；设为 -1 时，每次执行都会随机选择生成器种子。" }
     },
     "outputs": { "0": { "name": "种子列表", "tooltip": "可接入种子轴节点的有序种子。" } }
   },
@@ -602,6 +691,34 @@
       "axis_title": { "name": "轴总标题", "tooltip": "显示在轴旁的总标题；每行或每列的标签由单个源条目提供。" }
     },
     "outputs": { "0": { "name": "轴", "tooltip": "可接入 XY 采样器任一轴输入的种子值。" } }
+  },
+  "LoraTesterAxisPreview": {
+    "display_name": "轴内容预览",
+    "description": "将任意 XY 轴展开为可读多行文本，显示分组、参数、提示词、LoRA / 画师权重及详情。原轴不做修改，可直接串接采样器。",
+    "inputs": {
+      "axis": {
+        "name": "轴",
+        "tooltip": "连接提示词轴、风格轴、种子轴、合成轴或任意采用 XY_AXIS 类型的自定义轴。"
+      },
+      "language": {
+        "name": "预览文本语言",
+        "tooltip": "选择格式化文本使用的语言。",
+        "values": {
+          "zh": "中文",
+          "en": "英文"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "轴",
+        "tooltip": "原样输出输入轴，保留分组和内容，可继续连接采样器。"
+      },
+      "1": {
+        "name": "格式化文本",
+        "tooltip": "完整多行文本，保留缩进和换行，可复制或连接文本保存节点。"
+      }
+    }
   },
   "LoraTesterAxisComposer": {
     "display_name": "轴合成器",

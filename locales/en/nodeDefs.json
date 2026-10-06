@@ -400,6 +400,66 @@
       }
     }
   },
+  "ArtistTagTextParser": {
+    "display_name": "Artist Tag Text Parser",
+    "description": "Parses artist-only prompt text into a weighted style stack, preserving order and duplicates.",
+    "inputs": {
+      "artist_text": {
+        "name": "Artist Tag Text",
+        "tooltip": "Comma/newline-separated tags, e.g. @wlop, (@ask_(askzy):0.55). Unweighted tags use 1.0; tag-name parentheses are preserved."
+      },
+      "artist_tag_template": {
+        "name": "Artist Tag Template",
+        "tooltip": "Optional artist syntax stored with the parsed stack."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Style Stack",
+        "tooltip": "One artist-mode stack entry per tag with its parsed weight."
+      }
+    }
+  },
+  "ArtistTagReplacer": {
+    "display_name": "Artist Tag Replacer",
+    "description": "Replaces all exact artist matches with another artist or LoRA. Other entries and the artist template are preserved.",
+    "inputs": {
+      "lora_stack": {
+        "name": "Style Stack",
+        "tooltip": "Input stack to modify. Ordinary LoRA trigger text is never matched."
+      },
+      "match_tag": {
+        "name": "Match Artist Tag",
+        "tooltip": "One complete artist name, with or without @; matching is exact and case-sensitive."
+      },
+      "lora_1_name": {
+        "name": "Replacement LoRA / Artist Mode",
+        "tooltip": "Uses the same LoRA file / Artist Tag Mode picker as Style Stack."
+      },
+      "lora_1_trigger": {
+        "name": "Replacement Trigger / Artist Tag",
+        "tooltip": "Artist Tag Mode: replacement artist tag(s). LoRA mode: replacement trigger words."
+      },
+      "lora_1_strength": {
+        "name": "Replacement Strength / Multiplier",
+        "tooltip": "Replace: use this weight. Multiply: original matched weight multiplied by this value."
+      },
+      "strength_mode": {
+        "name": "Strength Mode",
+        "tooltip": "Choose absolute replacement or scaling of each matched entry’s original weight.",
+        "values": {
+          "replace": "Replace",
+          "multiply": "Multiply"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Style Stack",
+        "tooltip": "Updated stack, or the unchanged original if no artist matches."
+      }
+    }
+  },
   "LoraStackSplitter": {
     "display_name": "Style Stack Splitter",
     "description": "Splits one style stack into every non-empty combination.",
@@ -413,6 +473,35 @@
       "0": {
         "name": "Style Stack List",
         "tooltip": "Single, pairwise, and complete Style combinations in order."
+      }
+    }
+  },
+  "LoraStackFlattener": {
+    "display_name": "Style Stack Flattener",
+    "description": "Flattens a style stack using inherited, normalized, or dual child weights; the optional original stack is unchanged.",
+    "inputs": {
+      "lora_stack": {
+        "name": "Style Stack",
+        "tooltip": "The style stack to flatten; files, trigger words, and artist templates are preserved, while child weights follow Weight Mode."
+      },
+      "include_original": {
+        "name": "Include Original Stack",
+        "tooltip": "Off: individual entries only. On: prepend the original stack, unchanged by Weight Mode."
+      },
+      "weight_mode": {
+        "name": "Weight Mode",
+        "tooltip": "Inherit keeps original weights. Normalize sets child weights to 1. Dual emits weight 1 then the inherited weight for each non-unit entry; unit-weight entries appear once.",
+        "values": {
+          "inherit": "Inherit",
+          "normalize": "Normalize",
+          "dual": "Dual"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Style Stack List",
+        "tooltip": "Child stacks in input order; dual pairs are adjacent, and the optional original stack keeps its weights."
       }
     }
   },
@@ -590,7 +679,7 @@
       "mode": { "name": "Seed Source", "tooltip": "Uses an explicit list or deterministic random generation.", "values": { "list": "Explicit list", "random": "Deterministic random" } },
       "seed_text": { "name": "Seed List", "tooltip": "Decimal seeds separated by commas, spaces, or new lines." },
       "random_count": { "name": "Random Count", "tooltip": "Number of seeds generated in Random mode." },
-      "random_source_seed": { "name": "Generator Seed", "tooltip": "Deterministically controls the generated random seed sequence." }
+      "random_source_seed": { "name": "Generator Seed", "tooltip": "Controls the generated sequence deterministically; set to -1 to choose a random generator seed on every execution." }
     },
     "outputs": { "0": { "name": "Seed List", "tooltip": "Ordered seeds ready for a Seed Axis node." } }
   },
@@ -602,6 +691,34 @@
       "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; each row or column label comes from its source entry." }
     },
     "outputs": { "0": { "name": "Axis", "tooltip": "Seed values ready for either XY sampler socket." } }
+  },
+  "LoraTesterAxisPreview": {
+    "display_name": "Axis Content Preview",
+    "description": "Expands any XY axis into readable multiline text with groups, parameters, prompts, LoRA / artist weights, and detail blocks. Passes through the unchanged axis.",
+    "inputs": {
+      "axis": {
+        "name": "Axis",
+        "tooltip": "Any prompt, style, seed, composed, or custom XY_AXIS source."
+      },
+      "language": {
+        "name": "Preview Language",
+        "tooltip": "Language of the formatted text.",
+        "values": {
+          "zh": "Chinese",
+          "en": "English"
+        }
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Axis",
+        "tooltip": "Unchanged input axis, preserving groups and content for the sampler."
+      },
+      "1": {
+        "name": "Formatted Text",
+        "tooltip": "Complete multiline text with indentation and line breaks for copying or saving."
+      }
+    }
   },
   "LoraTesterAxisComposer": {
     "display_name": "Axis Composer",
