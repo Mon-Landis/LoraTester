@@ -518,7 +518,11 @@
       },
       "enabled": { "name": "Enabled", "tooltip": "Enables the external Mixer patch when the integration is selected." },
       "apply_to_uncond": { "name": "Apply to Unconditional", "tooltip": "Experimental external Mixer influence on unconditional rows." },
-      "uncond_strength": { "name": "Unconditional Strength", "tooltip": "Strength of external Mixer influence on unconditional rows." }
+      "uncond_strength": { "name": "Unconditional Strength", "tooltip": "Strength of external Mixer influence on unconditional rows." },
+      "advanced_options": {
+        "name": "External Mixer Advanced Options",
+        "tooltip": "Pass Anima Artist Options unchanged. For reproducible Anchor-Q comparisons, share fixed anchor seeds with the production workflow."
+      }
     },
     "outputs": {
       "0": {

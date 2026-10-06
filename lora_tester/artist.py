@@ -6,6 +6,7 @@ import math
 import re
 import string
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
@@ -159,6 +160,7 @@ class AnimaArtistMixerConfig:
     enabled: bool = True
     apply_to_uncond: bool = False
     uncond_strength: float = 0.0
+    advanced_options: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         strength = float(self.strength)
@@ -176,6 +178,9 @@ class AnimaArtistMixerConfig:
         object.__setattr__(self, "enabled", bool(self.enabled))
         object.__setattr__(self, "apply_to_uncond", bool(self.apply_to_uncond))
         object.__setattr__(self, "uncond_strength", uncond_strength)
+        if self.advanced_options is not None and not isinstance(self.advanced_options, dict):
+            raise TypeError("Mixer advanced_options must come from Anima Artist Options (Advanced)")
+        object.__setattr__(self, "advanced_options", deepcopy(self.advanced_options))
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,6 +189,9 @@ class ArtistPromptRoute:
     positive: Any
     rendered_tags: tuple[str, ...]
     mode: str
+    prompt_text: str = ""
+    artist_chain: str = ""
+    mixer_parameters: dict[str, Any] | None = None
 
     @property
     def used_external_mixer(self) -> bool:
@@ -245,6 +253,28 @@ def anima_artist_mixer_available() -> bool:
     return _resolve_anima_mixer_nodes() is not None
 
 
+def anima_flow_mixer_defaults() -> AnimaArtistMixerConfig:
+    mixer_nodes = _resolve_anima_mixer_nodes()
+    if mixer_nodes is None:
+        return AnimaArtistMixerConfig()
+    mixer_class = mixer_nodes[1]
+    required = mixer_class.INPUT_TYPES()["required"]
+    values = {}
+    for name in (
+        "strength", "normalize_weights", "alignment_mode", "enabled",
+        "apply_to_uncond", "uncond_strength",
+    ):
+        specification = required[name]
+        options = specification[1] if len(specification) > 1 else {}
+        if "default" in options:
+            values[name] = options["default"]
+        elif isinstance(specification[0], (list, tuple)) and specification[0]:
+            values[name] = specification[0][0]
+        else:
+            raise RuntimeError(f"Anima Artist Mixer is missing a default for {name}")
+    return AnimaArtistMixerConfig(**values)
+
+
 def route_artist_prompt(
     *,
     model: Any,
@@ -269,6 +299,7 @@ def route_artist_prompt(
             positive=_encode_prompt(clip, fallback_prompt),
             rendered_tags=rendered_tags,
             mode="native_prompt",
+            prompt_text=fallback_prompt,
         )
 
     config = mixer_config or AnimaArtistMixerConfig()
@@ -286,6 +317,7 @@ def route_artist_prompt(
             positive=_encode_prompt(clip, fallback_prompt),
             rendered_tags=rendered_tags,
             mode="native_prompt_mixer_disabled",
+            prompt_text=fallback_prompt,
         )
 
     mixer_nodes = _resolve_anima_mixer_nodes()
@@ -299,10 +331,19 @@ def route_artist_prompt(
             positive=_encode_prompt(clip, fallback_prompt),
             rendered_tags=rendered_tags,
             mode="native_prompt_missing_mixer",
+            prompt_text=fallback_prompt,
         )
 
     pack_class, mixer_class = mixer_nodes
     artist_chain = "\n".join(rendered_tags)
+    mixer_parameters = dict(
+        strength=config.strength, normalize_weights=config.normalize_weights,
+        alignment_mode=config.alignment_mode, enabled=config.enabled,
+        apply_to_uncond=config.apply_to_uncond, uncond_strength=config.uncond_strength,
+    )
+    if config.advanced_options is not None:
+        mixer_parameters["advanced_options"] = deepcopy(config.advanced_options)
+    audit_parameters = deepcopy(mixer_parameters)
     try:
         artist_pack = pack_class().pack(
             clip=clip,
@@ -312,12 +353,7 @@ def route_artist_prompt(
         patched_model, positive = mixer_class().patch(
             model=model,
             artist_pack=artist_pack,
-            strength=config.strength,
-            normalize_weights=config.normalize_weights,
-            alignment_mode=config.alignment_mode,
-            enabled=config.enabled,
-            apply_to_uncond=config.apply_to_uncond,
-            uncond_strength=config.uncond_strength,
+            **mixer_parameters,
         )
     except Exception as error:
         raise RuntimeError(
@@ -329,6 +365,9 @@ def route_artist_prompt(
         positive=positive,
         rendered_tags=rendered_tags,
         mode="anima_artist_mixer",
+        prompt_text=str(mixer_base_prompt),
+        artist_chain=artist_chain,
+        mixer_parameters=audit_parameters,
     )
 
 
@@ -344,6 +383,7 @@ __all__ = [
     "MODEL_FAMILY_ANIMA",
     "MODEL_FAMILY_DANBOORU",
     "anima_artist_mixer_available",
+    "anima_flow_mixer_defaults",
     "artist_template_for_model",
     "detect_model_family",
     "extract_anima_artist_tags",

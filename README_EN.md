@@ -175,6 +175,14 @@ Connect `Style Stack` to `Style Stack Flattener`, then connect its `lora_stack_l
 - **Single-entry exception:** input `a:0.8` named `A` yields `a:0.8(A)` in Inherit, `a:1(A)` in Normalize, and `a:0.8(A)`, `a:1(automatic name)` in Dual. Single-entry Dual puts the original first, unlike multi-entry Dual.
 - Including the original merges identical single-entry children instead of duplicating them. Unit weights appear once in every mode. Normalize with a non-unit original and Include Original enabled retains both the unchanged original and normalized child; both inherit the name.
 
+### AnimaFlow production parity
+
+- Without an explicit Mixer configuration, AnimaFlow XY reads defaults from the installed Adapter Mixer (currently strength `1.0`) instead of silently using the legacy tester's `1.6`. Explicit configuration always wins. Legacy tester/configuration-node defaults and saved configurations remain unchanged.
+- Connect the external Anima Artist Options `ANIMA_OPTS` output to Anima Artist Mixer Configuration to forward advanced options unchanged. Anchor-Q with an empty anchor seed list generates random anchors upstream; a fixed sampling seed does not fix those anchors. Share the options object and specify fixed anchor seeds for comparisons.
+- Detail logging records each cell's encoded positive/base prompt, artist chain and Mixer parameters, submitted Flow controls and Settings, and the external sampler's normalized-configuration log. The existing detail toggle suppresses these records when off.
+- Compare effective inputs, not just the visible CFG number: CFG mode, negative prompt, complete artist chain, Mixer strength/advanced options, model/CLIP/LoRA patches, latent contents/metadata, and Settings connection state must match. `flow_settings=None` and connected default Settings can produce different upstream `final_clean_pass` behavior; this plugin preserves that distinction.
+- `@tag` in an ordinary prompt stays in the base prompt. Single-artist cells still use native encoding, unlike a production workflow that applies Mixer even to one artist. CLIP `(tag:weight)` syntax is not the same as upstream `::weight` linear injection.
+
 ## Prompts and Artist Tags
 
 Only the dedicated independent-artist field from `Global Prompt Append` enters the artist routing chain. `@tag` text in ordinary prompts and LoRA trigger words remains in the base prompt and is never extracted automatically.

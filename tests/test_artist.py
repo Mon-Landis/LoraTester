@@ -96,6 +96,33 @@ class ArtistTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "only support"):
             ArtistTagTemplate("{tag}", "({name}:{weight})")
 
+    def test_advanced_mixer_options_are_snapshotted_and_not_mutated_by_upstream(self):
+        options = {"artist_anchor_q": True, "anchor_seed_list": "123,456", "nested": {"value": 2}}
+        config = AnimaArtistMixerConfig(advanced_options=options)
+        options["nested"]["value"] = 3
+
+        def patch_mixer(**arguments):
+            arguments["advanced_options"]["nested"]["value"] = 4
+            return arguments["model"], {"text": "portrait"}
+
+        with (
+            patch("lora_tester.artist._resolve_anima_mixer_nodes", return_value=(_FakePack, _FakeMixer)),
+            patch.object(_FakeMixer, "patch", side_effect=patch_mixer),
+        ):
+            route = route_artist_prompt(
+                model=_AnimaModel(), clip=_Clip(), mixer_base_prompt="portrait",
+                fallback_prompt="@first, @second, portrait", artist_entries=(("first", 1.0), ("second", 0.7)),
+                mixer_config=config,
+            )
+        self.assertEqual(config.advanced_options["nested"]["value"], 2)
+        self.assertEqual(route.mixer_parameters["advanced_options"]["nested"]["value"], 2)
+        self.assertEqual(route.prompt_text, "portrait")
+        self.assertEqual(route.artist_chain, "@first\n(@second:0.7)")
+
+    def test_advanced_mixer_options_reject_non_dictionary_objects(self):
+        with self.assertRaises(TypeError):
+            AnimaArtistMixerConfig(advanced_options="invalid")
+
     def test_model_family_uses_comfy_model_config_not_checkpoint_name(self):
         self.assertEqual(detect_model_family(_AnimaModel()), "anima")
         self.assertEqual(detect_model_family(object()), "danbooru")

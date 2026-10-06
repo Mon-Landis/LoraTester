@@ -18,7 +18,7 @@ from lora_tester.anima_flow_adapter import (
     FLOW_CONTROLS, PROJECT_URL, AnimaFlowAdapter, AnimaFlowDependencyError,
     anima_flow_status, missing_control_schema, validate_control,
 )
-from lora_tester.artist import ARTIST_TAG_MODE
+from lora_tester.artist import ARTIST_TAG_MODE, AnimaArtistMixerConfig, anima_flow_mixer_defaults
 from lora_tester.nodes import (
     AnimaFlowParameterAxisNode, AnimaFlowXYTestSampler, NODE_CLASS_MAPPINGS,
     _CachedLora,
@@ -107,11 +107,40 @@ class Progress:
         self.events.append(args)
 
 
+class FlowArtistPack:
+    calls = []
+
+    def pack(self, clip, artist_chain, base_prompt):
+        self.calls.append(dict(artist_chain=artist_chain, base_prompt=base_prompt, clip=clip))
+        return ({"base_prompt": base_prompt, "artist_chain": artist_chain},)
+
+
+class FlowArtistMixer:
+    calls = []
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "strength": ("FLOAT", {"default": 1.0}),
+            "normalize_weights": ("BOOLEAN", {"default": True}),
+            "alignment_mode": (["base_anchored", "shared_base_ids"], {"default": "base_anchored"}),
+            "enabled": ("BOOLEAN", {"default": True}),
+            "apply_to_uncond": ("BOOLEAN", {"default": False}),
+            "uncond_strength": ("FLOAT", {"default": 0.0}),
+        }}
+
+    def patch(self, model, artist_pack, **values):
+        self.calls.append(deepcopy(values))
+        return model, {"text": artist_pack["base_prompt"], "artist_chain": artist_pack["artist_chain"]}
+
+
 class AnimaFlowTests(unittest.TestCase):
     def setUp(self):
         FakeFlowSampler.calls = []
         FakeFlowSampler.failure = None
         FakeFlowSettings.calls = []
+        FlowArtistPack.calls = []
+        FlowArtistMixer.calls = []
         self.registry = SimpleNamespace(NODE_CLASS_MAPPINGS={
             "AnimaFlowCorrectiveSampler": FakeFlowSampler,
             "AnimaFlowSettings": FakeFlowSettings,
@@ -329,6 +358,64 @@ class AnimaFlowTests(unittest.TestCase):
         self.assertEqual(output[1].shape[0], 4)
         self.assertEqual(FakeFlowSampler.calls[0]["positive"], FakeFlowSampler.calls[1]["positive"])
         self.assertEqual(FakeFlowSampler.calls[2]["positive"], FakeFlowSampler.calls[3]["positive"])
+
+    def artist_arguments(self):
+        self.registry.NODE_CLASS_MAPPINGS.update({
+            "AnimaArtistPack": FlowArtistPack,
+            "AnimaArtistAdapterMixer": FlowArtistMixer,
+        })
+        model = SimpleNamespace(model=SimpleNamespace(model_config=SimpleNamespace(unet_config={"image_model": "anima"})))
+        stack = LoraStack((
+            LoraStackItem(ARTIST_TAG_MODE, r"@first_\(alias\)", 1.0),
+            LoraStackItem(ARTIST_TAG_MODE, "@second", 0.4),
+        ))
+        return dict(
+            model=model, use_anima_artist_mixer=True,
+            x_axis=build_lora_stack_axis(LoraStackList((stack,)), include_base=False),
+            y_axis=build_prompt_axis(PromptList((PromptEntry("portrait"),))),
+        )
+
+    def test_flow_implicit_mixer_uses_external_defaults_not_legacy_1_6(self):
+        self.run_sampler(**self.artist_arguments())
+        self.assertEqual(FlowArtistMixer.calls[0]["strength"], 1.0)
+        self.assertEqual(FlowArtistMixer.calls[0]["alignment_mode"], "base_anchored")
+        self.assertEqual(FlowArtistPack.calls[0]["artist_chain"], "@first_\\(alias\\)\n(@second:0.4)")
+        self.assertEqual(FlowArtistPack.calls[0]["base_prompt"], "portrait")
+
+    def test_flow_explicit_mixer_settings_and_advanced_options_are_preserved(self):
+        arguments = self.artist_arguments()
+        advanced = {"artist_anchor_q": True, "anchor_seed_list": "123,456", "anchor_refresh_mode": "warm_cache"}
+        config = AnimaArtistMixerConfig(strength=1.7, normalize_weights=False, advanced_options=advanced)
+        self.run_sampler(**arguments, anima_mixer_config=config)
+        self.assertEqual(FlowArtistMixer.calls[0]["strength"], 1.7)
+        self.assertFalse(FlowArtistMixer.calls[0]["normalize_weights"])
+        self.assertEqual(FlowArtistMixer.calls[0]["advanced_options"], advanced)
+
+    def test_flow_defaults_follow_changed_external_schema(self):
+        self.artist_arguments()
+        schema = FlowArtistMixer.INPUT_TYPES()
+        schema["required"]["strength"][1]["default"] = 1.25
+        with patch.object(FlowArtistMixer, "INPUT_TYPES", return_value=schema):
+            self.assertEqual(anima_flow_mixer_defaults().strength, 1.25)
+
+    def test_submission_log_reports_resolved_axis_controls_and_settings(self):
+        seed_axis = build_seed_axis(SeedList((0xFFFFFFFFFFFFFFFF,)))
+        cfg_axis = AnimaFlowParameterAxisNode().build_axis("cfg_mode", "ramp cfg", "CFG")[0]
+        settings = {"final_clean_pass": False}
+        with self.assertLogs("lora_tester.anima_flow_adapter", level="INFO") as logs:
+            self.run_sampler(x_axis=seed_axis, y_axis=cfg_axis, flow_settings=settings, log_test_details=True)
+        text = "\n".join(logs.output)
+        self.assertIn(str(0xFFFFFFFFFFFFFFFF), text)
+        self.assertIn("'cfg_mode': 'ramp cfg'", text)
+        self.assertIn("'final_clean_pass': False", text)
+        self.assertIn("flow log", text)
+        self.assertEqual(FakeFlowSampler.calls[0]["seed"], 0xFFFFFFFFFFFFFFFF)
+        self.assertEqual(FakeFlowSampler.calls[0]["cfg_mode"], "ramp cfg")
+
+    def test_flow_detail_toggle_suppresses_submission_and_upstream_logs(self):
+        with patch("lora_tester.anima_flow_adapter.logger.info") as log:
+            self.run_sampler(log_test_details=False)
+        log.assert_not_called()
 
     def test_numeric_validation_does_not_accept_fractional_integer_or_nonfinite(self):
         with self.assertRaises(ValueError):

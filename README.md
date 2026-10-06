@@ -190,6 +190,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 
 项目可选兼容 [Anima-Artist-Mixer](https://github.com/An1X3R/Anima-Artist-Mixer)。仅当模型为 Anima、当前测试格至少包含两个显式画师项、Mixer 可用且开关/配置启用时，才调用外部 Mixer；其余情况使用原生提示词编码。外部项目缺失不会阻止本插件导入或执行。
 
+### AnimaFlow 与生产工作流对齐
+
+- AnimaFlow XY 未连接 Mixer 配置时，读取已安装外部 Adapter Mixer 的默认配置（当前外部默认强度为 `1.0`），不再隐式采用旧测试器的 `1.6`。显式连接的配置完全优先；旧测试器与配置构造节点的默认值保持不变，已有配置不会被重写。
+- `Anima Artist Mixer 配置` 可连接外部 `Anima Artist Options` 的 `ANIMA_OPTS` 输出，原样转发高级配置。Anchor-Q 启用且锚点列表为空时，上游会自行生成随机锚点；相同采样 seed 并不保证相同锚点。复现时请共用同一高级选项对象并指定固定锚点种子。
+- 打开“输出测试详情日志”可检查每格最终编码的正面/基础提示词、Mixer 画师链与全部混合参数、实际提交的 Flow 控件和 Settings，以及外部采样器返回的归一化配置日志。关闭时不会输出这些详情。
+- 对照时必须一致的是**有效输入**，不只是控件上的 `cfg` 数值：`cfg_mode`（如 `const` 与 `ramp cfg`）、负面提示词、完整画师链、Mixer 强度与高级配置、模型/CLIP/LoRA 补丁、latent 内容及元数据，以及 Settings 的连接状态都需一致。`flow_settings=None` 和连接默认 Settings 可能触发不同的上游 `final_clean_pass` 行为；本插件保留这一差别，不自行补默认对象。
+- 普通提示词中的 `@tag` 仍属于基础提示词，不会自动加入画师链。单画师格仍使用原生编码；生产端若给单画师也套 Mixer，则不是同一路由。画师 `(tag:weight)` 是 CLIP 权重，不等价于上游 `::weight` 的线性注入权重。
+
 更深入的边界与验证记录：
 
 - [Anima 画师权重线性验证](audit/anima_artist_linearity.md)

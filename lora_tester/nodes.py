@@ -17,6 +17,7 @@ from .artist import (
     AnimaArtistMixerConfig,
     MODEL_FAMILY_ANIMA,
     anima_artist_mixer_available,
+    anima_flow_mixer_defaults,
     artist_template_for_model,
     detect_model_family,
     parse_artist_tag_entries,
@@ -638,6 +639,10 @@ def _log_test_usage(
             )
     else:
         lines.append("    - none")
+    lines.append(f"  Encoded positive/base prompt: {route.prompt_text!r}")
+    if route.used_external_mixer:
+        lines.append(f"  Mixer artist chain: {route.artist_chain!r}")
+        lines.append(f"  Mixer parameters: {route.mixer_parameters!r}")
     logger.info("%s", "\n".join(lines))
 
 
@@ -1598,6 +1603,8 @@ class XYTestSampler(LoraTesterSampler):
             _log_combination_preflight(preflight)
 
         total_tasks = len(tasks)
+        if bool(log_test_details):
+            logger.info("[LoraTester] Encoded negative prompt: %r", str(negative_prompt))
         progress = _make_progress_bar(total_tasks, node_id=unique_id)
         anima_state_dicts: list[Mapping[Any, Any]] = []
         compositor: XYMatrixCompositor | None = None
@@ -1706,6 +1713,7 @@ class XYTestSampler(LoraTesterSampler):
                                     model=task_model, positive=positive, negative=negative,
                                     latent=latent_image, values=values, vae=vae,
                                     progress=progress, completed_tasks=task_index, total_tasks=total_tasks,
+                                    log_test_details=bool(log_test_details),
                                 )
                             shape = getattr(decoded, "shape", None)
                             if shape is None or len(shape) != 4 or int(shape[0]) != 1:
@@ -1820,6 +1828,8 @@ class AnimaFlowXYTestSampler(XYTestSampler):
         flow_settings: Any = None, unique_id: Any = None,
     ) -> Any:
         adapter = AnimaFlowAdapter()
+        if anima_mixer_config is None and use_anima_artist_mixer and detect_model_family(model) == MODEL_FAMILY_ANIMA:
+            anima_mixer_config = anima_flow_mixer_defaults()
         controls = dict(
             seed=seed, steps=steps, cfg=cfg, cfg_mode=cfg_mode,
             flow_solver=flow_solver, flow_schedule=flow_schedule,
@@ -2414,7 +2424,13 @@ class AnimaArtistMixerConfigNode:
                     "FLOAT",
                     {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05},
                 ),
-            }
+            },
+            "optional": {
+                "advanced_options": (
+                    "ANIMA_OPTS",
+                    {"tooltip": "Pass the external Anima Artist Options object unchanged. For reproducible Anchor-Q tests, share fixed anchor seeds with the production workflow."},
+                ),
+            },
         }
 
     RETURN_TYPES = ("ANIMA_ARTIST_MIXER_CONFIG",)
@@ -2435,6 +2451,7 @@ class AnimaArtistMixerConfigNode:
         enabled: bool,
         apply_to_uncond: bool,
         uncond_strength: float,
+        advanced_options: dict[str, Any] | None = None,
     ) -> tuple[AnimaArtistMixerConfig]:
         return (
             AnimaArtistMixerConfig(
@@ -2444,6 +2461,7 @@ class AnimaArtistMixerConfigNode:
                 enabled=enabled,
                 apply_to_uncond=apply_to_uncond,
                 uncond_strength=uncond_strength,
+                advanced_options=advanced_options,
             ),
         )
 

@@ -518,7 +518,11 @@
       },
       "enabled": { "name": "启用", "tooltip": "选中集成路径时启用外部 Mixer 补丁。" },
       "apply_to_uncond": { "name": "应用到无条件分支", "tooltip": "让外部 Mixer 实验性地影响无条件分支。" },
-      "uncond_strength": { "name": "无条件分支强度", "tooltip": "外部 Mixer 对无条件分支的影响强度。" }
+      "uncond_strength": { "name": "无条件分支强度", "tooltip": "外部 Mixer 对无条件分支的影响强度。" },
+      "advanced_options": {
+        "name": "外部 Mixer 高级选项",
+        "tooltip": "原样传递 Anima Artist Options。复现 Anchor-Q 结果时，请与生产工作流共用固定的锚点种子。"
+      }
     },
     "outputs": {
       "0": {

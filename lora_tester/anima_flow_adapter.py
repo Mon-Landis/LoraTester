@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import math
 import sys
 from collections.abc import Mapping
@@ -18,6 +19,7 @@ FLOW_CONTROLS = (
     "flow_shift", "denoise", "add_noise",
 )
 MISSING_OPTION = "__anima_flow_dependency_missing__"
+logger = logging.getLogger(__name__)
 
 
 class AnimaFlowDependencyError(RuntimeError):
@@ -152,18 +154,29 @@ class AnimaFlowAdapter:
             }
         return resolved
 
-    def sample_cell(self, *, model: Any, positive: Any, negative: Any, latent: dict, values: dict, vae: Any = None, progress: Any = None, completed_tasks: int = 0, total_tasks: int = 1) -> tuple[dict, Any]:
+    def sample_cell(self, *, model: Any, positive: Any, negative: Any, latent: dict, values: dict, vae: Any = None, progress: Any = None, completed_tasks: int = 0, total_tasks: int = 1, log_test_details: bool = False) -> tuple[dict, Any]:
         node = self.sampler_class()
+        controls = {name: values[name] for name in FLOW_CONTROLS}
+        settings = deepcopy(values.get("flow_settings"))
+        if log_test_details:
+            logger.info(
+                "[LoraTester] AnimaFlow submission %s/%s\n  Controls: %r\n  Flow settings: %r\n  Latent shape: %r | metadata: %r",
+                completed_tasks + 1, total_tasks, controls, settings,
+                tuple(latent["samples"].shape),
+                {name: value for name, value in latent.items() if name != "samples"},
+            )
         with aggregate_cell_progress(progress, completed_tasks, total_tasks):
             result = getattr(node, self.function_name)(
                 model=model, positive=positive, negative=negative,
-                latent_image=latent.copy(), flow_settings=deepcopy(values.get("flow_settings")), vae=vae,
-                **{name: values[name] for name in FLOW_CONTROLS},
+                latent_image=latent.copy(), flow_settings=settings, vae=vae,
+                **controls,
             )
         if isinstance(result, dict):
             result = result.get("result")
         if not isinstance(result, (tuple, list)) or len(result) < 2 or not isinstance(result[0], dict) or "samples" not in result[0]:
             raise _dependency_error("Sampler returned an incompatible LATENT result.")
+        if log_test_details and len(result) > 2 and isinstance(result[2], str):
+            logger.info("[LoraTester] AnimaFlow upstream log %s/%s\n%s", completed_tasks + 1, total_tasks, result[2])
         return result[0], result[1]
 
 
