@@ -162,6 +162,8 @@ Chain `Artist Tag Text Parser -> Artist Tag Replacer -> Style Stack Flattener ->
 - List collection/merge preserve names and duplicate positions. The splitter retains the original name on the complete combination; proper subsets use automatic names. Multi-entry flattening retains the optional original name and resets derived names; single-entry rules are below.
 - The advanced `Output Style Name` on `Artist Tag Replacer` is empty by default, preserving the name. Nonempty text is equivalent to naming the output afterward, even when no artist matches. It is literal, not a `{i}` template; use `Style Stack Name` to clear a name.
 - Style Axis, Axis Composer, Axis Content Preview, and native / AnimaFlow XY sheets use custom names. Source tables retain actual file/artist information; combined axes continue composing labels.
+- `Style Axis` and `Axis Composer` offer `Show Single Style Name`, enabled by default: a single actual artist or LoRA shows `A-wlop-0.8` or `B-foo-1.2`. LoRA `styles/foo_bar v2.safetensors` uses `foo`, stopping at the first whitespace, underscore, or extension; artist names remain intact. A single item containing multiple artists is still a combination. Custom names take priority; disabling restores `A-0.8` labels. Source codes, weights, and sampling contents stay unchanged. Existing `XY_AXIS` inputs pass through Axis Composer without relabeling.
+- Footer detail tables (style sources, seeds, etc.) use alternating rows with an approximately 8% color blend, adapting to black, white, and custom themes without changing headers or images.
 
 ### Flattening a Style Stack
 

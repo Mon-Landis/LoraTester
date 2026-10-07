@@ -10,7 +10,7 @@ from typing import Any, TypeAlias
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .compositor import FontResolver, image_to_pil
-from .styles import DecorationContext, RGBColor, StyleConfig, get_style_decorator
+from .styles import DecorationContext, RGBColor, StyleConfig, get_style_decorator, mix_color
 from .xy import DetailBlock, XYAxis
 
 
@@ -520,9 +520,12 @@ class XYMatrixSession:
         row_height = max(1, (rect[3] - rect[1]) // max(1, len(rows)))
         column_count = len(block.headers)
         column_width = (rect[2] - rect[0]) / column_count
+        stripe_color = mix_color(self.style.panel_color, self.style.text_color, 0.08)
         for row_index, row in enumerate(rows):
             top = rect[1] + row_index * row_height
             bottom = rect[3] if row_index == len(rows) - 1 else top + row_height
+            if row_index % 2:
+                self._draw.rectangle(_inclusive((rect[0], top, rect[2], bottom)), fill=stripe_color)
             if row_index:
                 self._draw.line((rect[0], top, rect[2], top), fill=self.style.frame_color, width=1)
             for column_index, value in enumerate(row):

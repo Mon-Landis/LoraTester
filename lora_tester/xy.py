@@ -336,6 +336,7 @@ def build_lora_stack_axis(
     *,
     include_base: bool = True,
     title: str = "STYLE",
+    show_single_style_name: bool = True,
 ) -> XYAxis:
     if not isinstance(stacks, LoraStackList):
         raise TypeError("stacks must come from a LoRA Stack List node")
@@ -372,15 +373,25 @@ def build_lora_stack_axis(
     stack_entries: list[AxisEntry] = []
     for stack in stacks.stacks:
         components: list[str] = []
+        direct_label = ""
         for item in stack.items:
             if item.is_artist_tag:
                 for artist_tag in item.artist_tags:
                     token = token_for(item, artist_tag)
                     components.append(f"{token}-{_format_number(item.strength)}")
+                    direct_label = (
+                        f"{token}-{str(artist_tag).strip().lstrip('@')}-"
+                        f"{_format_number(item.strength)}"
+                    )
                 continue
             token = token_for(item)
             components.append(f"{token}-{_format_number(item.strength)}")
+            display_name = _display_name(item.name)
+            short_name = re.split(r"[\s_]", display_name, maxsplit=1)[0] or display_name
+            direct_label = f"{token}-{short_name}-{_format_number(item.strength)}"
         label = "+".join(components) or "EMPTY"
+        if show_single_style_name and len(components) == 1:
+            label = direct_label
         stack_entries.append(
             AxisEntry(
                 label=stack.custom_name or label,

@@ -2024,6 +2024,7 @@ class LoraStackAxisNode:
                 "lorastacks": ("LORA_STACK_LIST",),
                 "include_base": ("BOOLEAN", {"default": True, "tooltip": "Keep BASE in its own separated group."}),
                 "axis_title": ("STRING", {"default": "STYLE", "multiline": False, "tooltip": "Overall axis heading; row/column labels come from individual entries."}),
+                "show_single_style_name": ("BOOLEAN", {"default": True, "tooltip": "Label single-source styles as code-name-weight; custom names take precedence. Disable to show code-weight."}),
             }
         }
 
@@ -2035,8 +2036,18 @@ class LoraStackAxisNode:
     DESCRIPTION = "Converts LoRA and artist-tag stacks into an X axis with grouped BASE separation and categorized tables."
 
     @staticmethod
-    def build_axis(lorastacks: LoraStackList, include_base: bool, axis_title: str) -> tuple[XYAxis]:
-        return (build_lora_stack_axis(lorastacks, include_base=include_base, title=axis_title.strip() or "STYLE"),)
+    def build_axis(
+        lorastacks: LoraStackList,
+        include_base: bool,
+        axis_title: str,
+        show_single_style_name: bool = True,
+    ) -> tuple[XYAxis]:
+        return (build_lora_stack_axis(
+            lorastacks,
+            include_base=include_base,
+            title=axis_title.strip() or "STYLE",
+            show_single_style_name=show_single_style_name,
+        ),)
 
 
 class SeedListNode:
@@ -2123,6 +2134,13 @@ class AxisComposerNode:
                         "tooltip": "For a style stack source, place BASE in its own group.",
                     },
                 ),
+                "show_single_style_name": (
+                    "BOOLEAN",
+                    {
+                        "default": True,
+                        "tooltip": "For style sources only: label single-source styles as code-name-weight. Custom names take precedence; existing XY axes are unchanged.",
+                    },
+                ),
             },
             "optional": {
                 "source": (
@@ -2147,6 +2165,7 @@ class AxisComposerNode:
         axis_title: str,
         include_base: bool,
         source: Any = None,
+        show_single_style_name: bool = True,
     ) -> tuple[XYAxis]:
         if isinstance(source, XYAxis):
             axis = XYAxis(
@@ -2161,12 +2180,14 @@ class AxisComposerNode:
                 source,
                 include_base=bool(include_base),
                 title=axis_title.strip() or "AXIS",
+                show_single_style_name=show_single_style_name,
             )
         elif isinstance(source, LoraStack):
             axis = build_lora_stack_axis(
                 LoraStackList((source,)),
                 include_base=bool(include_base),
                 title=axis_title.strip() or "AXIS",
+                show_single_style_name=show_single_style_name,
             )
         elif isinstance(source, SeedList):
             axis = build_seed_axis(source, title=axis_title.strip() or "AXIS")

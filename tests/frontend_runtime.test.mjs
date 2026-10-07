@@ -76,6 +76,37 @@ test("artist-mode labels settle instead of alternating between style and artist"
   assert.equal(fixture.context.node.widgets[1].label, "Style 1 Trigger Words");
 });
 
+test("single style name switches localize without changing boolean values", () => {
+  const fixture = runtime();
+  for (const nodeName of ["LoraTesterLoraStackAxis", "LoraTesterAxisComposer"]) {
+    fixture.context.nodeName = nodeName;
+    fixture.context.node = {
+      type: nodeName,
+      inputs: [],
+      outputs: [],
+      widgets: [{
+        name: "show_single_style_name", type: "toggle", value: true,
+        options: {}, _state: { options: {} },
+      }],
+    };
+    runInContext('installNodeLabels(node,nodeName); installWidgetTranslations(node,nodeName)', fixture.context);
+    const widget = fixture.context.node.widgets[0];
+    assert.equal(widget.label, "直接展示单风格元素");
+    assert.equal(widget.options.label_on, "显示单风格名称");
+    assert.equal(widget.options.label_off, "显示代号和权重");
+    assert.equal(widget._state.options.label_on, "显示单风格名称");
+    assert.equal(widget.value, true);
+    fixture.state.locale = "en";
+    widget.value = false;
+    runInContext('installNodeLabels(node,nodeName); installWidgetTranslations(node,nodeName)', fixture.context);
+    assert.equal(widget.label, "Show Single Style Name");
+    assert.equal(widget.options.label_on, "show single style name");
+    assert.equal(widget.options.label_off, "show code and weight");
+    assert.equal(widget.value, false);
+    fixture.state.locale = "zh";
+  }
+});
+
 test("settled reactive labels are not assigned again", () => {
   const fixture = runtime();
   let writes = 0;

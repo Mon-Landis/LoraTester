@@ -18,12 +18,13 @@ from lora_tester.artist import ARTIST_TAG_MODE
 from lora_tester.nodes import (
     AxisComposerNode,
     GlobalPromptAppendNode,
+    LoraStackAxisNode,
     MultiPromptInputNode,
     SeedListNode,
     XYTestSampler,
 )
 from lora_tester.stack import LoraStack, LoraStackItem, LoraStackList
-from lora_tester.styles import StyleConfig
+from lora_tester.styles import StyleConfig, mix_color
 from lora_tester.xy import (
     AxisEntry,
     AxisParameter,
@@ -160,7 +161,7 @@ class XYModelTests(unittest.TestCase):
     def test_same_lora_at_different_weights_reuses_one_source_code(self) -> None:
         low = LoraStack((LoraStackItem("Shared.safetensors", "low", 0.5),))
         high = LoraStack((LoraStackItem("Shared.safetensors", "high", 1.0),))
-        axis = build_lora_stack_axis(LoraStackList((low, high)), include_base=True)
+        axis = build_lora_stack_axis(LoraStackList((low, high)), include_base=True, show_single_style_name=False)
         self.assertEqual([entry.label for entry in axis.entries], ["BASE", "A-0.5", "A-1"])
         self.assertEqual(axis.group_breaks, (1,))
         sources = next(block for block in axis.detail_blocks if block.title == "STYLE SOURCES")
@@ -175,10 +176,122 @@ class XYModelTests(unittest.TestCase):
     def test_artist_tags_also_share_source_codes_across_weights(self) -> None:
         low = LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@fkey", 0.5),))
         high = LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@fkey", 1.0),))
-        axis = build_lora_stack_axis(LoraStackList((low, high)), include_base=False)
+        axis = build_lora_stack_axis(LoraStackList((low, high)), include_base=False, show_single_style_name=False)
         self.assertEqual([entry.label for entry in axis.entries], ["A-0.5", "A-1"])
         sources = next(block for block in axis.detail_blocks if block.title == "STYLE SOURCES")
         self.assertEqual(sources.rows, (("A", "ARTIST", "fkey", "artist tag"),))
+
+    def test_single_artist_names_preserve_full_artist_name(self) -> None:
+        stacks = LoraStackList((
+            LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@wlop", 0.5),)),
+            LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@nekoya_(nekodayo_22)", 1.2),)),
+            LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@wlop", 1.0),)),
+        ))
+        axis = build_lora_stack_axis(stacks)
+        self.assertEqual(
+            [entry.label for entry in axis.entries],
+            ["BASE", "A-wlop-0.5", "B-nekoya_(nekodayo_22)-1.2", "A-wlop-1"],
+        )
+        self.assertEqual(axis.group_breaks, (1,))
+        for entry, stack in zip(axis.entries[1:], stacks.stacks):
+            self.assertIs(entry.parameter_map["lora_stack"], stack)
+            self.assertEqual(entry.detail_label, stack.label)
+        legacy = build_lora_stack_axis(stacks, show_single_style_name=False)
+        self.assertEqual(axis.detail_blocks, legacy.detail_blocks)
+
+    def test_single_lora_names_use_basename_prefix(self) -> None:
+        examples = (
+            ("styles/foo_bar.safetensors", "foo"),
+            (r"styles\foo bar.safetensors", "foo"),
+            ("styles/plain.safetensors", "plain"),
+            ("styles/version.v2.safetensors", "version.v2"),
+            ("styles/foo_bar baz.safetensors", "foo"),
+            ("styles/foo bar_baz.safetensors", "foo"),
+            ("styles/画风_版本.safetensors", "画风"),
+            ("styles/foo\tbar.safetensors", "foo"),
+            ("styles/_prefix.safetensors", "_prefix"),
+        )
+        for filename, expected in examples:
+            with self.subTest(filename=filename):
+                stack = LoraStack((LoraStackItem(filename, "trigger", 0.8),))
+                axis = build_lora_stack_axis(LoraStackList((stack,)), include_base=False)
+                self.assertEqual(axis.entries[0].label, f"A-{expected}-0.8")
+                self.assertEqual(axis.entries[0].parameter_map["lora_stack"].items[0].strength, 0.8)
+
+    def test_single_style_labels_preserve_zero_and_negative_weights(self) -> None:
+        for item in (LoraStackItem("foo_bar.safetensors"), LoraStackItem(ARTIST_TAG_MODE, "@wlop")):
+            for strength in (0.0, -0.5, 1.25):
+                with self.subTest(item=item, strength=strength):
+                    stack = LoraStack((LoraStackItem(item.name, item.trigger_word, strength),))
+                    axis = build_lora_stack_axis(LoraStackList((stack,)), include_base=False)
+                    name = "wlop" if item.is_artist_tag else "foo"
+                    self.assertEqual(axis.entries[0].label, f"A-{name}-{strength:g}")
+
+    def test_multisource_styles_keep_code_weight_labels(self) -> None:
+        artists = LoraStack((LoraStackItem(ARTIST_TAG_MODE, "@wlop, @aos", 0.5),))
+        mixed = LoraStack((
+            LoraStackItem(ARTIST_TAG_MODE, "@wlop", 0.8),
+            LoraStackItem("foo_bar.safetensors", "foo", 1.2),
+        ))
+        repeated = LoraStack((
+            LoraStackItem("foo_bar.safetensors", "foo", 0.3),
+            LoraStackItem("foo_bar.safetensors", "foo", 0.4),
+        ))
+        axis = build_lora_stack_axis(LoraStackList((artists, mixed, repeated)), include_base=False)
+        self.assertEqual([entry.label for entry in axis.entries], ["A-0.5+B-0.5", "A-0.8+C-1.2", "C-0.3+C-0.4"])
+
+    def test_custom_single_style_names_override_both_modes(self) -> None:
+        for item in (LoraStackItem("foo_bar.safetensors"), LoraStackItem(ARTIST_TAG_MODE, "@wlop")):
+            for mode in (True, False):
+                with self.subTest(item=item, mode=mode):
+                    stack = LoraStack((item,), custom_name="自定义风格")
+                    axis = build_lora_stack_axis(LoraStackList((stack,)), include_base=False, show_single_style_name=mode)
+                    self.assertEqual(axis.entries[0].label, "自定义风格")
+                    self.assertIs(axis.entries[0].parameter_map["lora_stack"], stack)
+
+    def test_single_style_labels_keep_spreadsheet_source_numbering(self) -> None:
+        stacks = LoraStackList(tuple(
+            LoraStack((LoraStackItem(f"style{index}_v2.safetensors"),))
+            for index in range(28)
+        ))
+        axis = build_lora_stack_axis(stacks, include_base=False)
+        self.assertEqual([entry.label for entry in axis.entries[-3:]], ["Z-style25-1", "AA-style26-1", "AB-style27-1"])
+        self.assertEqual([row[0] for row in axis.detail_blocks[0].rows[-3:]], ["Z", "AA", "AB"])
+
+    def test_single_style_switch_is_default_on_and_appended_to_widgets(self) -> None:
+        source = LoraStackList((LoraStack((LoraStackItem("foo_bar.safetensors", "", 0.8),)),))
+        for node, old_widgets in (
+            (LoraStackAxisNode, ["lorastacks", "include_base", "axis_title"]),
+            (AxisComposerNode, ["axis_title", "include_base"]),
+        ):
+            with self.subTest(node=node.__name__):
+                required = node.INPUT_TYPES()["required"]
+                self.assertEqual(list(required), old_widgets + ["show_single_style_name"])
+                self.assertEqual(required["show_single_style_name"][0], "BOOLEAN")
+                self.assertIs(required["show_single_style_name"][1]["default"], True)
+        direct = LoraStackAxisNode.build_axis(source, False, "STYLE")[0]
+        self.assertEqual(direct.entries[0].label, "A-foo-0.8")
+        self.assertEqual(AxisComposerNode.compose_axis("STYLE", False, source)[0], direct)
+        self.assertEqual(AxisComposerNode.compose_axis("STYLE", False, source.stacks[0])[0], direct)
+        legacy = LoraStackAxisNode.build_axis(source, False, "STYLE", False)[0]
+        self.assertEqual(legacy.entries[0].label, "A-0.8")
+        self.assertEqual(AxisComposerNode.compose_axis("STYLE", False, source, False)[0], legacy)
+
+    def test_single_style_switch_does_not_relabel_existing_axes_or_other_sources(self) -> None:
+        stack = LoraStack((LoraStackItem("foo_bar.safetensors", "", 0.8),))
+        legacy = build_lora_stack_axis(LoraStackList((stack,)), show_single_style_name=False)
+        self.assertEqual(AxisComposerNode.compose_axis("STYLE", False, legacy, True)[0], legacy)
+        for source in (PromptList((PromptEntry("portrait"),)), SeedList((42,))):
+            with self.subTest(source=source):
+                self.assertEqual(
+                    AxisComposerNode.compose_axis("AXIS", False, source, True),
+                    AxisComposerNode.compose_axis("AXIS", False, source, False),
+                )
+
+    def test_single_style_switch_preserves_empty_base_only_axis(self) -> None:
+        axis = build_lora_stack_axis(LoraStackList(()))
+        self.assertEqual([entry.label for entry in axis.entries], ["BASE"])
+        self.assertEqual(axis.detail_blocks, ())
 
     def test_seed_list_accepts_explicit_and_deterministic_random_values(self) -> None:
         self.assertEqual(SeedList.parse("1, 2\n3").seeds, (1, 2, 3))
@@ -209,6 +322,58 @@ class XYModelTests(unittest.TestCase):
 
 
 class XYCompositorTests(unittest.TestCase):
+    def test_detail_tables_have_subtle_alternating_full_width_rows(self) -> None:
+        styles = (
+            StyleConfig.black(decorator="none"),
+            StyleConfig.white(decorator="none"),
+            StyleConfig.custom(panel_color="#24384C", text_color="#E8F0FF"),
+        )
+        block = DetailBlock("STYLE SOURCES", "table", ("CODE", "TYPE", "SOURCE", "INFO"), tuple(
+            (f"CODE{index}", "LORA", f"long_source_{index}", f"long trigger row {index}")
+            for index in range(4)
+        ))
+        x = XYAxis("STYLE", ((AxisEntry("A", ()),),), (block,))
+        y = build_seed_axis(SeedList((123, 456, 789)))
+        for style in styles:
+            with self.subTest(mode=style.mode):
+                compositor = XYMatrixCompositor(x, y, 96, 64, style=style, max_canvas_pixels=None)
+                images = [Image.new("RGB", (96, 64), (110, 90, 70)) for _ in y.entries]
+                rendered = compositor.compose(images)
+                try:
+                    for detail in compositor.geometry.detail_blocks:
+                        rect = detail.content_rect
+                        row_count = len(detail.block.rows) + 1
+                        row_height = (rect[3] - rect[1]) // row_count
+                        column_width = (rect[2] - rect[0]) / len(detail.block.headers)
+                        for row_index in range(row_count):
+                            top = rect[1] + row_index * row_height
+                            bottom = rect[3] if row_index == row_count - 1 else top + row_height
+                            expected = mix_color(style.panel_color, style.text_color, 0.08) if row_index % 2 else style.panel_color
+                            for column_index in range(len(detail.block.headers)):
+                                left = round(rect[0] + column_index * column_width)
+                                self.assertEqual(rendered.getpixel((left + 2, (top + bottom) // 2)), expected)
+                            if row_index:
+                                self.assertEqual(rendered.getpixel((rect[0] + 2, top)), style.frame_color)
+                            self.assertEqual(rendered.getpixel((round(rect[0] + column_width), top + 2)), style.frame_color)
+                    cell = compositor.geometry.cell(0, 0)
+                    self.assertEqual(rendered.getpixel(((cell[0] + cell[2]) // 2, (cell[1] + cell[3]) // 2)), (110, 90, 70))
+                finally:
+                    rendered.close()
+                    for image in images:
+                        image.close()
+
+    def test_header_only_detail_table_keeps_original_background(self) -> None:
+        style = StyleConfig.black(decorator="none")
+        block = DetailBlock("EMPTY", "table", ("CODE",), ())
+        axis = XYAxis("STYLE", ((AxisEntry("BASE", ()),),), (block,))
+        compositor = XYMatrixCompositor(axis, build_seed_axis(SeedList((1,))), 96, 64, style=style)
+        rendered = compositor.render_template()
+        try:
+            rect = compositor.geometry.detail_blocks[0].content_rect
+            self.assertEqual(rendered.getpixel((rect[0] + 2, (rect[1] + rect[3]) // 2)), style.panel_color)
+        finally:
+            rendered.close()
+
     def make_axes(self) -> tuple[XYAxis, XYAxis]:
         x = XYAxis(
             "SEED",

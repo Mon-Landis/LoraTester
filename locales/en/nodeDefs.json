@@ -867,7 +867,8 @@
     "inputs": {
       "lorastacks": { "name": "Style Stack List", "tooltip": "Style configurations to place on this axis." },
       "include_base": { "name": "Include BASE", "tooltip": "Adds BASE as a separate group with visible spacing before test configurations." },
-      "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; each row or column label comes from its source entry." }
+      "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; each row or column label comes from its source entry." },
+      "show_single_style_name": { "name": "Show Single Style Name", "tooltip": "Enabled by default. Single artist: code-artist name-weight; single LoRA: code-filename prefix before whitespace, underscore, or extension-weight. Custom names take priority. Disable to restore code-weight labels; multi-source styles are unchanged." }
     },
     "outputs": { "0": { "name": "Axis", "tooltip": "Grouped style configurations ready for either XY sampler socket." } }
   },
@@ -925,6 +926,7 @@
     "inputs": {
       "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; individual labels come from source entries." },
       "include_base": { "name": "Include BASE", "tooltip": "For a style source, place BASE in its own group." },
+      "show_single_style_name": { "name": "Show Single Style Name", "tooltip": "Enabled by default; only affects raw style sources. Single artist: code-artist name-weight; single LoRA: code-filename prefix before whitespace, underscore, or extension-weight. Custom names take priority. Existing XY axes and non-style sources are unchanged." },
       "source": { "name": "Axis Source", "tooltip": "Connect one prompt list, style stack/list, or seed list. Do not connect multiple sources." }
     },
     "outputs": { "0": { "name": "Axis", "tooltip": "A grouped axis that can be connected to either X or Y." } }

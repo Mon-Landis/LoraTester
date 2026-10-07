@@ -133,6 +133,18 @@ const OPTION_LABELS = {
 };
 
 const TOGGLE_LABELS = {
+  LoraTesterLoraStackAxis: {
+    show_single_style_name: {
+      en: { label_on: "show single style name", label_off: "show code and weight" },
+      zh: { label_on: "显示单风格名称", label_off: "显示代号和权重" },
+    },
+  },
+  LoraTesterAxisComposer: {
+    show_single_style_name: {
+      en: { label_on: "show single style name", label_off: "show code and weight" },
+      zh: { label_on: "显示单风格名称", label_off: "显示代号和权重" },
+    },
+  },
   LoraTesterSampler: {
     show_lora_details: {
       en: {
@@ -330,6 +342,7 @@ const INPUT_LABELS = {
     lorastacks: { en: "Style Stack List", zh: "风格组合列表" },
     include_base: { en: "Include BASE", zh: "包含 BASE 基线" },
     axis_title: { en: "Axis Heading", zh: "轴总标题" },
+    show_single_style_name: { en: "Show Single Style Name", zh: "直接展示单风格元素" },
   },
   LoraTesterSeedList: {
     mode: { en: "Seed Source", zh: "种子来源" },
@@ -344,6 +357,7 @@ const INPUT_LABELS = {
   LoraTesterAxisComposer: {
     axis_title: { en: "Axis Heading", zh: "轴总标题" },
     include_base: { en: "Include BASE", zh: "包含 BASE" },
+    show_single_style_name: { en: "Show Single Style Name", zh: "直接展示单风格元素" },
     source: { en: "Axis Source", zh: "轴源数据" },
   },
 };

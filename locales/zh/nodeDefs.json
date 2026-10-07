@@ -867,7 +867,8 @@
     "inputs": {
       "lorastacks": { "name": "风格组合列表", "tooltip": "需要放置到该轴上的风格配置。" },
       "include_base": { "name": "包含 BASE 基线", "tooltip": "将 BASE 放在独立分组中，并与测试配置显示可见间隔。" },
-      "axis_title": { "name": "轴总标题", "tooltip": "显示在轴旁的总标题；每行或每列的标签由单个源条目提供。" }
+      "axis_title": { "name": "轴总标题", "tooltip": "显示在轴旁的总标题；每行或每列的标签由单个源条目提供。" },
+      "show_single_style_name": { "name": "直接展示单风格元素", "tooltip": "默认开启。单画师显示“代号-画师名字-权重”；单 LoRA 显示“代号-文件名第一个空白/下划线/后缀之前的文本-权重”。自定义名称优先；关闭恢复代号-权重，多元素组合不变。" }
     },
     "outputs": { "0": { "name": "轴", "tooltip": "可接入 XY 采样器任一轴输入的分组风格配置。" } }
   },
@@ -925,6 +926,7 @@
     "inputs": {
       "axis_title": { "name": "轴总标题", "tooltip": "显示在轴旁的总标题；单个条目的标签由源数据提供。" },
       "include_base": { "name": "包含 BASE", "tooltip": "使用风格源时，将 BASE 放在独立分组中。" },
+      "show_single_style_name": { "name": "直接展示单风格元素", "tooltip": "默认开启，仅用于原始风格源。单画师显示代号-画师名字-权重，单 LoRA 显示代号-文件名前缀-权重；自定义名称优先。已构造的 XY 轴与非风格源保持不变。" },
       "source": { "name": "轴源数据", "tooltip": "连接一个提示词列表、风格组合/列表或种子列表；不要同时连接多个源。" }
     },
     "outputs": { "0": { "name": "轴", "tooltip": "可接入 X 或 Y 的分组轴。" } }
