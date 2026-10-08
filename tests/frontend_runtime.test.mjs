@@ -182,6 +182,45 @@ test("unchanged mixer warning does not replace its DOM text", () => {
   assert.equal(warning.element.writes, writes);
 });
 
+test("stack mixer strength warning follows dependency availability and settles", () => {
+  const fixture = runtime();
+  const warning = { name: "lora_tester_anima_mixer_warning", element: element(), options: {} };
+  fixture.context.node = {
+    type: "LoraStackMixerStrength", inputs: [], widgets: [warning],
+    graph: { incrementVersion() {} }, setDirtyCanvas() {},
+  };
+  runInContext('globalThis.resizes=0; resizeNodeToWidgets=()=>{resizes+=1}; updateMixerWarning(node,"LoraStackMixerStrength")', fixture.context);
+  assert.equal(warning.__loraTesterWarningVisible, true);
+  assert.match(warning.element.textContent, /未检测到 Anima Artist Mixer/);
+  const writes = warning.element.writes;
+  const resizes = fixture.context.resizes;
+  runInContext('updateMixerWarning(node,"LoraStackMixerStrength")', fixture.context);
+  assert.equal(warning.element.writes, writes);
+  assert.equal(fixture.context.resizes, resizes);
+  runInContext('app.extensionManager.nodeDefs=new Map([["AnimaArtistPack",{}],["AnimaArtistAdapterMixer",{}]]); updateMixerWarning(node,"LoraStackMixerStrength")', fixture.context);
+  assert.equal(warning.__loraTesterWarningVisible, false);
+  fixture.state.locale = "en";
+  runInContext('app.extensionManager.nodeDefs.clear(); updateMixerWarning(node,"LoraStackMixerStrength")', fixture.context);
+  assert.equal(warning.__loraTesterWarningVisible, true);
+  assert.match(warning.element.textContent, /Stack Mixer strength is retained/);
+  assert.equal(warning.serialize, undefined);
+});
+
+test("stack mixer strength passthrough preserves artists and axis metadata", () => {
+  const fixture = runtime();
+  const source = artistNode();
+  source.widgets[1].value = "@first, @second";
+  fixture.context.node = {
+    id: 2, type: "LoraStackMixerStrength", widgets: [],
+    inputs: [{ name: "lora_stack", link: 1 }],
+    graph: { links: { 1: { origin_id: 1 } }, getNodeById: () => source },
+  };
+  runInContext('globalThis.entries=stackEntryDataFromSource(node); globalThis.count=styleStackCountFromSource(node); globalThis.counts=stackArtistCountsFromNode(node)', fixture.context);
+  assert.equal(fixture.context.entries[0].artists.length, 2);
+  assert.equal(fixture.context.count, 1);
+  assert.equal(fixture.context.counts[0], 2);
+});
+
 test("unchanged XY warning does not emit DOM mutations", () => {
   const fixture = runtime();
   const warning = { name: "lora_tester_xy_warning", element: element(), options: {}, __loraTesterWarningVisible: false };

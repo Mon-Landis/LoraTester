@@ -87,6 +87,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | `Lora Tester/XY/Style` | `Style Stack Splitter` | 生成风格组合的全部非空组合。 |
 | `Lora Tester/XY/Style` | `Style Stack Flattener` / `风格组合平铺` | 将组合平铺为独立单项，可选择在首位加入原始组合。 |
 | `Lora Tester/XY/Style` | `Style Stack Name` / `风格组合命名` | 设置单个组合的字面名称，留空恢复自动命名。 |
+| `Lora Tester/XY/Style` | `Style Stack Anima Mixer Strength` / `风格组合 Anima 混合强度` | 为单个组合设置最高优先级的 Mixer 强度；仅满足原 Mixer 路由条件时生效。 |
 | `Lora Tester/XY/Style` | `Style Stack List Name` / `风格组合列表命名` | 按索引命名一项或全部，支持 `{i}` 与反斜杠转义。 |
 | `Lora Tester/XY/Style` | `Style Stack Lister` | 动态合并最多 16 个独立风格组合。 |
 | `Lora Tester/XY/Style` | `Style Axis` | 将风格组合列表直接转换为带分组和详情表的 `XY_AXIS`。 |
@@ -152,6 +153,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - 保留未匹配项、顺序与画师模板；一项包含多个画师时只替换匹配画师，其余画师保留原权重。
 
 可连接为 `画师 Tag-文本解析 -> 画师替换 -> 风格组合平铺 -> Style Axis / Axis Composer`。解析输出直接接入轴时代表完整画师组合；通过平铺节点可分别测试每个画师。
+
+### 单组合 Anima 混合强度
+
+`风格组合 Anima 混合强度`（`Style Stack Anima Mixer Strength`，`Lora Tester/XY/Style`）输入和输出均为 `LORA_STACK`。输入 `混合强度`（0–4，默认 1.0）仅为此组合覆盖 Anima Artist Mixer 的 `strength`，优先级为 **组合值 > 采样器手动全局配置 > 默认值**。不覆盖画师各自的权重、归一化、对齐方式、高级选项或 Mixer 启用状态；0 表示对此组合停用混合。
+
+- 仅当 Anima 底模、依赖已安装、至少两个画师（含提示词源独立画师）且 Mixer 路由开启时生效；非 Anima、单画师、缺失依赖或开关关闭仍走原路由，不强制启用。
+- 节点缺失依赖时显示警告，组合数据仍正常输出。串联多个此节点时后一个覆盖前一个。
+- 名字设置、画师替换、列表收集、排列与平铺保留组合强度；派生单画师通常不会生效，除非与独立画师合计达到多个。不同强度的同内容组合不会共用错误的采样配置。
+- 此值不进入输出图行/列标签或来源表，仅在轴内容预览显示以便检查。支持普通 XY、AnimaFlow XY 与旧组合测试入口。
+
+推荐：`画师文本解析 → 风格组合 Anima 混合强度 → 风格组合列表汇总 → 风格轴 → XY 测试器`。未连接此节点的组合继续使用原全局配置。
 
 ### 风格组合命名
 

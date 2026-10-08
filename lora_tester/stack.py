@@ -64,6 +64,7 @@ class LoraStack:
     items: tuple[LoraStackItem, ...]
     artist_template: ArtistTagTemplate | None = None
     custom_name: str | None = None
+    anima_mixer_strength: float | None = None
 
     def __post_init__(self) -> None:
         normalized = tuple(self.items)
@@ -77,6 +78,11 @@ class LoraStack:
             raise TypeError("artist_template must come from an Artist Tag Template node")
         object.__setattr__(self, "items", normalized)
         object.__setattr__(self, "custom_name", _normalize_stack_name(self.custom_name))
+        if self.anima_mixer_strength is not None:
+            strength = float(self.anima_mixer_strength)
+            if not math.isfinite(strength) or not 0.0 <= strength <= 4.0:
+                raise ValueError("Stack Mixer strength must be finite and between 0 and 4")
+            object.__setattr__(self, "anima_mixer_strength", strength)
 
     @classmethod
     def from_values(cls, values: Iterable[tuple[str, str, float]]) -> "LoraStack":
@@ -236,6 +242,7 @@ def split_lora_stack(stack: LoraStack) -> LoraStackList:
                 stack if size == len(stack.items) else LoraStack(
                     tuple(stack.items[index] for index in indexes),
                     artist_template=stack.artist_template,
+                    anima_mixer_strength=stack.anima_mixer_strength,
                 )
             )
     return LoraStackList(tuple(combinations))
@@ -265,7 +272,7 @@ def flatten_lora_stack(
         if weight_mode == "normalize":
             child = replace(stack, items=(normalized,))
             return LoraStackList((stack, child) if include_original else (child,))
-        return LoraStackList((stack, LoraStack((normalized,), artist_template=stack.artist_template)))
+        return LoraStackList((stack, replace(stack, items=(normalized,), custom_name=None)))
     stacks = [stack] if include_original else []
     for item in stack.items:
         inherited = item
@@ -279,7 +286,7 @@ def flatten_lora_stack(
         else:
             children = (inherited,)
         stacks.extend(
-            LoraStack((child,), artist_template=stack.artist_template)
+            replace(stack, items=(child,), custom_name=None)
             for child in children
         )
     return LoraStackList(tuple(stacks))

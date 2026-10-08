@@ -1,4 +1,13 @@
 {
+  "LoraStackMixerStrength": {
+    "display_name": "风格组合 Anima 混合强度",
+    "description": "为组合设置独立的 Anima Artist Mixer 混合强度，优先于全局手动配置和默认值。仅在 Anima 底模、多画师 Tag、依赖已安装且 Mixer 路由开启时生效，不改变输出图轴标签。缺失依赖时显示警告，组合仍可使用。命名、画师替换、排列和平铺保留此属性。",
+    "inputs": {
+      "lora_stack": { "name": "风格组合", "tooltip": "要配置的组合；不会修改共享输入对象。" },
+      "strength": { "name": "混合强度", "tooltip": "范围 0–4，默认 1.0。仅覆盖 Mixer 混合强度，其余全局配置不变。0 对此组合关闭混合；串联本节点时后一个覆盖前一个。" }
+    },
+    "outputs": { "0": { "name": "风格组合", "tooltip": "保留条目、画师权重、名称和模板，附带独立 Mixer 混合强度。" } }
+  },
   "LoraStackName": {
     "display_name": "风格组合命名",
     "description": "为单个风格组合设置字面名称，不改变采样内容。留空清除自定义名，恢复轴构造时的自动命名。",

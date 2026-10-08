@@ -208,7 +208,7 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn('const STACK_NAME_NODE = "LoraStackName"', source)
         self.assertIn('const STACK_LIST_NAME_NODE = "LoraStackListName"', source)
         self.assertIn("if (sourceName === STACK_LIST_NAME_NODE)", source)
-        self.assertIn("if (nodeName === STACK_NAME_NODE)", source)
+        self.assertIn("if (nodeName === STACK_NAME_NODE || nodeName === STACK_MIXER_STRENGTH_NODE)", source)
         self.assertIn('return stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited)', source)
         self.assertIn('custom_name: { en: "Style Name", zh: "风格名称" }', source)
         self.assertIn('index: { en: "Index (0-based; negative = all)"', source)

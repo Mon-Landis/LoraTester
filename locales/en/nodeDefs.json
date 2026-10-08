@@ -1,4 +1,13 @@
 {
+  "LoraStackMixerStrength": {
+    "display_name": "Style Stack Anima Mixer Strength",
+    "description": "Sets per-stack Anima Artist Mixer strength with priority over global or default strength. Only applies with an Anima model, multiple artist tags, installed Mixer nodes, and enabled Mixer routing. Does not change image axis labels. Missing dependency shows a warning; stack contents remain usable. Naming, replacement, splitting, and flattening preserve the override.",
+    "inputs": {
+      "lora_stack": { "name": "Style Stack", "tooltip": "Style stack to configure; input remains unchanged." },
+      "strength": { "name": "Mixer Strength", "tooltip": "0–4, default 1.0. Overrides only Mixer strength, not other global settings. Zero disables mixing for this stack; later strength nodes overwrite earlier ones." }
+    },
+    "outputs": { "0": { "name": "Style Stack", "tooltip": "Original styles, artist weights, name, and template with a per-stack Mixer strength override." } }
+  },
   "LoraStackName": {
     "display_name": "Style Stack Name",
     "description": "Sets a literal style stack name without changing sampling contents. Empty clears the name and restores automatic naming when an axis is built.",

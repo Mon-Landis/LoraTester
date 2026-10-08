@@ -152,6 +152,17 @@ For example: `Style Axis -> Axis Content Preview -> XY Test Sampler`. The previe
 
 Chain `Artist Tag Text Parser -> Artist Tag Replacer -> Style Stack Flattener -> Style Axis / Axis Composer` for individual artist comparisons. A parsed stack connected directly to an axis represents the complete artist combination.
 
+### Per-Stack Anima Mixer Strength
+
+`Style Stack Anima Mixer Strength` in `Lora Tester/XY/Style` accepts and returns `LORA_STACK`. Its `Mixer Strength` (0–4, default 1.0) overrides only Anima Artist Mixer's `strength`, with priority **stack override > explicit global configuration > default**. Artist weights, normalization, alignment, advanced options, and enable flags remain unchanged. Zero disables mixing for this stack.
+
+- Applies only to Anima models with installed Mixer nodes, multiple artists (including independent prompt artists), and enabled Mixer routing. Other cases keep the existing native route; the node never forces Mixer activation.
+- Missing dependencies show a node warning without blocking stack output. Chained strength nodes use the last value.
+- Naming, replacement, list collection, splitting, and flattening preserve the override. Single-artist children only activate it when combined with additional independent artists. Identical style contents with different strengths remain distinct sampling configurations.
+- The value never appears in image axis labels or source tables; Axis Content Preview shows it for inspection. Native XY, AnimaFlow XY, and the legacy combination sampler share this behavior.
+
+Suggested chain: `Artist Tag Text Parser → Style Stack Anima Mixer Strength → Style Stack Lister → Style Axis → XY sampler`. Unconfigured stacks continue using global settings.
+
 ### Naming Style Stacks
 
 - `Style Stack` and `Artist Tag Text Parser` accept an optional single-line `Style Name`. Empty means automatic naming: the style axis still collects sources and generates labels such as `A-0.8+B-0.3`. Custom names change display metadata only, not sampling contents or source details.

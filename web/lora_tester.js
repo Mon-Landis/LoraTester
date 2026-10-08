@@ -7,6 +7,7 @@ const STACK_NODE = "LoraStack";
 const ARTIST_TEXT_NODE = "ArtistTagTextParser";
 const ARTIST_REPLACER_NODE = "ArtistTagReplacer";
 const STACK_NAME_NODE = "LoraStackName";
+const STACK_MIXER_STRENGTH_NODE = "LoraStackMixerStrength";
 const STACK_LIST_NAME_NODE = "LoraStackListName";
 const REPLACER_ADVANCED_WIDGET = "lora_tester_replacer_advanced";
 const STACK_SPLITTER_NODE = "LoraStackSplitter";
@@ -226,6 +227,10 @@ const TOGGLE_LABELS = {
 };
 
 const INPUT_LABELS = {
+  LoraStackMixerStrength: {
+    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    strength: { en: "Mixer Strength", zh: "混合强度" },
+  },
   LoraTesterAxisPreview: {
     axis: { en: "Axis", zh: "轴" },
     language: { en: "Preview Language", zh: "预览文本语言" },
@@ -367,6 +372,9 @@ const ARTIST_MODE_OPTION_LABELS = {
 };
 
 const OUTPUT_LABELS = {
+  LoraStackMixerStrength: {
+    lora_stack: { en: "Style Stack", zh: "风格组合" },
+  },
   LoraStackName: {
     lora_stack: { en: "Style Stack", zh: "风格组合" },
   },
@@ -1391,7 +1399,7 @@ function styleStackCountFromSource(source, visited = new Set()) {
   if (sourceName === STACK_LIST_NAME_NODE) {
     return styleStackCountFromSource(firstSourceForInput(source, "lora_stack_list"), visited);
   }
-  if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE].includes(sourceName)) return 1;
+  if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE, STACK_MIXER_STRENGTH_NODE].includes(sourceName)) return 1;
   let count = null;
   if (sourceName === STACK_LISTER_NODE) {
     count = (source.inputs ?? []).filter(inputIsConnected).length;
@@ -1460,7 +1468,7 @@ function axisMetadataFromSource(source, visited = new Set()) {
           .split(/[,，;；\s]+/).filter(Boolean).length;
       return { parameters: new Set(["seed"]), count };
     }
-    if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE, STACK_LIST_NAME_NODE, STACK_SPLITTER_NODE, STACK_FLATTENER_NODE, STACK_LISTER_NODE].includes(rawName)) {
+    if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE, STACK_MIXER_STRENGTH_NODE, STACK_LIST_NAME_NODE, STACK_SPLITTER_NODE, STACK_FLATTENER_NODE, STACK_LISTER_NODE].includes(rawName)) {
       const includeBase = widgetValue(source, "include_base") !== false;
       const count = styleStackCountFromSource(rawSource);
       return {
@@ -1607,7 +1615,7 @@ function installXySourceObservers(node, nodeName) {
         ? new Set(["artist_text"])
       : nodeName === ARTIST_REPLACER_NODE
         ? new Set(["match_tag", "lora_1_name", "lora_1_trigger", "lora_1_strength", "strength_mode"])
-      : nodeName === STACK_NAME_NODE || nodeName === STACK_LIST_NAME_NODE
+      : nodeName === STACK_NAME_NODE || nodeName === STACK_LIST_NAME_NODE || nodeName === STACK_MIXER_STRENGTH_NODE
         ? new Set()
       : nodeName === AXIS_PREVIEW_NODE
         ? new Set()
@@ -1651,7 +1659,7 @@ function stackEntryDataFromSource(node, visited = new Set()) {
   if (!node || visited.has(node) || visited.size > 64) return null;
   visited.add(node);
   const nodeName = nodeNameForUi(node);
-  if (nodeName === STACK_NAME_NODE) {
+  if (nodeName === STACK_NAME_NODE || nodeName === STACK_MIXER_STRENGTH_NODE) {
     return stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited);
   }
   if (nodeName === ARTIST_TEXT_NODE) {
@@ -1814,6 +1822,7 @@ function externalMixerAvailable() {
 }
 
 function createWarningWidget(node) {
+  const stackStrengthWarning = nodeNameForUi(node) === STACK_MIXER_STRENGTH_NODE;
   const element = document.createElement("div");
   element.setAttribute("role", "alert");
   Object.assign(element.style, {
@@ -1837,8 +1846,8 @@ function createWarningWidget(node) {
       element,
       {
         serialize: false,
-        getMinHeight: () => (widget?.__loraTesterWarningVisible ? 46 : 0),
-        getMaxHeight: () => (widget?.__loraTesterWarningVisible ? 72 : 0),
+        getMinHeight: () => (widget?.__loraTesterWarningVisible ? (stackStrengthWarning ? 78 : 46) : 0),
+        getMaxHeight: () => (widget?.__loraTesterWarningVisible ? (stackStrengthWarning ? 96 : 72) : 0),
       },
     );
   } else {
@@ -1856,7 +1865,11 @@ function createWarningWidget(node) {
         ctx.fillRect(8, y + 2, 3, 44);
         ctx.fillStyle = "#fff3cf";
         ctx.font = "12px sans-serif";
-        const lines = activeLanguage() === "zh"
+        const lines = stackStrengthWarning
+          ? (activeLanguage() === "zh"
+            ? ["未检测到 Anima Artist Mixer；", "组合混合强度保留，安装依赖后生效。"]
+            : ["Anima Artist Mixer was not found;", "stack strength is retained but inactive."])
+          : activeLanguage() === "zh"
           ? ["Anima 多画师测试未检测到 Anima Artist Mixer；", "非 Anima 底模可在高级设置中关闭 Mixer 开关。"]
           : ["Anima multi-artist test: Anima Artist Mixer was not found;", "disable the advanced Mixer switch for non-Anima models."];
         ctx.fillText(lines[0], 18, y + 20);
@@ -1875,20 +1888,24 @@ function createWarningWidget(node) {
 }
 
 function updateMixerWarning(node, nodeName) {
-  if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE, FLOW_XY_NODE].includes(nodeName)) return;
+  if (![TARGET_NODE, MULTI_PROMPT_NODE, XY_SAMPLER_NODE, FLOW_XY_NODE, STACK_MIXER_STRENGTH_NODE].includes(nodeName)) return;
   let widget = node.widgets?.find((item) => item.name === ARTIST_WARNING_WIDGET);
   const created = !widget;
   if (!widget) widget = createWarningWidget(node);
-  const visible = animaArtistMixerEnabled(node) && !externalMixerAvailable() && (
+  const visible = !externalMixerAvailable() && (nodeName === STACK_MIXER_STRENGTH_NODE || (animaArtistMixerEnabled(node) && (
     nodeName === TARGET_NODE
       ? directSamplerHasMultiArtistTest(node)
       : nodeName === MULTI_PROMPT_NODE
         ? multiPromptHasMultiArtistTest(node)
         : xySamplerHasMultiArtistTest(node)
-  );
+  )));
   const language = activeLanguage();
   if (widget.element) {
-    const message = language === "zh"
+    const message = nodeName === STACK_MIXER_STRENGTH_NODE
+      ? (language === "zh"
+        ? "未检测到 Anima Artist Mixer；组合混合强度会保留，但安装依赖并满足采样路由条件前不会生效。"
+        : "Anima Artist Mixer was not found. Stack Mixer strength is retained but inactive until the dependency is installed and sampling routing conditions are met.")
+      : language === "zh"
       ? "Anima 多画师测试未检测到 Anima Artist Mixer；原生画师串混合效果可能不稳定。若不是 Anima 底模，可在高级设置中关闭 Mixer 开关。"
       : "Anima multi-artist test: Anima Artist Mixer was not found. Native artist-tag blending may be unstable; disable the advanced Mixer switch for non-Anima models.";
     if (widget.element.textContent !== message) widget.element.textContent = message;

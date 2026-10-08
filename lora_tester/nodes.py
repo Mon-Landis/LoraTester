@@ -6,7 +6,7 @@ import os
 from collections import OrderedDict
 from collections.abc import Sequence
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import wraps
 from typing import Any, Callable
 
@@ -549,6 +549,9 @@ def _combination_preflight(
     combinations: list[str] = []
     independent_entries = parse_artist_tag_entries(independent_artist_tags)
     has_artist_tags = bool(independent_entries)
+    active_strengths = []
+    if len(independent_entries) > 1:
+        active_strengths.append(config.strength)
 
     def add_combination(
         entries: Sequence[tuple[str, float]],
@@ -566,12 +569,14 @@ def _combination_preflight(
     )
     for stack in stacks:
         entries = (*stack.artist_entries, *independent_entries)
+        if len(entries) > 1:
+            active_strengths.append(_stack_mixer_config(stack, config).strength)
         has_artist_tags = has_artist_tags or bool(stack.artist_entries)
         template = artist_template or stack.artist_template or artist_template_for_model(model)
         add_combination(entries, template)
     available = anima_artist_mixer_available()
     switch_enabled = bool(use_anima_artist_mixer)
-    enabled = bool(switch_enabled and config.enabled and config.strength > 0.0)
+    enabled = bool(switch_enabled and config.enabled and any(strength > 0.0 for strength in (active_strengths or [config.strength])))
     multi_artist = bool(combinations)
     return _CombinationPreflight(
         model_family=family,
@@ -1282,7 +1287,19 @@ def _warn_xy_scale(
 def _xy_stack_key(stack: LoraStack | None) -> tuple[Any, ...]:
     if stack is None:
         return ()
-    return (stack.signature(), stack.artist_template)
+    return (stack.signature(), stack.artist_template, stack.anima_mixer_strength)
+
+
+def _stack_mixer_config(
+    stack: LoraStack | None,
+    mixer_config: AnimaArtistMixerConfig | None,
+) -> AnimaArtistMixerConfig | None:
+    if stack is None or stack.anima_mixer_strength is None:
+        return mixer_config
+    config = mixer_config if mixer_config is not None else AnimaArtistMixerConfig()
+    if not isinstance(config, AnimaArtistMixerConfig):
+        raise TypeError("anima_mixer_config must come from an Anima Artist Mixer Configuration node")
+    return replace(config, strength=stack.anima_mixer_strength)
 
 
 def _xy_mixer_labels_possible(
@@ -1294,10 +1311,13 @@ def _xy_mixer_labels_possible(
     if detect_model_family(model) != MODEL_FAMILY_ANIMA or not bool(use_anima_artist_mixer):
         return False
     config = mixer_config or AnimaArtistMixerConfig()
-    if not config.enabled or config.strength <= 0.0 or not anima_artist_mixer_available():
+    if not config.enabled or not anima_artist_mixer_available():
         return False
     for _, _, values in tasks:
         stack = values.get("lora_stack")
+        effective_config = _stack_mixer_config(stack, config)
+        if effective_config.strength <= 0.0:
+            continue
         stack_artists = stack.artist_entries if isinstance(stack, LoraStack) else ()
         if len((*stack_artists, *parse_artist_tag_entries(values.get("independent_artist_tags", "")))) > 1:
             return True
@@ -1619,6 +1639,7 @@ class XYTestSampler(LoraTesterSampler):
                 column_lora_usage: list[tuple[str, float, str, str]] = []
                 prompt_entries: tuple[tuple[bool, str, float], ...] = ()
                 stack_template = artist_tag_template
+                stack_mixer_config = _stack_mixer_config(stack, anima_mixer_config)
                 negative = None
                 try:
                     if stack is not None:
@@ -1661,7 +1682,7 @@ class XYTestSampler(LoraTesterSampler):
                                 entries=prompt_entries,
                                 suffix_parts=(values.get("positive_prompt", ""), values.get("prompt_suffix", "")),
                                 artist_template=stack_template,
-                                mixer_config=anima_mixer_config,
+                                mixer_config=stack_mixer_config,
                                 independent_artist_tags=values.get("independent_artist_tags", ""),
                                 use_anima_artist_mixer=use_anima_artist_mixer,
                             )
@@ -2740,6 +2761,46 @@ class ArtistTagReplacerNode:
         return (output,)
 
 
+class LoraStackMixerStrengthNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "lora_stack": ("LORA_STACK",),
+                "strength": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.0,
+                        "max": 4.0,
+                        "step": 0.05,
+                        "tooltip": "Per-stack Anima Artist Mixer strength; overrides global/default strength only when Mixer routing is active. Zero disables mixing for this stack.",
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("LORA_STACK",)
+    RETURN_NAMES = ("lora_stack",)
+    OUTPUT_TOOLTIPS = ("The same style contents and name with a per-stack Mixer strength override.",)
+    FUNCTION = "set_strength"
+    CATEGORY = "Lora Tester/XY/Style"
+    DESCRIPTION = (
+        "Sets the highest-priority Anima Artist Mixer strength for one style stack. "
+        "Requires an Anima model, multiple artist tags, installed Mixer nodes, and enabled Mixer routing. "
+        "Does not force Mixer activation or change image axis labels."
+    )
+
+    @staticmethod
+    def set_strength(lora_stack: LoraStack, strength: float) -> tuple[LoraStack]:
+        if not isinstance(lora_stack, LoraStack):
+            raise TypeError("lora_stack must come from a Style Stack node")
+        output = replace(lora_stack, anima_mixer_strength=strength)
+        if not anima_artist_mixer_available():
+            logger.warning("[LoraTester] Anima Artist Mixer was not found; per-stack Mixer strength is stored but inactive until the dependency is installed.")
+        return (output,)
+
+
 class LoraStackNameNode:
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
@@ -3113,6 +3174,7 @@ NODE_CLASS_MAPPINGS = {
     "ArtistTagTextParser": ArtistTagTextParserNode,
     "ArtistTagReplacer": ArtistTagReplacerNode,
     "LoraStackName": LoraStackNameNode,
+    "LoraStackMixerStrength": LoraStackMixerStrengthNode,
     "LoraStackListName": LoraStackListNameNode,
     "LoraStackSplitter": LoraStackSplitterNode,
     "LoraStackFlattener": LoraStackFlattenerNode,
@@ -3140,6 +3202,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ArtistTagTextParser": "Artist Tag Text Parser",
     "ArtistTagReplacer": "Artist Tag Replacer",
     "LoraStackName": "Style Stack Name",
+    "LoraStackMixerStrength": "Style Stack Anima Mixer Strength",
     "LoraStackListName": "Style Stack List Name",
     "LoraStackSplitter": "Style Stack Splitter",
     "LoraStackFlattener": "Style Stack Flattener",
@@ -3168,6 +3231,7 @@ __all__ = [
     "ArtistTagTextParserNode",
     "ArtistTagReplacerNode",
     "LoraStackNameNode",
+    "LoraStackMixerStrengthNode",
     "LoraStackListNameNode",
     "LoraStackSplitterNode",
     "LoraStackFlattenerNode",

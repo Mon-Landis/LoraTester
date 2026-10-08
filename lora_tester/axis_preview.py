@@ -28,6 +28,7 @@ LABELS = {
     "trigger": ("触发词", "Trigger"),
     "artist": ("画师", "Artists"),
     "weight": ("权重", "Weight"),
+    "mixer_strength": ("组合 Mixer 强度", "Stack Mixer strength"),
     "template": ("画师模板", "Artist template"),
     "details": ("轴详情", "Axis details"),
     "table": ("表格", "Table"),
@@ -81,6 +82,8 @@ def format_axis_preview(axis: XYAxis, language: str = "zh") -> str:
                 result = label("stack") + "[" + ", ".join(items) + "]"
                 if value.artist_template is not None:
                     result += f"; {label('template')}: {inline(value.artist_template)}"
+                if value.anima_mixer_strength is not None:
+                    result += f"; {label('mixer_strength')}: {inline(value.anima_mixer_strength)}"
                 return result
             if isinstance(value, Mapping):
                 return "{" + ", ".join(f"{text(key)}: {inline(nested)}" for key, nested in value.items()) + "}"
