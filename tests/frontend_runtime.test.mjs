@@ -221,6 +221,180 @@ test("stack mixer strength passthrough preserves artists and axis metadata", () 
   assert.equal(fixture.context.counts[0], 2);
 });
 
+function connectedStackNode(type, sources = {}, values = {}) {
+  const names = Object.keys(sources);
+  return {
+    type, graph: {}, inputs: names.map((name, index) => ({ name, link: index + 1 })),
+    widgets: Object.entries(values).map(([name, value]) => ({ name, value, options: {} })),
+    getInputNode: (index) => sources[names[index]],
+  };
+}
+
+function artistTextNode(text) {
+  return connectedStackNode("ArtistTagTextParser", {}, { artist_text: text });
+}
+
+test("prompt naming keeps axis metadata and a localized readable multiline layout", () => {
+  const fixture = runtime();
+  const prompts = connectedStackNode("LoraTesterMultiPromptInput", {}, { prompt_count: 3 });
+  const named = connectedStackNode("LoraTesterPromptListName", { prompt_list: prompts }, { names: "first\n\nthird" });
+  fixture.context.node = named;
+  runInContext('installNodeLabels(node,"LoraTesterPromptListName")', fixture.context);
+  assert.equal(named.widgets[0].label, "名称（每行一项）");
+  assert.equal(named.widgets[0].options.placeholder, "名称（每行一项）");
+  named.size = [240, 200];
+  named.setSize = (size) => { named.size = size; };
+  runInContext('installMultiPromptLayout(node)', fixture.context);
+  assert.equal(named.size[0], 480);
+  assert.equal(named.widgets[0].value, "first\n\nthird");
+  fixture.context.axis = connectedStackNode("LoraTesterAxisComposer", { source: named });
+  const metadata = runInContext('axisMetadataFromSource(axis)', fixture.context);
+  assert.equal(metadata.count, 3);
+  assert.deepEqual(Array.from(metadata.parameters), ["prompt"]);
+  fixture.state.locale = "en";
+  runInContext('installNodeLabels(node,"LoraTesterPromptListName")', fixture.context);
+  assert.equal(named.widgets[0].label, "Names (One per Line)");
+});
+
+test("StyleStack extraction selects one entry and keeps duplicate positions", () => {
+  const fixture = runtime();
+  const first = artistTextNode("(@first:0.8)");
+  const second = artistTextNode("@second, @third");
+  const list = connectedStackNode("LoraStackLister", { stack_1: first, stack_2: second, stack_3: first });
+  fixture.context.node = connectedStackNode("StyleStackExtract", { lora_stack_list: list }, { index: 0 });
+  for (const [index, artists] of [[0, ["first"]], [1, ["second", "third"]], [2, ["first"]], [-1, ["first"]], [-2, ["first"]]]) {
+    fixture.context.node.widgets[0].value = index;
+    const actual = runInContext('stackEntryDataFromSource(node).flatMap(entry=>entry.artists)', fixture.context);
+    assert.deepEqual(Array.from(actual), artists);
+  }
+  assert.equal(runInContext('stackEntryDataFromSource(node)[0].strength', fixture.context), 0.8);
+  fixture.context.list = list;
+  assert.deepEqual(Array.from(runInContext('stackArtistCountsFromNode(list)', fixture.context)), [1, 2, 1]);
+  for (const index of [3, 99, -3]) {
+    fixture.context.node.widgets[0].value = index;
+    assert.equal(runInContext('stackEntryDataFromSource(node)', fixture.context), null);
+  }
+});
+
+test("StyleStack insertion metadata matches all modes and boundary positions", () => {
+  const fixture = runtime();
+  const original = [artistTextNode("@first"), artistTextNode("@second, @third"), artistTextNode("@last")];
+  const list = connectedStackNode("LoraStackLister", { stack_1: original[0], stack_2: original[1], stack_3: original[2] });
+  const added = artistTextNode("@added, @extra, @third_added");
+  for (const mode of ["before", "after", "replace"]) {
+    for (const index of [0, 1, 2, 3, 99, -1, -2]) {
+      fixture.context.node = connectedStackNode("StyleStackSet", { lora_stack_list: list, lora_stack: added }, { index, mode });
+      const position = index === -1 ? 2 : index === -2 ? 0 : index;
+      const expected = [["first"], ["second", "third"], ["last"]];
+      const insertion = ["added", "extra", "third_added"];
+      if (position >= expected.length) expected.push(insertion);
+      else if (mode === "replace") expected[position] = insertion;
+      else expected.splice(position + (mode === "after" ? 1 : 0), 0, insertion);
+      assert.equal(runInContext('styleStackCountFromSource(node)', fixture.context), expected.length);
+      const actual = runInContext('Array.from({length:styleStackCountFromSource(node)},(_,index)=>styleStackDataAtIndex(node,index).flatMap(entry=>entry.artists))', fixture.context);
+      assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
+      assert.deepEqual(Array.from(runInContext('stackArtistCountsFromNode(node)', fixture.context)), expected.map((artists) => artists.length));
+      const composer = connectedStackNode("LoraTesterAxisComposer", { source: fixture.context.node }, { include_base: false });
+      fixture.context.composer = composer;
+      assert.equal(runInContext('axisMetadataFromSource(composer).count', fixture.context), expected.length);
+      assert.equal(runInContext('axisMetadataFromSource(composer).parameters.has("lora_stack")', fixture.context), true);
+    }
+  }
+  for (const mode of ["before", "after", "replace"]) {
+    fixture.context.node = connectedStackNode("StyleStackSet", {
+      lora_stack_list: connectedStackNode("LoraStackLister"), lora_stack: added,
+    }, { index: -1, mode });
+    assert.equal(runInContext('styleStackCountFromSource(node)', fixture.context), 1);
+    assert.equal(runInContext('styleStackDataAtIndex(node,0).length', fixture.context), 3);
+    assert.deepEqual(Array.from(runInContext('stackArtistCountsFromNode(node)', fixture.context)), [3]);
+  }
+});
+
+test("StyleStack extraction follows combination order without eager expansion", () => {
+  const fixture = runtime();
+  const splitter = connectedStackNode("LoraStackSplitter", { lora_stack: artistTextNode("@first, @second, @third") });
+  fixture.context.node = connectedStackNode("StyleStackExtract", { lora_stack_list: splitter }, { index: 0 });
+  const expected = [["first"], ["second"], ["third"], ["first", "second"], ["first", "third"], ["second", "third"], ["first", "second", "third"]];
+  for (const [index, artists] of expected.entries()) {
+    fixture.context.node.widgets[0].value = index;
+    assert.deepEqual(Array.from(runInContext('stackEntryDataFromSource(node).flatMap(entry=>entry.artists)', fixture.context)), artists);
+  }
+  fixture.context.splitter = splitter;
+  assert.deepEqual(Array.from(runInContext('stackArtistCountsFromNode(splitter)', fixture.context)), [1, 1, 1, 2, 2, 2, 3]);
+  fixture.context.entries = Array.from({ length: 16 }, (_, index) => index);
+  assert.deepEqual(Array.from(runInContext('stackCombinationAtIndex(entries,65534)', fixture.context)), Array.from({ length: 16 }, (_, index) => index));
+  assert.deepEqual(Array.from(runInContext('stackCombinationAtIndex(entries,16)', fixture.context)), [0, 1]);
+  assert.equal(runInContext('stackCombinationAtIndex(entries,65535)', fixture.context), null);
+});
+
+test("StyleStack extraction preserves flatten weight modes and original positions", () => {
+  const fixture = runtime();
+  const source = artistTextNode("(@first:0.8), @second");
+  for (const [mode, original, expected] of [
+    ["inherit", false, [[0.8], [1]]], ["normalize", true, [[0.8, 1], [1], [1]]],
+    ["dual", true, [[0.8, 1], [1], [0.8], [1]]],
+  ]) {
+    const flat = connectedStackNode("LoraStackFlattener", { lora_stack: source }, { weight_mode: mode, include_original: original });
+    const named = connectedStackNode("LoraStackListName", { lora_stack_list: flat });
+    fixture.context.node = connectedStackNode("StyleStackExtract", { lora_stack_list: named }, { index: 0 });
+    for (const [index, strengths] of expected.entries()) {
+      fixture.context.node.widgets[0].value = index;
+      assert.deepEqual(Array.from(runInContext('stackEntryDataFromSource(node).map(entry=>entry.strength)', fixture.context)), strengths);
+    }
+  }
+  const changed = connectedStackNode("StyleStackSet", {
+    lora_stack_list: connectedStackNode("LoraStackLister", { stack_1: source }),
+    lora_stack: artistTextNode("@replacement"),
+  }, { index: -1, mode: "replace" });
+  const extracted = connectedStackNode("StyleStackExtract", { lora_stack_list: changed }, { index: -1 });
+  fixture.context.node = connectedStackNode("LoraStackFlattener", { lora_stack: extracted }, { weight_mode: "dual", include_original: true });
+  assert.equal(runInContext('styleStackCountFromSource(node)', fixture.context), 1);
+  assert.deepEqual(Array.from(runInContext('stackArtistCountsFromNode(node)', fixture.context)), [1]);
+});
+
+test("StyleStack controls localize stable enum values and observe both widget paths", () => {
+  const fixture = runtime();
+  fixture.context.node = connectedStackNode("StyleStackSet", {}, { index: -1, mode: "after" });
+  fixture.context.node.widgets.push({ name: "lora_stack", value: null });
+  runInContext('installNodeLabels(node,"StyleStackSet"); installWidgetTranslations(node,"StyleStackSet")', fixture.context);
+  const mode = fixture.context.node.widgets[1];
+  assert.equal(fixture.context.node.widgets[2].label, "风格组合");
+  assert.equal(mode.label, "插入方式");
+  assert.equal(mode.options.getOptionLabel("after"), "后");
+  assert.equal(mode.value, "after");
+  fixture.state.locale = "en";
+  runInContext('installNodeLabels(node,"StyleStackSet"); installWidgetTranslations(node,"StyleStackSet")', fixture.context);
+  assert.equal(fixture.context.node.widgets[2].label, "StyleStack");
+  assert.equal(mode.label, "Insertion Mode");
+  assert.equal(mode.options.getOptionLabel("after"), "After");
+  runInContext('globalThis.observed=0; scheduleGraphNodeUi=()=>{observed+=1}; installXySourceObservers(node,"StyleStackSet")', fixture.context);
+  fixture.context.node.widgets[0].callback(-2);
+  fixture.context.node.onWidgetChanged("mode", "replace");
+  fixture.context.node.onWidgetChanged("unrelated", 1);
+  assert.equal(fixture.context.observed, 2);
+  const extracted = connectedStackNode("StyleStackExtract", {}, { index: 0 });
+  fixture.context.extracted = extracted;
+  runInContext('installXySourceObservers(extracted,"StyleStackExtract")', fixture.context);
+  extracted.onWidgetChanged("index", 1);
+  assert.equal(fixture.context.observed, 3);
+});
+
+test("StyleStack metadata handles connected indices and cyclic graphs safely", () => {
+  const fixture = runtime();
+  const source = artistTextNode("@first");
+  const list = connectedStackNode("LoraStackLister", { stack_1: source });
+  fixture.context.node = connectedStackNode("StyleStackExtract", { lora_stack_list: list, index: source }, { index: 0 });
+  assert.equal(runInContext('stackEntryDataFromSource(node)', fixture.context), null);
+  fixture.context.node = connectedStackNode("StyleStackSet", { lora_stack_list: list, lora_stack: source, index: source }, { index: 0, mode: "replace" });
+  assert.equal(runInContext('styleStackCountFromSource(node)', fixture.context), null);
+  const cycle = connectedStackNode("LoraStackListName");
+  cycle.inputs = [{ name: "lora_stack_list", link: 1 }];
+  cycle.getInputNode = () => cycle;
+  fixture.context.node = connectedStackNode("StyleStackExtract", { lora_stack_list: cycle }, { index: -1 });
+  assert.equal(runInContext('stackEntryDataFromSource(node)', fixture.context), null);
+  assert.deepEqual(Array.from(runInContext('stackArtistCountsFromNode(node)', fixture.context)), []);
+});
+
 test("unchanged XY warning does not emit DOM mutations", () => {
   const fixture = runtime();
   const warning = { name: "lora_tester_xy_warning", element: element(), options: {}, __loraTesterWarningVisible: false };

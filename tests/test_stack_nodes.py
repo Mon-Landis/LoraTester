@@ -157,7 +157,7 @@ class StackNodeTests(unittest.TestCase):
 
     def test_flattener_node_contract_and_axis_connections(self):
         self.assertIs(NODE_CLASS_MAPPINGS["LoraStackFlattener"], LoraStackFlattenerNode)
-        self.assertEqual(NODE_DISPLAY_NAME_MAPPINGS["LoraStackFlattener"], "Style Stack Flattener")
+        self.assertEqual(NODE_DISPLAY_NAME_MAPPINGS["LoraStackFlattener"], "StyleStack Flattener")
         inputs = LoraStackFlattenerNode.INPUT_TYPES()["required"]
         self.assertEqual(inputs["lora_stack"][0], "LORA_STACK")
         self.assertEqual(inputs["include_original"][0], "BOOLEAN")

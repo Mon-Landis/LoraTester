@@ -28,6 +28,8 @@ from .nodes import (
     LoraStackNameNode,
     LoraStackListNameNode,
     LoraStackListerNode,
+    StyleStackExtractNode,
+    StyleStackSetNode,
     LoraStackFlattenerNode,
     LoraStackNode,
     LoraStackSplitterNode,
@@ -39,6 +41,7 @@ from .nodes import (
     AnimaFlowParameterAxisNode,
     MultiPromptInputNode,
     GlobalPromptAppendNode,
+    PromptListNameNode,
     PromptAxisNode,
     LoraStackAxisNode,
     SeedListNode,
@@ -50,6 +53,7 @@ from .nodes import (
 from .stack import (
     LoraStack, LoraStackItem, LoraStackList, flatten_lora_stack,
     parse_artist_stack, rename_lora_stack, rename_lora_stack_list, replace_stack_artist, split_lora_stack,
+    extract_style_stack, set_style_stack,
 )
 from .stack_compositor import LoraStackMatrixCompositor, LoraStackMatrixSession
 from .axis_preview import format_axis_preview
@@ -104,6 +108,10 @@ __all__ = [
     "LoraStackSplitterNode",
     "LoraStackFlattenerNode",
     "LoraStackListerNode",
+    "StyleStackExtractNode",
+    "StyleStackSetNode",
+    "extract_style_stack",
+    "set_style_stack",
     "LoraStackMatrixCompositor",
     "LoraStackMatrixSession",
     "MultiPromptSampleNode",
@@ -112,6 +120,7 @@ __all__ = [
     "AnimaFlowParameterAxisNode",
     "MultiPromptInputNode",
     "GlobalPromptAppendNode",
+    "PromptListNameNode",
     "PromptAxisNode",
     "LoraStackAxisNode",
     "SeedListNode",

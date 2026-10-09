@@ -42,6 +42,7 @@ from .node_contract import (
 from .stack import (
     FLATTEN_WEIGHT_MODES, LoraStack, LoraStackItem, LoraStackList, flatten_lora_stack,
     parse_artist_stack, rename_lora_stack, rename_lora_stack_list, replace_stack_artist, split_lora_stack,
+    STACK_INSERT_MODES, extract_style_stack, set_style_stack,
 )
 from .styles import StyleConfig, available_style_decorators
 from .xy import (
@@ -2015,6 +2016,38 @@ class GlobalPromptAppendNode:
         return (prompt_list.append_global(addition, position=position, independent_artist_tags=independent_artist_tags),)
 
 
+class PromptListNameNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "prompt_list": ("LORA_TESTER_PROMPT_LIST",),
+                "names": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "dynamicPrompts": False,
+                        "tooltip": "One literal name per line: line 1 names index 0. Blank or missing lines reset to default names; extra lines are ignored.",
+                    },
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("LORA_TESTER_PROMPT_LIST",)
+    RETURN_NAMES = ("prompt_list",)
+    OUTPUT_TOOLTIPS = ("Prompt list with names updated; all prompt text and independent artist tags are preserved.",)
+    FUNCTION = "set_names"
+    CATEGORY = "Lora Tester/XY/Prompt"
+    DESCRIPTION = "Names prompt entries by line position, starting at index 0. Blank or missing lines restore automatic P01, P02, ... labels; excess lines are ignored. Names are literal text, not templates."
+
+    @staticmethod
+    def set_names(prompt_list: PromptList, names: str) -> tuple[PromptList]:
+        if not isinstance(prompt_list, PromptList):
+            raise TypeError("prompt_list must come from a Multi Prompt Input node")
+        return (prompt_list.with_names(names),)
+
+
 class PromptAxisNode:
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
@@ -2910,6 +2943,59 @@ class LoraStackFlattenerNode:
         ),)
 
 
+STYLE_STACK_INDEX_INPUT = ("INT", {
+    "default": 0, "min": -2, "max": 2147483647, "step": 1,
+    "tooltip": "Zero-based index; -1 selects the last item, -2 the first (not Python negative indexing). Before/after are relative to that item. Set appends beyond the last index or into an empty list; Extract rejects an empty list or overflow. Axis BASE is not a list item.",
+})
+
+
+class StyleStackExtractNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {"required": {
+            "lora_stack_list": ("LORA_STACK_LIST", {"tooltip": "The ordered StyleStackList to read without modifying it."}),
+            "index": STYLE_STACK_INDEX_INPUT,
+        }}
+
+    RETURN_TYPES = ("LORA_STACK",)
+    RETURN_NAMES = ("lora_stack",)
+    OUTPUT_TOOLTIPS = ("The selected StyleStack, including its custom name, artist template, and Mixer strength.",)
+    FUNCTION = "extract_stack"
+    CATEGORY = "Lora Tester/XY/Style"
+    DESCRIPTION = "Extracts one StyleStack by zero-based index. -1 means last, -2 first. Empty lists and out-of-range indices raise a clear error."
+
+    @staticmethod
+    def extract_stack(lora_stack_list: LoraStackList, index: int) -> tuple[LoraStack]:
+        return (extract_style_stack(lora_stack_list, index),)
+
+
+class StyleStackSetNode:
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {"required": {
+            "lora_stack_list": ("LORA_STACK_LIST", {"tooltip": "The ordered StyleStackList to copy and update."}),
+            "lora_stack": ("LORA_STACK", {"tooltip": "The complete StyleStack to insert or replace, preserving all metadata."}),
+            "index": STYLE_STACK_INDEX_INPUT,
+            "mode": (list(STACK_INSERT_MODES), {
+                "default": "replace",
+                "tooltip": "Insert before/after the selected item, or replace it. All modes append for overflow or an empty list. Duplicate stacks are preserved.",
+            }),
+        }}
+
+    RETURN_TYPES = ("LORA_STACK_LIST",)
+    RETURN_NAMES = ("lora_stack_list",)
+    OUTPUT_TOOLTIPS = ("A new ordered StyleStackList; the input list and all stack metadata remain unchanged.",)
+    FUNCTION = "set_stack"
+    CATEGORY = "Lora Tester/XY/Style"
+    DESCRIPTION = "Inserts or replaces a StyleStack without modifying the input list. -1 targets the last item, -2 the first. Overflow and empty lists append in every mode."
+
+    @staticmethod
+    def set_stack(
+        lora_stack_list: LoraStackList, lora_stack: LoraStack, index: int, mode: str = "replace"
+    ) -> tuple[LoraStackList]:
+        return (set_style_stack(lora_stack_list, lora_stack, index, mode),)
+
+
 class LoraStackListerNode:
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, Any]:
@@ -3179,12 +3265,15 @@ NODE_CLASS_MAPPINGS = {
     "LoraStackSplitter": LoraStackSplitterNode,
     "LoraStackFlattener": LoraStackFlattenerNode,
     "LoraStackLister": LoraStackListerNode,
+    "StyleStackExtract": StyleStackExtractNode,
+    "StyleStackSet": StyleStackSetNode,
     "MultiPromptSample": MultiPromptSampleNode,
     "LoraTesterXYSampler": XYTestSampler,
     "LoraTesterAnimaFlowXYSampler": AnimaFlowXYTestSampler,
     "LoraTesterAnimaFlowParameterAxis": AnimaFlowParameterAxisNode,
     "LoraTesterMultiPromptInput": MultiPromptInputNode,
     "LoraTesterGlobalPromptAppend": GlobalPromptAppendNode,
+    "LoraTesterPromptListName": PromptListNameNode,
     "LoraTesterPromptAxis": PromptAxisNode,
     "LoraTesterLoraStackAxis": LoraStackAxisNode,
     "LoraTesterSeedList": SeedListNode,
@@ -3198,21 +3287,24 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "LoraTesterStyle": "LoRA Tester Style",
     "ArtistTagTemplate": "Artist Tag Template",
     "AnimaArtistMixerConfig": "Anima Artist Mixer Configuration",
-    "LoraStack": "Style Stack",
+    "LoraStack": "StyleStack",
     "ArtistTagTextParser": "Artist Tag Text Parser",
     "ArtistTagReplacer": "Artist Tag Replacer",
-    "LoraStackName": "Style Stack Name",
-    "LoraStackMixerStrength": "Style Stack Anima Mixer Strength",
-    "LoraStackListName": "Style Stack List Name",
-    "LoraStackSplitter": "Style Stack Splitter",
-    "LoraStackFlattener": "Style Stack Flattener",
-    "LoraStackLister": "Style Stack Lister",
+    "LoraStackName": "StyleStack Name",
+    "LoraStackMixerStrength": "StyleStack Anima Mixer Strength",
+    "LoraStackListName": "StyleStackList Name",
+    "LoraStackSplitter": "StyleStack Splitter",
+    "LoraStackFlattener": "StyleStack Flattener",
+    "LoraStackLister": "StyleStack Lister",
+    "StyleStackExtract": "Extract StyleStack",
+    "StyleStackSet": "Set StyleStack",
     "MultiPromptSample": "Style Combination Tester",
     "LoraTesterXYSampler": "XY Test Sampler",
     "LoraTesterAnimaFlowXYSampler": "AnimaFlow XY Test Sampler",
     "LoraTesterAnimaFlowParameterAxis": "AnimaFlow Parameter Axis",
     "LoraTesterMultiPromptInput": "Multi Prompt Input",
     "LoraTesterGlobalPromptAppend": "Global Prompt Append",
+    "LoraTesterPromptListName": "Prompt List Name",
     "LoraTesterPromptAxis": "Prompt Axis",
     "LoraTesterLoraStackAxis": "Style Axis",
     "LoraTesterSeedList": "Seed List / Random Seeds",
@@ -3236,6 +3328,8 @@ __all__ = [
     "LoraStackSplitterNode",
     "LoraStackFlattenerNode",
     "LoraStackListerNode",
+    "StyleStackExtractNode",
+    "StyleStackSetNode",
     "MultiPromptSampleNode",
     "XYTestSampler",
     "AnimaFlowXYTestSampler",

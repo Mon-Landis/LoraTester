@@ -40,7 +40,7 @@ from lora_tester.xy import (
     cross_merge_axes,
     merge_axis_parameters,
 )
-from lora_tester.xy_compositor import XYMatrixCompositor
+from lora_tester.xy_compositor import XYMatrixCompositor, _wrap_detail_text
 
 
 class _Clip:
@@ -322,6 +322,25 @@ class XYModelTests(unittest.TestCase):
 
 
 class XYCompositorTests(unittest.TestCase):
+    def test_footer_text_preserves_newlines_and_blank_paragraphs(self) -> None:
+        x, y = self.make_axes()
+        compositor = XYMatrixCompositor(
+            x,
+            y,
+            32,
+            24,
+            style=StyleConfig.white(decorator="none"),
+            extra_detail_text="first\r\nsecond\n\n中文",
+            max_canvas_pixels=None,
+        )
+        font = compositor.fonts.get(compositor.geometry.label_font_size)
+        self.assertEqual(
+            _wrap_detail_text(("first\r\nsecond\n\n中文",), font, 800),
+            ("first", "second", "", "中文"),
+        )
+        block = compositor.geometry.detail_blocks[-1]
+        self.assertEqual(block.rect[3] - block.rect[1], compositor._detail_height(block.block, font, 800))
+
     def test_detail_tables_have_subtle_alternating_full_width_rows(self) -> None:
         styles = (
             StyleConfig.black(decorator="none"),

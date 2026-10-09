@@ -29,6 +29,16 @@ def _line_height(font: ImageFont.ImageFont) -> int:
     return max(1, box[3] - box[1] + 2)
 
 
+def _wrap_detail_text(lines: Sequence[str], font: ImageFont.ImageFont, width: int) -> tuple[str, ...]:
+    approximate_chars = max(24, int(width // max(6, font.getlength("M"))))
+    wrapped: list[str] = []
+    for source in lines:
+        normalized = str(source).replace("\r\n", "\n").replace("\r", "\n")
+        for paragraph in normalized.split("\n"):
+            wrapped.extend(textwrap.wrap(paragraph, width=approximate_chars) or [""])
+    return tuple(wrapped)
+
+
 @dataclass(frozen=True, slots=True)
 class XYMatrixOptions:
     image_width: int
@@ -179,11 +189,7 @@ class XYMatrixCompositor:
         if block.mode == "table":
             content_lines = 1 + max(1, len(block.rows))
         else:
-            approximate_chars = max(24, width // max(6, font.getlength("M")))
-            content_lines = sum(
-                max(1, len(textwrap.wrap(line, width=int(approximate_chars))))
-                for line in block.text
-            )
+            content_lines = len(_wrap_detail_text(block.text, font, width))
         return title_height + content_lines * line_height + padding * 2
 
     def _build_geometry(self) -> XYMatrixGeometry:
@@ -545,14 +551,12 @@ class XYMatrixSession:
         font = self.fonts.get(self.geometry.label_font_size)
         line_height = _line_height(font)
         width = max(1, rect[2] - rect[0])
-        approximate_chars = max(24, int(width // max(6, font.getlength("M"))))
         y = rect[1]
-        for source in lines:
-            for line in textwrap.wrap(str(source), width=approximate_chars) or [""]:
-                if y + line_height > rect[3]:
-                    return
-                self._draw.text((rect[0], y), line, fill=self.style.text_color, font=font)
-                y += line_height
+        for line in _wrap_detail_text(lines, font, width):
+            if y + line_height > rect[3]:
+                return
+            self._draw.text((rect[0], y), line, fill=self.style.text_color, font=font)
+            y += line_height
 
     def _draw_frame(self, row: int, column: int, rect: Rect) -> None:
         color = self.style.accent_colors[column % len(self.style.accent_colors)]

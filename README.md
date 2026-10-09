@@ -4,7 +4,7 @@
 
 面向 ComfyUI 的 LoRA、画师 Tag 与通用 XY 参数测试节点。采样器直接接收 `MODEL / CLIP / VAE / LATENT`，在节点内完成提示词编码、模型/CLIP 处理、采样、VAE 解码和带标注的对比图合成。
 
-![多提示词与风格组合对比矩阵](previews/multi_prompt_stack_matrix.png)
+![多提示词与StyleStack对比矩阵](previews/multi_prompt_stack_matrix.png)
 
 ## 核心能力
 
@@ -12,7 +12,7 @@
 - 提示词轴：拆分长文本、统一前置或后置追加提示词，并单独传递画师 Tag。
 - 种子轴：解析显式种子列表，或根据来源种子确定性生成一组随机种子。
 - 风格轴：统一表示 LoRA 与画师 Tag；单风格默认显示“代号-名称-权重”，多风格显示“代号-权重”组合，自定义名称优先。底部列出代号对应的来源信息。
-- 通用轴合成：提示词列表、风格组合、风格组合列表和种子列表均可经 `Axis Composer` 转换为方向无关的 `XY_AXIS`。
+- 通用轴合成：提示词列表、StyleStack、StyleStackList和种子列表均可经 `Axis Composer` 转换为方向无关的 `XY_AXIS`。
 - 专用 LoRA 测试：保留 1 至 3 个 LoRA 的权重梯度与混合布局。
 - Anima 兼容：按模型配置选择画师 Tag 模板，并可选接入 Anima Artist Mixer 处理多画师组合。
 - 可定制输出：黑色、白色或自定义主题，支持背景图、字体、颜色、间距、装饰器、分类表格和文字说明。
@@ -37,11 +37,21 @@ flowchart LR
 画风横向测试可使用：
 
 ```text
-Style Stack -> Style Stack Splitter / Style Stack Lister -> Axis Composer -> axis -> x_axis
+StyleStack -> StyleStack Splitter / StyleStack Lister -> Axis Composer -> axis -> x_axis
 Multi Prompt Input -> Global Prompt Append                    -> Axis Composer -> axis -> y_axis
 ```
 
 所有轴节点的输出均名为 `axis`，轴本身不绑定方向，可自由接入采样器的 `x_axis` 或 `y_axis`。`axis_title` 是整条轴的总标题；每行或每列顶端显示的文字来自各个 `AxisEntry.label`。`Axis Composer` 的 `include_base` 可将风格 BASE 放入单独分组，使基线列与其余测试列之间自动留出间隔。`Prompt Axis`、`Style Axis` 和 `Seed Axis` 仍作为对应数据类型的快捷构造器提供。
+
+### 提取与设置 StyleStack
+
+- `提取StyleStack` / `Extract StyleStack`：StyleStackList + 索引 → 完整的原始 StyleStack。
+- `设置StyleStack` / `Set StyleStack`：StyleStackList + StyleStack + 索引 + `前 / 后 / 替换` → 新列表，不修改共享输入。
+- 索引从 **0** 开始；**-1 定位末项，-2 定位首项**，非 Python 负索引。`-1 + 前` 插在末项之前，`-1 + 后` 追加，`-1 + 替换` 替换末项。
+- 设置：索引超过最大索引（含等于列表长度）或空列表时，三种模式均追加。
+- 提取：空列表或越界明确报错，不静默截断；两个节点均拒绝小于 -2 的索引。
+- 名称、权重、触发词、画师模板及独立 Mixer 强度完整保留；重复元素不去重。轴 `BASE` 不属于此列表。
+- 兼容性：前端统一为 **StyleStack / StyleStackList**；内部类、旧节点 ID、端口标识和 `LORA_STACK` / `LORA_STACK_LIST` 类型保留，旧工作流不必迁移。列表命名节点原有“任意负数 = 全部”的规则不变。
 
 ### 种子列表的使用
 
@@ -80,17 +90,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | `Lora Tester/XY` | `XY Test Sampler` | 对两个轴做笛卡尔积采样，输出拼接图与原始图片批次。 |
 | `Lora Tester/XY/Prompt` | `Multi Prompt Input` | 通过数量控制和独立输入框构造多提示词列表。 |
 | `Lora Tester/XY/Prompt` | `Global Prompt Append` | 为全部提示词统一前置/后置文本，并追加独立画师 Tag。 |
+| `Lora Tester/XY/Prompt` | `Prompt List Name` / `提示词组命名` | 按多行文本的位置为提示词组逐项命名，空行或缺少的行恢复默认名称。 |
 | `Lora Tester/XY/Prompt` | `Prompt Axis` | 将提示词列表直接转换为方向无关的 `XY_AXIS`。 |
-| `Lora Tester/XY/Style` | `Style Stack` | 配置最多 16 个 LoRA 或画师 Tag 风格项。 |
-| `Lora Tester/XY/Style` | `Artist Tag Text Parser` / `画师 Tag-文本解析` | 将画师提示词文本解析为含权重的风格组合。 |
+| `Lora Tester/XY/Style` | `StyleStack` | 配置最多 16 个 LoRA 或画师 Tag 风格项。 |
+| `Lora Tester/XY/Style` | `Artist Tag Text Parser` / `画师 Tag-文本解析` | 将画师提示词文本解析为含权重的StyleStack。 |
 | `Lora Tester/XY/Style` | `Artist Tag Replacer` / `画师替换` | 精确匹配画师并替换为画师或 LoRA，支持替换权重与倍率。 |
-| `Lora Tester/XY/Style` | `Style Stack Splitter` | 生成风格组合的全部非空组合。 |
-| `Lora Tester/XY/Style` | `Style Stack Flattener` / `风格组合平铺` | 将组合平铺为独立单项，可选择在首位加入原始组合。 |
-| `Lora Tester/XY/Style` | `Style Stack Name` / `风格组合命名` | 设置单个组合的字面名称，留空恢复自动命名。 |
-| `Lora Tester/XY/Style` | `Style Stack Anima Mixer Strength` / `风格组合 Anima 混合强度` | 为单个组合设置最高优先级的 Mixer 强度；仅满足原 Mixer 路由条件时生效。 |
-| `Lora Tester/XY/Style` | `Style Stack List Name` / `风格组合列表命名` | 按索引命名一项或全部，支持 `{i}` 与反斜杠转义。 |
-| `Lora Tester/XY/Style` | `Style Stack Lister` | 动态合并最多 16 个独立风格组合。 |
-| `Lora Tester/XY/Style` | `Style Axis` | 将风格组合列表直接转换为带分组和详情表的 `XY_AXIS`。 |
+| `Lora Tester/XY/Style` | `StyleStack Splitter` | 生成StyleStack的全部非空组合。 |
+| `Lora Tester/XY/Style` | `StyleStack Flattener` / `StyleStack平铺` | 将组合平铺为独立单项，可选择在首位加入原始组合。 |
+| `Lora Tester/XY/Style` | `StyleStack Name` / `StyleStack命名` | 设置单个组合的字面名称，留空恢复自动命名。 |
+| `Lora Tester/XY/Style` | `StyleStack Anima Mixer Strength` / `StyleStack Anima 混合强度` | 为单个组合设置最高优先级的 Mixer 强度；仅满足原 Mixer 路由条件时生效。 |
+| `Lora Tester/XY/Style` | `StyleStackList Name` / `StyleStackList命名` | 按索引命名一项或全部，支持 `{i}` 与反斜杠转义。 |
+| `Lora Tester/XY/Style` | `Extract StyleStack` / `提取StyleStack` | 按索引提取完整风格；-1 末项、-2 首项。 |
+| `Lora Tester/XY/Style` | `Set StyleStack` / `设置StyleStack` | 前/后插入或替换；越界和空列表均追加。 |
+| `Lora Tester/XY/Style` | `StyleStack Lister` | 动态合并最多 16 个独立StyleStack。 |
+| `Lora Tester/XY/Style` | `Style Axis` | 将StyleStackList直接转换为带分组和详情表的 `XY_AXIS`。 |
 | `Lora Tester/XY/Seed` | `Seed List / Random Seeds` | 解析种子列表或确定性生成随机种子。 |
 | `Lora Tester/XY/Seed` | `Seed Axis` | 将种子列表直接转换为方向无关的 `XY_AXIS`。 |
 | `Lora Tester/XY/Axis` | `Axis Composer` | 将任一受支持的原始数据源或完整轴转换为通用 `axis`。 |
@@ -126,7 +139,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - 缺少依赖或接口不兼容时保留兼容壳，工作流仍可识别节点；显示红色依赖提示和项目链接，执行被阻止，绝不回退到 KSampler。安装/更新依赖后重启 ComfyUI 并刷新浏览器。
 - f 采的步进进度和实时预览转发到整个 XY 队列：已完成格数 + 当前格的分数进度。每张图不会重新从 0% 开始，保留解码与图表合成时间，合成结束才显示 100%。不修改求解器或模型调用次数；转发只在当前执行上下文内生效，不改写全局进度钩子。
 
-推荐连线：`画师文本解析 -> 风格组合平铺 -> Style Axis -> AnimaFlow XY 测试器.x_axis`，提示词轴接 `y_axis`；比较 Flow 参数时，将 `AnimaFlow 参数轴` 接任一轴。
+推荐连线：`画师文本解析 -> StyleStack平铺 -> Style Axis -> AnimaFlow XY 测试器.x_axis`，提示词轴接 `y_axis`；比较 Flow 参数时，将 `AnimaFlow 参数轴` 接任一轴。
 
 ### 轴内容预览
 
@@ -149,38 +162,38 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - `替换`：匹配项的新权重直接使用配置的强度。
 - `倍率`：匹配项的新权重为原权重乘以配置的倍率。例如原权重 `0.3`、倍率 `2`，输出权重 `0.6`。
 - 精确匹配、区分大小写，并替换全部匹配项；不会误匹配普通 LoRA 触发词或画师名的子串。无匹配时原样返回。
-- 替换物、触发词和强度控件复用 `Style Stack` 构造器的同一代码路径；替换成画师时填写画师 Tag，替换成 LoRA 时填写该文件的触发词。
+- 替换物、触发词和强度控件复用 `StyleStack` 构造器的同一代码路径；替换成画师时填写画师 Tag，替换成 LoRA 时填写该文件的触发词。
 - 保留未匹配项、顺序与画师模板；一项包含多个画师时只替换匹配画师，其余画师保留原权重。
 
-可连接为 `画师 Tag-文本解析 -> 画师替换 -> 风格组合平铺 -> Style Axis / Axis Composer`。解析输出直接接入轴时代表完整画师组合；通过平铺节点可分别测试每个画师。
+可连接为 `画师 Tag-文本解析 -> 画师替换 -> StyleStack平铺 -> Style Axis / Axis Composer`。解析输出直接接入轴时代表完整画师组合；通过平铺节点可分别测试每个画师。
 
 ### 单组合 Anima 混合强度
 
-`风格组合 Anima 混合强度`（`Style Stack Anima Mixer Strength`，`Lora Tester/XY/Style`）输入和输出均为 `LORA_STACK`。输入 `混合强度`（0–4，默认 1.0）仅为此组合覆盖 Anima Artist Mixer 的 `strength`，优先级为 **组合值 > 采样器手动全局配置 > 默认值**。不覆盖画师各自的权重、归一化、对齐方式、高级选项或 Mixer 启用状态；0 表示对此组合停用混合。
+`StyleStack Anima 混合强度`（`StyleStack Anima Mixer Strength`，`Lora Tester/XY/Style`）输入和输出均为 `LORA_STACK`。输入 `混合强度`（0–4，默认 1.0）仅为此组合覆盖 Anima Artist Mixer 的 `strength`，优先级为 **组合值 > 采样器手动全局配置 > 默认值**。不覆盖画师各自的权重、归一化、对齐方式、高级选项或 Mixer 启用状态；0 表示对此组合停用混合。
 
 - 仅当 Anima 底模、依赖已安装、至少两个画师（含提示词源独立画师）且 Mixer 路由开启时生效；非 Anima、单画师、缺失依赖或开关关闭仍走原路由，不强制启用。
 - 节点缺失依赖时显示警告，组合数据仍正常输出。串联多个此节点时后一个覆盖前一个。
 - 名字设置、画师替换、列表收集、排列与平铺保留组合强度；派生单画师通常不会生效，除非与独立画师合计达到多个。不同强度的同内容组合不会共用错误的采样配置。
 - 此值不进入输出图行/列标签或来源表，仅在轴内容预览显示以便检查。支持普通 XY、AnimaFlow XY 与旧组合测试入口。
 
-推荐：`画师文本解析 → 风格组合 Anima 混合强度 → 风格组合列表汇总 → 风格轴 → XY 测试器`。未连接此节点的组合继续使用原全局配置。
+推荐：`画师文本解析 → StyleStack Anima 混合强度 → StyleStackList汇总 → 风格轴 → XY 测试器`。未连接此节点的组合继续使用原全局配置。
 
-### 风格组合命名
+### StyleStack命名
 
-- `风格组合配置`（Style Stack）与 `画师 Tag-文本解析` 增加可选的单行 `风格名称`。留空代表自动命名：名字不提前生成，仍由风格轴收集来源、编号和权重后生成 `A-0.8+B-0.3`。自定义名只改变显示，不改变采样参数或来源详情。
-- `风格组合命名` 输入一个 `LORA_STACK` 和字面名称；空或纯空白清除已有名字。本节点不展开 `{i}`。
-- `风格组合列表命名` 输入 `LORA_STACK_LIST`、整数 `index` 和名称模板。索引从 **0** 开始；任何负数处理全部；索引大于或等于列表长度不生效；空列表原样返回。轴额外加入的 `BASE` 不属于列表索引，预览序号与列表索引可能不同。
+- `StyleStack配置`（StyleStack）与 `画师 Tag-文本解析` 增加可选的单行 `风格名称`。留空代表自动命名：名字不提前生成，仍由风格轴收集来源、编号和权重后生成 `A-0.8+B-0.3`。自定义名只改变显示，不改变采样参数或来源详情。
+- `StyleStack命名` 输入一个 `LORA_STACK` 和字面名称；空或纯空白清除已有名字。本节点不展开 `{i}`。
+- `StyleStackList命名` 输入 `LORA_STACK_LIST`、整数 `index` 和名称模板。索引从 **0** 开始；任何负数处理全部；索引大于或等于列表长度不生效；空列表原样返回。轴额外加入的 `BASE` 不属于列表索引，预览序号与列表索引可能不同。
 - 模板中的 `{i}` 替换为该项在原输入列表中的索引，重复出现时全部替换。例如 `风格-{i}` 对索引 2 得到 `风格-2`。`\{i}` 输出字面文本 `{i}`；`\\` 输出一个反斜杠；`\{` / `\}` 输出字面花括号。只解析一次，转义得到的 `{i}` 不再展开；其他占位符、未知转义和末尾反斜杠保留原文。展开后的名字作为普通文本保存，不因后续重排重新编号。
 - 名称模板留空，清除选中项的自定义名；允许重复名称，包括名为 `BASE` 的普通组合，不改变任何基准项语义。名称不允许换行或制表符，命名节点不会修改共享输入对象。
 - 列表收集、合并保留名字与重复位置；排列组合将包含全部输入项的完整组合视为原项并保留名字，其余子集自动命名。多项平铺的原项保留名字，派生项自动命名；单项平铺规则见下一节。
-- `画师替换` 的高级配置增加 `输出风格名称`，默认留空并保留名字；非空相当于替换输出后连接 `风格组合命名`，即使未匹配画师也会命名。本字段不展开 `{i}`，清除已有名字请使用命名节点。
+- `画师替换` 的高级配置增加 `输出风格名称`，默认留空并保留名字；非空相当于替换输出后连接 `StyleStack命名`，即使未匹配画师也会命名。本字段不展开 `{i}`，清除已有名字请使用命名节点。
 - 风格轴、轴合成器、轴预览以及普通 / AnimaFlow XY 拼图使用自定义名；来源表仍保留真实文件与画师信息，组合轴继续以名字拼接。
 - `Style Axis` 和 `Axis Composer` 提供默认开启的开关 `直接展示单风格元素`：仅有一个实际画师或 LoRA 的元素显示 `A-wlop-0.8`、`B-foo-1.2` 这样的标签；LoRA `styles/foo_bar v2.safetensors` 取 `foo`（文件名在第一个空白、下划线或后缀前的文本）。画师名不截断；一个条目包含多个画师仍视为组合。自定义名优先，关闭则恢复 `A-0.8` 形式。来源编号、权重和采样内容不变；轴合成器接收已有 `XY_AXIS` 时不重新命名。
 - 底部详情表（风格来源、种子等）对隔行添加约 8% 混色的轻微底色，适配黑色、白色与自定义主题，表头和图片不变。
 
-### 风格组合平铺
+### StyleStack平铺
 
-将 `Style Stack` 接入 `风格组合平铺`（`Style Stack Flattener`），其 `lora_stack_list` 输出可直接接入 `Style Axis` 或 `Axis Composer`。
+将 `StyleStack` 接入 `StyleStack平铺`（`StyleStack Flattener`），其 `lora_stack_list` 输出可直接接入 `Style Axis` 或 `Axis Composer`。
 
 - 默认关闭 `加入原始组合`：`a:1.2,b:0.3,c:1` 输出 `[a:1.2]`、`[b:0.3]`、`[c:1]` 三项。
 - 开启开关：输出 `[a:1.2,b:0.3,c:1]`、`[a:1.2]`、`[b:0.3]`、`[c:1]` 四项，原始组合在首位。
@@ -191,6 +204,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 - 单项加入原始组合时，与原项完全一致的子项合并、不重复输出；原权重为 `1` 时所有模式只输出一次。归一化且原权重非 `1` 时，若开启加入原始组合，输出未修改的原项和归一化项，二者均继承名字。
 
 ## 提示词与画师 Tag
+
+`提示词组命名` 输入与输出均为提示词组（`LORA_TESTER_PROMPT_LIST`），推荐连接 `多提示词输入 -> 提示词组命名 -> 提示词轴`，也支持 `轴构造器`。名称文本第一行对应 `index=0`，第三行对应 `index=2`；空行（含纯空白行）或缺少的行恢复对应项的 `P01`、`P02` 等默认名称，超出组长度的行忽略。重复命名会覆盖旧名称；空白不会保留旧名称。名称仅去掉行首尾空白，不展开占位符或动态提示词，允许重名。提示词正文、前后缀、独立画师 Tag、顺序和数量不变；后接全局提示词追加节点也会保留名称。请在构造轴之前命名，输出图和轴内容预览使用同一标签。
 
 `Global Prompt Append` 只把“独立画师 Tag”字段送入画师处理链。普通提示词和 LoRA 触发词中的 `@tag` 会保留在原提示词中，不会被自动抽取。
 

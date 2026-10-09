@@ -1,4 +1,52 @@
 {
+  "StyleStackExtract": {
+    "display_name": "提取风格组合",
+    "description": "从 风格组合列表 提取指定索引的完整 风格组合，保留全部属性。空列表或越界明确报错。",
+    "inputs": {
+      "lora_stack_list": {
+        "name": "风格组合列表",
+        "tooltip": "要读取/复制的有序列表；不修改共享输入。"
+      },
+      "index": {
+        "name": "索引（0 起始；-1 末项，-2 首项）",
+        "tooltip": "从 0 开始；-1 定位末项，-2 定位首项（非 Python 负索引）。前/后相对此项插入。设置越界或空列表时追加，提取越界或空列表时报错。小于 -2 非法。轴 BASE 不在列表内。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "风格组合",
+        "tooltip": "完整风格，保留名称、权重、触发词、画师模板及独立 Mixer 强度。"
+      }
+    }
+  },
+  "StyleStackSet": {
+    "display_name": "设置风格组合",
+    "description": "将 风格组合 插到指定项之前/之后或替换该项，返回新列表。越界或空列表均追加，重复元素不去重。",
+    "inputs": {
+      "lora_stack_list": {
+        "name": "风格组合列表",
+        "tooltip": "要读取/复制的有序列表；不修改共享输入。"
+      },
+      "lora_stack": {
+        "name": "风格组合",
+        "tooltip": "完整风格，保留名称、权重、触发词、画师模板及独立 Mixer 强度。"
+      },
+      "index": {
+        "name": "索引（0 起始；-1 末项，-2 首项）",
+        "tooltip": "从 0 开始；-1 定位末项，-2 定位首项（非 Python 负索引）。前/后相对此项插入。设置越界或空列表时追加，提取越界或空列表时报错。小于 -2 非法。轴 BASE 不在列表内。"
+      },
+      "mode": {
+        "name": "插入方式",
+        "tooltip": "前/后相对定位项插入；替换覆盖此项。越界或空列表均追加。-1+前插在末项之前，-1+后追加，-1+替换替换末项。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "风格组合列表",
+        "tooltip": "修改后的新列表，输入和组合属性均不变。"
+      }
+    }
+  },
   "LoraStackMixerStrength": {
     "display_name": "风格组合 Anima 混合强度",
     "description": "为组合设置独立的 Anima Artist Mixer 混合强度，优先于全局手动配置和默认值。仅在 Anima 底模、多画师 Tag、依赖已安装且 Mixer 路由开启时生效，不改变输出图轴标签。缺失依赖时显示警告，组合仍可使用。命名、画师替换、排列和平铺保留此属性。",
@@ -230,7 +278,7 @@
       },
       "negative_prompt": {
         "name": "负面提示词",
-        "tooltip": "每种 LoRA 组合都会使用对应的 CLIP 在节点内重新编码。"
+        "tooltip": "每种 风格组合都会使用对应的 CLIP 在节点内重新编码。"
       },
       "seed": {
         "name": "随机种子",
@@ -749,7 +797,7 @@
       "clip": { "name": "CLIP", "tooltip": "用于编码每个提示词和 LoRA 触发词组合。" },
       "vae": { "name": "VAE", "tooltip": "逐张解码采样结果。" },
       "latent_image": { "name": "潜空间图像", "tooltip": "所有对比格复用的单张 latent。" },
-      "lorastacks": { "name": "LoRA 组合列表", "tooltip": "作为 X 轴测试列的 LoRA 组合。" },
+      "lorastacks": { "name": "风格组合列表", "tooltip": "作为 X 轴测试列的 风格组合。" },
       "prompt_count": { "name": "提示词数量", "tooltip": "作为 Y 轴使用的正面提示词行数。" },
       "prompt_prefix": { "name": "通用正面提示词前缀", "tooltip": "添加到每一行正面提示词开头的通用内容。" },
       "positive_prompt_1": { "name": "正面提示词 1", "tooltip": "矩阵第 1 行使用的正面提示词。" },
@@ -789,7 +837,7 @@
     "outputs": {
       "0": {
         "name": "XY 对比图",
-        "tooltip": "按提示词行与 LoRA 组合列拼合的最终图片。"
+        "tooltip": "按提示词行与 风格组合列拼合的最终图片。"
       }
     }
   },
@@ -860,6 +908,15 @@
       "independent_artist_tags": { "name": "独立画师 Tag", "tooltip": "仅此字段独立参与 Anima Mixer 路由；普通提示词中的 @ 文本保持原样。" }
     },
     "outputs": { "0": { "name": "提示词列表", "tooltip": "完成全局追加的结构化提示词列表。" } }
+  },
+  "LoraTesterPromptListName": {
+    "display_name": "提示词组命名",
+    "description": "按文本行位置为提示词组命名：第一行对应 index=0。空行或缺少的行恢复 P01、P02 等默认名称，超出组长度的行忽略。名称按原样文本处理，不展开占位符。",
+    "inputs": {
+      "prompt_list": { "name": "提示词列表", "tooltip": "需要命名的提示词组；正文、前后缀、独立画师 Tag 和顺序均保持不变。" },
+      "names": { "name": "名称（每行一项）", "tooltip": "第一行命名 index=0，第三行命名 index=2。保留空行以恢复对应项的默认名称；缺少的行也恢复默认名称，超出组长度的行不生效。允许重名，不展开占位符。" }
+    },
+    "outputs": { "0": { "name": "提示词列表", "tooltip": "已设置名称的提示词组，可连接提示词轴、轴构造器或全局提示词追加节点。" } }
   },
   "LoraTesterPromptAxis": {
     "display_name": "提示词轴",

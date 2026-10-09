@@ -13,6 +13,8 @@ const REPLACER_ADVANCED_WIDGET = "lora_tester_replacer_advanced";
 const STACK_SPLITTER_NODE = "LoraStackSplitter";
 const STACK_FLATTENER_NODE = "LoraStackFlattener";
 const STACK_LISTER_NODE = "LoraStackLister";
+const STACK_EXTRACT_NODE = "StyleStackExtract";
+const STACK_SET_NODE = "StyleStackSet";
 const MULTI_PROMPT_NODE = "MultiPromptSample";
 const XY_SAMPLER_NODE = "LoraTesterXYSampler";
 const FLOW_XY_NODE = "LoraTesterAnimaFlowXYSampler";
@@ -23,6 +25,7 @@ const FLOW_COLOR_STATE = Symbol("loraTesterFlowColorState");
 let animaFlowDependencyStatus = null;
 const MULTI_PROMPT_INPUT_NODE = "LoraTesterMultiPromptInput";
 const GLOBAL_PROMPT_APPEND_NODE = "LoraTesterGlobalPromptAppend";
+const PROMPT_LIST_NAME_NODE = "LoraTesterPromptListName";
 const PROMPT_AXIS_NODE = "LoraTesterPromptAxis";
 const LORA_STACK_AXIS_NODE = "LoraTesterLoraStackAxis";
 const SEED_LIST_NODE = "LoraTesterSeedList";
@@ -61,6 +64,13 @@ let xyDomObserver = null;
 let xyDomApplyScheduled = false;
 
 const OPTION_LABELS = {
+  StyleStackSet: {
+    mode: {
+      before: { en: "Before", zh: "前" },
+      after: { en: "After", zh: "后" },
+      replace: { en: "Replace", zh: "替换" },
+    },
+  },
   LoraTesterAxisPreview: {
     language: {
       zh: { en: "Chinese", zh: "中文" },
@@ -227,8 +237,18 @@ const TOGGLE_LABELS = {
 };
 
 const INPUT_LABELS = {
+  StyleStackExtract: {
+    lora_stack_list: { en: "StyleStackList", zh: "风格组合列表" },
+    index: { en: "Index (0-based; -1 last, -2 first)", zh: "索引（0 起始；-1 末项，-2 首项）" },
+  },
+  StyleStackSet: {
+    lora_stack_list: { en: "StyleStackList", zh: "风格组合列表" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
+    index: { en: "Index (0-based; -1 last, -2 first)", zh: "索引（0 起始；-1 末项，-2 首项）" },
+    mode: { en: "Insertion Mode", zh: "插入方式" },
+  },
   LoraStackMixerStrength: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
     strength: { en: "Mixer Strength", zh: "混合强度" },
   },
   LoraTesterAxisPreview: {
@@ -241,7 +261,7 @@ const INPUT_LABELS = {
     artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
   },
   ArtistTagReplacer: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
     match_tag: { en: "Match Artist Tag", zh: "匹配画师" },
     lora_1_name: { en: "Replacement LoRA / Artist Mode", zh: "替换物：LoRA / 画师模式" },
     lora_1_trigger: { en: "Replacement Trigger / Artist Tag", zh: "替换触发词 / 画师 Tag" },
@@ -263,19 +283,19 @@ const INPUT_LABELS = {
     artist_tag_template: { en: "Artist Tag Template", zh: "画师 Tag 模板" },
   },
   LoraStackName: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
     custom_name: { en: "Style Name", zh: "风格名称" },
   },
   LoraStackListName: {
-    lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
+    lora_stack_list: { en: "StyleStackList", zh: "风格组合列表" },
     index: { en: "Index (0-based; negative = all)", zh: "索引（从 0 开始；负数为全部）" },
     name_template: { en: "Name Template", zh: "名称模板" },
   },
   LoraStackSplitter: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
   },
   LoraStackFlattener: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
     include_original: { en: "Include Original Stack", zh: "加入原始组合" },
     weight_mode: { en: "Weight Mode", zh: "权重模式" },
   },
@@ -284,7 +304,7 @@ const INPUT_LABELS = {
     clip: { en: "CLIP", zh: "CLIP" },
     vae: { en: "VAE", zh: "VAE" },
     latent_image: { en: "Latent", zh: "潜空间图像" },
-    lorastacks: { en: "LoRA Stack List", zh: "LoRA 组合列表" },
+    lorastacks: { en: "StyleStackList", zh: "风格组合列表" },
     prompt_count: { en: "Prompt Count", zh: "提示词数量" },
     prompt_prefix: { en: "Shared Prompt Prefix", zh: "通用正面提示词前缀" },
     independent_artist_tags: { en: "Independent Artist Tags", zh: "独立画师 Tag" },
@@ -333,6 +353,10 @@ const INPUT_LABELS = {
   LoraTesterMultiPromptInput: {
     prompt_count: { en: "Prompt Count", zh: "提示词数量" },
   },
+  LoraTesterPromptListName: {
+    prompt_list: { en: "Prompt List", zh: "提示词列表" },
+    names: { en: "Names (One per Line)", zh: "名称（每行一项）" },
+  },
   LoraTesterGlobalPromptAppend: {
     prompt_list: { en: "Prompt List", zh: "提示词列表" },
     addition: { en: "Global Addition", zh: "全局追加内容" },
@@ -344,7 +368,7 @@ const INPUT_LABELS = {
     axis_title: { en: "Axis Heading", zh: "轴总标题" },
   },
   LoraTesterLoraStackAxis: {
-    lorastacks: { en: "Style Stack List", zh: "风格组合列表" },
+    lorastacks: { en: "StyleStackList", zh: "风格组合列表" },
     include_base: { en: "Include BASE", zh: "包含 BASE 基线" },
     axis_title: { en: "Axis Heading", zh: "轴总标题" },
     show_single_style_name: { en: "Show Single Style Name", zh: "直接展示单风格元素" },
@@ -372,36 +396,42 @@ const ARTIST_MODE_OPTION_LABELS = {
 };
 
 const OUTPUT_LABELS = {
+  StyleStackExtract: {
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
+  },
+  StyleStackSet: {
+    lora_stack_list: { en: "StyleStackList", zh: "风格组合列表" },
+  },
   LoraStackMixerStrength: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
   },
   LoraStackName: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
   },
   LoraStackListName: {
-    lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
+    lora_stack_list: { en: "StyleStackList", zh: "风格组合列表" },
   },
   LoraTesterAxisPreview: {
     axis: { en: "Axis", zh: "轴" },
     text: { en: "Formatted Text", zh: "格式化文本" },
   },
   ArtistTagTextParser: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
   },
   ArtistTagReplacer: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
   },
   LoraStack: {
-    lora_stack: { en: "Style Stack", zh: "风格组合" },
+    lora_stack: { en: "StyleStack", zh: "风格组合" },
   },
   LoraStackSplitter: {
-    lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
+    lora_stack_list: { en: "StyleStackList", zh: "风格组合列表" },
   },
   LoraStackFlattener: {
-    lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
+    lora_stack_list: { en: "StyleStackList", zh: "风格组合列表" },
   },
   LoraStackLister: {
-    lora_stack_list: { en: "Style Stack List", zh: "风格组合列表" },
+    lora_stack_list: { en: "StyleStackList", zh: "风格组合列表" },
   },
   MultiPromptSample: {
     comparison_sheet: { en: "Comparison Sheet", zh: "XY 对比图" },
@@ -411,6 +441,9 @@ const OUTPUT_LABELS = {
     raw_images: { en: "Raw Images", zh: "原始图片序列" },
   },
   LoraTesterMultiPromptInput: {
+    prompt_list: { en: "Prompt List", zh: "提示词列表" },
+  },
+  LoraTesterPromptListName: {
     prompt_list: { en: "Prompt List", zh: "提示词列表" },
   },
   LoraTesterGlobalPromptAppend: {
@@ -605,7 +638,7 @@ function localizedInputLabel(nodeName, inputName) {
   }
   if (nodeName === STACK_LISTER_NODE) {
     match = /^stack_(\d+)$/.exec(inputName);
-    if (match) return language === "zh" ? `风格组合 ${match[1]}` : `Style Stack ${match[1]}`;
+    if (match) return language === "zh" ? `风格组合 ${match[1]}` : `StyleStack ${match[1]}`;
   }
   if (nodeName === MULTI_PROMPT_NODE) {
     match = /^positive_prompt_(\d+)$/.exec(inputName);
@@ -636,6 +669,8 @@ function installNodeLabels(node, nodeName) {
     ) || (
       nodeName === GLOBAL_PROMPT_APPEND_NODE &&
       /^(?:addition|independent_artist_tags)$/.test(widget.name)
+    ) || (
+      nodeName === PROMPT_LIST_NAME_NODE && widget.name === "names"
     ) || (
       nodeName === XY_SAMPLER_NODE &&
       /^(?:positive_prompt|negative_prompt)$/.test(widget.name)
@@ -1399,20 +1434,27 @@ function styleStackCountFromSource(source, visited = new Set()) {
   if (sourceName === STACK_LIST_NAME_NODE) {
     return styleStackCountFromSource(firstSourceForInput(source, "lora_stack_list"), visited);
   }
-  if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE, STACK_MIXER_STRENGTH_NODE].includes(sourceName)) return 1;
+  if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE, STACK_MIXER_STRENGTH_NODE, STACK_EXTRACT_NODE].includes(sourceName)) return 1;
+  if (sourceName === STACK_SET_NODE) {
+    const length = styleStackCountFromSource(firstSourceForInput(source, "lora_stack_list"), visited);
+    const edit = length == null ? null : styleStackEditFromNode(source, length);
+    return edit ? length + (edit.mode === "replace" && edit.position < length ? 0 : 1) : null;
+  }
   let count = null;
   if (sourceName === STACK_LISTER_NODE) {
-    count = (source.inputs ?? []).filter(inputIsConnected).length;
+    const lengths = (source.inputs ?? []).filter(inputIsConnected).flatMap((input) =>
+      sourceNodesForInput(source, input).map((node) => styleStackCountFromSource(node, new Set(visited))));
+    count = lengths.some((length) => length == null) ? null : lengths.reduce((total, length) => total + length, 0);
   } else if (sourceName === STACK_SPLITTER_NODE || sourceName === STACK_FLATTENER_NODE) {
     const stack = firstSourceForInput(source, "lora_stack");
-    const stackEntries = artistEntriesFromStackSource(stack);
+    const stackEntries = artistEntriesFromStackSource(stack, new Set(visited));
     if (stackEntries) {
       const stackCount = stackEntries.length;
       count = sourceName === STACK_FLATTENER_NODE
-        ? flattenedStackChildren(source)?.length ?? null
+        ? flattenedStackChildren(source, new Set(visited))?.length ?? null
         : (2 ** stackCount) - 1;
       if (count != null && sourceName === STACK_FLATTENER_NODE) {
-        count += flattenedStackHasSeparateOriginal(source) ? 1 : 0;
+        count += flattenedStackHasSeparateOriginal(source, new Set(visited)) ? 1 : 0;
       }
     }
   }
@@ -1451,7 +1493,7 @@ function axisMetadataFromSource(source, visited = new Set()) {
     const rawSource = firstSourceForInput(source, "source");
     if (!rawSource) return { parameters: new Set(), count: null };
     const rawName = nodeNameForUi(rawSource);
-    if (rawName === MULTI_PROMPT_INPUT_NODE || rawName === GLOBAL_PROMPT_APPEND_NODE) {
+    if (rawName === MULTI_PROMPT_INPUT_NODE || rawName === GLOBAL_PROMPT_APPEND_NODE || rawName === PROMPT_LIST_NAME_NODE) {
       return {
         parameters: new Set(["prompt"]),
         count: promptCountFromSource(rawSource),
@@ -1468,7 +1510,7 @@ function axisMetadataFromSource(source, visited = new Set()) {
           .split(/[,，;；\s]+/).filter(Boolean).length;
       return { parameters: new Set(["seed"]), count };
     }
-    if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE, STACK_MIXER_STRENGTH_NODE, STACK_LIST_NAME_NODE, STACK_SPLITTER_NODE, STACK_FLATTENER_NODE, STACK_LISTER_NODE].includes(rawName)) {
+    if ([STACK_NODE, ARTIST_TEXT_NODE, ARTIST_REPLACER_NODE, STACK_NAME_NODE, STACK_MIXER_STRENGTH_NODE, STACK_LIST_NAME_NODE, STACK_SPLITTER_NODE, STACK_FLATTENER_NODE, STACK_LISTER_NODE, STACK_EXTRACT_NODE, STACK_SET_NODE].includes(rawName)) {
       const includeBase = widgetValue(source, "include_base") !== false;
       const count = styleStackCountFromSource(rawSource);
       return {
@@ -1611,6 +1653,8 @@ function installXySourceObservers(node, nodeName) {
         ? new Set(["include_base", "axis_title"])
       : nodeName === STACK_FLATTENER_NODE
         ? new Set(["include_original", "weight_mode"])
+      : nodeName === STACK_EXTRACT_NODE || nodeName === STACK_SET_NODE
+        ? new Set(["index", "mode"])
       : nodeName === ARTIST_TEXT_NODE
         ? new Set(["artist_text"])
       : nodeName === ARTIST_REPLACER_NODE
@@ -1659,6 +1703,12 @@ function stackEntryDataFromSource(node, visited = new Set()) {
   if (!node || visited.has(node) || visited.size > 64) return null;
   visited.add(node);
   const nodeName = nodeNameForUi(node);
+  if (nodeName === STACK_EXTRACT_NODE) {
+    const source = firstSourceForInput(node, "lora_stack_list");
+    const length = styleStackCountFromSource(source, new Set(visited));
+    const index = length == null ? null : styleStackIndexFromNode(node, length);
+    return index == null || index >= length ? null : styleStackDataAtIndex(source, index, visited);
+  }
   if (nodeName === STACK_NAME_NODE || nodeName === STACK_MIXER_STRENGTH_NODE) {
     return stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited);
   }
@@ -1704,8 +1754,94 @@ function artistEntriesFromStackSource(node, visited = new Set()) {
   return stackEntryDataFromSource(node, visited)?.map((entry) => entry.artists) ?? null;
 }
 
-function flattenedStackChildren(node) {
-  const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"));
+function styleStackIndexFromNode(node, length) {
+  const input = node.inputs?.find((item) => item.name === "index");
+  if (input && inputIsConnected(input)) return null;
+  const index = Number(widgetValue(node, "index") ?? 0);
+  if (!Number.isInteger(index) || index < -2) return null;
+  return index === -2 ? 0 : index === -1 ? Math.max(0, length - 1) : index;
+}
+
+function styleStackEditFromNode(node, length) {
+  const position = styleStackIndexFromNode(node, length);
+  const input = node.inputs?.find((item) => item.name === "mode");
+  const mode = String(widgetValue(node, "mode") ?? "replace");
+  if (position == null || (input && inputIsConnected(input)) || !["before", "after", "replace"].includes(mode)) return null;
+  return { position, mode };
+}
+
+function stackCombinationCount(length, size) {
+  let count = 1;
+  for (let position = 1; position <= size; position += 1) {
+    count = count * (length - position + 1) / position;
+  }
+  return Math.round(count);
+}
+
+function stackCombinationAtIndex(entries, index) {
+  for (let size = 1; size <= entries.length; size += 1) {
+    const count = stackCombinationCount(entries.length, size);
+    if (index >= count) { index -= count; continue; }
+    const result = [];
+    let start = 0;
+    for (let remaining = size; remaining > 0; remaining -= 1) {
+      for (let candidate = start; candidate <= entries.length - remaining; candidate += 1) {
+        const choices = stackCombinationCount(entries.length - candidate - 1, remaining - 1);
+        if (index >= choices) { index -= choices; continue; }
+        result.push(entries[candidate]);
+        start = candidate + 1;
+        break;
+      }
+    }
+    return result;
+  }
+  return null;
+}
+
+function styleStackDataAtIndex(node, index, visited = new Set()) {
+  if (!node || visited.has(node) || visited.size > 64 || index < 0) return null;
+  const nodeName = nodeNameForUi(node);
+  if (![STACK_LIST_NAME_NODE, STACK_LISTER_NODE, STACK_SET_NODE, STACK_SPLITTER_NODE, STACK_FLATTENER_NODE].includes(nodeName)) {
+    return index === 0 ? stackEntryDataFromSource(node, visited) : null;
+  }
+  visited.add(node);
+  if (nodeName === STACK_LIST_NAME_NODE) {
+    return styleStackDataAtIndex(firstSourceForInput(node, "lora_stack_list"), index, visited);
+  }
+  if (nodeName === STACK_SET_NODE) {
+    const source = firstSourceForInput(node, "lora_stack_list");
+    const length = styleStackCountFromSource(source, new Set(visited));
+    const edit = length == null ? null : styleStackEditFromNode(node, length);
+    if (!edit) return null;
+    const inserting = edit.mode !== "replace" || edit.position >= length;
+    const position = Math.min(length, edit.position + (edit.mode === "after" ? 1 : 0));
+    if (index === position) return stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited);
+    return styleStackDataAtIndex(source, index - (inserting && index > position ? 1 : 0), visited);
+  }
+  if (nodeName === STACK_LISTER_NODE) {
+    for (const input of node.inputs ?? []) {
+      for (const source of sourceNodesForInput(node, input)) {
+        const length = styleStackCountFromSource(source, new Set(visited));
+        if (length == null) return null;
+        if (index < length) return styleStackDataAtIndex(source, index, visited);
+        index -= length;
+      }
+    }
+    return null;
+  }
+  const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), new Set(visited));
+  if (!entries) return null;
+  if (nodeName === STACK_SPLITTER_NODE) return stackCombinationAtIndex(entries, index);
+  if (flattenedStackHasSeparateOriginal(node, new Set(visited))) {
+    if (index === 0) return entries;
+    index -= 1;
+  }
+  const child = flattenedStackChildren(node, visited)?.[index];
+  return child ? [child] : null;
+}
+
+function flattenedStackChildren(node, visited = new Set()) {
+  const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited);
   if (!entries || entries.some((entry) => !Number.isFinite(entry.strength))) return null;
   const mode = widgetValue(node, "weight_mode") ?? "inherit";
   if (entries.length === 1) {
@@ -1721,9 +1857,9 @@ function flattenedStackChildren(node) {
   });
 }
 
-function flattenedStackHasSeparateOriginal(node) {
+function flattenedStackHasSeparateOriginal(node, visited = new Set()) {
   if (widgetValue(node, "include_original") !== true) return false;
-  const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"));
+  const entries = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited);
   if (!entries) return false;
   return entries.length > 1 || (
     widgetValue(node, "weight_mode") === "normalize" && entries[0]?.strength !== 1
@@ -1732,18 +1868,45 @@ function flattenedStackHasSeparateOriginal(node) {
 
 function stackArtistCountsFromNode(node, visited = new Set()) {
   if (!node || visited.has(node) || visited.size > 64) return [];
-  visited.add(node);
   const nodeName = nodeNameForUi(node);
-  const entries = artistEntriesFromStackSource(node);
+  const entries = artistEntriesFromStackSource(node, new Set(visited));
   if (entries) return [entries.reduce((total, tags) => total + tags.length, 0)];
+  visited.add(node);
+
+  if (nodeName === STACK_SET_NODE) {
+    const source = firstSourceForInput(node, "lora_stack_list");
+    const counts = stackArtistCountsFromNode(source, new Set(visited));
+    const length = styleStackCountFromSource(source, new Set(visited));
+    const edit = length == null ? null : styleStackEditFromNode(node, length);
+    const inserted = stackEntryDataFromSource(firstSourceForInput(node, "lora_stack"), visited);
+    if (!edit || !inserted || counts.length !== length) return [];
+    const position = Math.min(length, edit.position + (edit.mode === "after" ? 1 : 0));
+    const removed = edit.mode === "replace" && edit.position < length ? 1 : 0;
+    counts.splice(position, removed, inserted.reduce((total, entry) => total + entry.artists.length, 0));
+    return counts;
+  }
+
+  if (nodeName === STACK_SPLITTER_NODE) {
+    const stackEntries = artistEntriesFromStackSource(firstSourceForInput(node, "lora_stack"), visited);
+    if (!stackEntries) return [];
+    const counts = [];
+    const collect = (start, remaining, total) => {
+      if (remaining === 0) { counts.push(total); return; }
+      for (let position = start; position <= stackEntries.length - remaining; position += 1) {
+        collect(position + 1, remaining - 1, total + stackEntries[position].length);
+      }
+    };
+    for (let size = 1; size <= stackEntries.length; size += 1) collect(0, size, 0);
+    return counts;
+  }
 
   if (nodeName === STACK_FLATTENER_NODE) {
     const stack = firstSourceForInput(node, "lora_stack");
-    const stackEntries = artistEntriesFromStackSource(stack);
-    const children = flattenedStackChildren(node);
+    const stackEntries = artistEntriesFromStackSource(stack, new Set(visited));
+    const children = flattenedStackChildren(node, new Set(visited));
     if (!stackEntries || !children) return [];
     const counts = children.map((entry) => entry.artists.length);
-    if (flattenedStackHasSeparateOriginal(node)) counts.unshift(stackEntries.reduce((total, tags) => total + tags.length, 0));
+    if (flattenedStackHasSeparateOriginal(node, new Set(visited))) counts.unshift(stackEntries.reduce((total, tags) => total + tags.length, 0));
     return counts;
   }
 
@@ -1754,7 +1917,7 @@ function stackArtistCountsFromNode(node, visited = new Set()) {
   const counts = [];
   for (const input of relevantInputs) {
     for (const source of sourceNodesForInput(node, input)) {
-      counts.push(...stackArtistCountsFromNode(source, visited));
+      counts.push(...stackArtistCountsFromNode(source, new Set(visited)));
     }
   }
   return counts;
@@ -2292,7 +2455,7 @@ function applyNodeUi(node, nodeName = nodeNameForUi(node)) {
     installMultiPromptLayout(node);
     installDynamicCount(node, "prompt_count", PROMPT_GROUPS, 16);
   }
-  if (nodeName === MULTI_PROMPT_INPUT_NODE || nodeName === GLOBAL_PROMPT_APPEND_NODE || nodeName === ARTIST_TEXT_NODE || nodeName === FLOW_AXIS_NODE) {
+  if (nodeName === MULTI_PROMPT_INPUT_NODE || nodeName === GLOBAL_PROMPT_APPEND_NODE || nodeName === PROMPT_LIST_NAME_NODE || nodeName === ARTIST_TEXT_NODE || nodeName === FLOW_AXIS_NODE) {
     installMultiPromptLayout(node);
   }
   if (nodeName === MULTI_PROMPT_INPUT_NODE) {
@@ -2393,7 +2556,7 @@ app.registerExtension({
     const hasDynamicPromptCount = nodeData.name === MULTI_PROMPT_NODE;
     const hasDynamicStackList = nodeData.name === STACK_LISTER_NODE;
     const hasSeedMode = nodeData.name === SEED_LIST_NODE;
-    const hasLongPromptLayout = [MULTI_PROMPT_INPUT_NODE, GLOBAL_PROMPT_APPEND_NODE, ARTIST_TEXT_NODE, FLOW_AXIS_NODE].includes(
+    const hasLongPromptLayout = [MULTI_PROMPT_INPUT_NODE, GLOBAL_PROMPT_APPEND_NODE, PROMPT_LIST_NAME_NODE, ARTIST_TEXT_NODE, FLOW_AXIS_NODE].includes(
       nodeData.name,
     );
     const hasXyObserver = nodeData.name === XY_SAMPLER_NODE || nodeData.name === FLOW_XY_NODE;

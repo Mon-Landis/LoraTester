@@ -1,19 +1,67 @@
 {
+  "StyleStackExtract": {
+    "display_name": "Extract StyleStack",
+    "description": "Extracts one complete StyleStack, preserving all metadata. Empty lists and overflow raise a clear error.",
+    "inputs": {
+      "lora_stack_list": {
+        "name": "StyleStackList",
+        "tooltip": "The ordered list to read/copy without modifying shared input."
+      },
+      "index": {
+        "name": "Index (0-based; -1 last, -2 first)",
+        "tooltip": "Zero-based: -1 last, -2 first (not Python negative indexing). Before/after are relative to that item. Set appends for overflow or empty lists; Extract errors. Indices below -2 are invalid. Axis BASE is not a list item."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "StyleStack",
+        "tooltip": "Complete stack including name, weights, triggers, artist template and Mixer strength."
+      }
+    }
+  },
+  "StyleStackSet": {
+    "display_name": "Set StyleStack",
+    "description": "Inserts before/after the selected item or replaces it, returning a new list. Overflow and empty lists append in all modes. Duplicates are preserved.",
+    "inputs": {
+      "lora_stack_list": {
+        "name": "StyleStackList",
+        "tooltip": "The ordered list to read/copy without modifying shared input."
+      },
+      "lora_stack": {
+        "name": "StyleStack",
+        "tooltip": "Complete stack including name, weights, triggers, artist template and Mixer strength."
+      },
+      "index": {
+        "name": "Index (0-based; -1 last, -2 first)",
+        "tooltip": "Zero-based: -1 last, -2 first (not Python negative indexing). Before/after are relative to that item. Set appends for overflow or empty lists; Extract errors. Indices below -2 are invalid. Axis BASE is not a list item."
+      },
+      "mode": {
+        "name": "Insertion Mode",
+        "tooltip": "Before/after the selected item, or replace it. Overflow/empty lists append. -1 + before inserts before last; -1 + after appends; -1 + replace replaces last."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "StyleStackList",
+        "tooltip": "A new updated list; input list and all stack metadata remain unchanged."
+      }
+    }
+  },
   "LoraStackMixerStrength": {
-    "display_name": "Style Stack Anima Mixer Strength",
+    "display_name": "StyleStack Anima Mixer Strength",
     "description": "Sets per-stack Anima Artist Mixer strength with priority over global or default strength. Only applies with an Anima model, multiple artist tags, installed Mixer nodes, and enabled Mixer routing. Does not change image axis labels. Missing dependency shows a warning; stack contents remain usable. Naming, replacement, splitting, and flattening preserve the override.",
     "inputs": {
-      "lora_stack": { "name": "Style Stack", "tooltip": "Style stack to configure; input remains unchanged." },
+      "lora_stack": { "name": "StyleStack", "tooltip": "Style stack to configure; input remains unchanged." },
       "strength": { "name": "Mixer Strength", "tooltip": "0–4, default 1.0. Overrides only Mixer strength, not other global settings. Zero disables mixing for this stack; later strength nodes overwrite earlier ones." }
     },
-    "outputs": { "0": { "name": "Style Stack", "tooltip": "Original styles, artist weights, name, and template with a per-stack Mixer strength override." } }
+    "outputs": { "0": { "name": "StyleStack", "tooltip": "Original styles, artist weights, name, and template with a per-stack Mixer strength override." } }
   },
   "LoraStackName": {
-    "display_name": "Style Stack Name",
+    "display_name": "StyleStack Name",
     "description": "Sets a literal style stack name without changing sampling contents. Empty clears the name and restores automatic naming when an axis is built.",
     "inputs": {
       "lora_stack": {
-        "name": "Style Stack",
+        "name": "StyleStack",
         "tooltip": "The style stack to name; entries, weights, and artist template are unchanged."
       },
       "custom_name": {
@@ -23,17 +71,17 @@
     },
     "outputs": {
       "0": {
-        "name": "Style Stack",
+        "name": "StyleStack",
         "tooltip": "The named stack with unchanged sampling contents."
       }
     }
   },
   "LoraStackListName": {
-    "display_name": "Style Stack List Name",
+    "display_name": "StyleStackList Name",
     "description": "Names a zero-based list position, or all positions when index is negative. {i} inserts the original list index; \\{i} keeps literal {i}; \\\\ keeps one backslash. Expansion runs once; other placeholders stay literal. Out-of-range indices do nothing. Empty clears selected names. Axis BASE is not a list item.",
     "inputs": {
       "lora_stack_list": {
-        "name": "Style Stack List",
+        "name": "StyleStackList",
         "tooltip": "Ordered list; duplicate stack positions are preserved."
       },
       "index": {
@@ -47,7 +95,7 @@
     },
     "outputs": {
       "0": {
-        "name": "Style Stack List",
+        "name": "StyleStackList",
         "tooltip": "Only selected names change; order and sampling contents are preserved."
       }
     }
@@ -541,7 +589,7 @@
     }
   },
   "LoraStack": {
-    "display_name": "Style Stack",
+    "display_name": "StyleStack",
     "description": "Configures Style files and artist tags that are applied together as one style stack.",
     "inputs": {
       "custom_name": {"name":"Style Name","tooltip":"Optional single-line display name. Empty restores automatic axis naming. Text is literal; sampling contents stay unchanged."},
@@ -601,7 +649,7 @@
     },
     "outputs": {
       "0": {
-        "name": "Style Stack",
+        "name": "StyleStack",
         "tooltip": "Style files, trigger words, and strengths applied together as one style."
       }
     }
@@ -622,7 +670,7 @@
     },
     "outputs": {
       "0": {
-        "name": "Style Stack",
+        "name": "StyleStack",
         "tooltip": "One artist-mode stack entry per tag with its parsed weight."
       }
     }
@@ -631,9 +679,9 @@
     "display_name": "Artist Tag Replacer",
     "description": "Replaces all exact artist matches with another artist or LoRA. Other entries and the artist template are preserved.",
     "inputs": {
-      "custom_name": {"name":"Output Style Name","tooltip":"Advanced: empty preserves the input name. Nonempty text renames the output even if no artist matches; use Style Stack Name to clear a name."},
+      "custom_name": {"name":"Output Style Name","tooltip":"Advanced: empty preserves the input name. Nonempty text renames the output even if no artist matches; use StyleStack Name to clear a name."},
       "lora_stack": {
-        "name": "Style Stack",
+        "name": "StyleStack",
         "tooltip": "Input stack to modify. Ordinary LoRA trigger text is never matched."
       },
       "match_tag": {
@@ -642,7 +690,7 @@
       },
       "lora_1_name": {
         "name": "Replacement LoRA / Artist Mode",
-        "tooltip": "Uses the same LoRA file / Artist Tag Mode picker as Style Stack."
+        "tooltip": "Uses the same LoRA file / Artist Tag Mode picker as StyleStack."
       },
       "lora_1_trigger": {
         "name": "Replacement Trigger / Artist Tag",
@@ -663,33 +711,33 @@
     },
     "outputs": {
       "0": {
-        "name": "Style Stack",
+        "name": "StyleStack",
         "tooltip": "Updated stack, or the unchanged original if no artist matches."
       }
     }
   },
   "LoraStackSplitter": {
-    "display_name": "Style Stack Splitter",
+    "display_name": "StyleStack Splitter",
     "description": "Splits one style stack into every non-empty combination.",
     "inputs": {
       "lora_stack": {
-        "name": "Style Stack",
+        "name": "StyleStack",
         "tooltip": "The style stack to expand into every non-empty subset."
       }
     },
     "outputs": {
       "0": {
-        "name": "Style Stack List",
+        "name": "StyleStackList",
         "tooltip": "Single, pairwise, and complete Style combinations in order."
       }
     }
   },
   "LoraStackFlattener": {
-    "display_name": "Style Stack Flattener",
+    "display_name": "StyleStack Flattener",
     "description": "Flattens a style stack. Multi-entry children use automatic names; originals retain names. Single-entry stacks retain names and merge duplicate originals; Dual emits original weight then weight 1.",
     "inputs": {
       "lora_stack": {
-        "name": "Style Stack",
+        "name": "StyleStack",
         "tooltip": "The style stack to flatten; files, trigger words, and artist templates are preserved, while child weights follow Weight Mode."
       },
       "include_original": {
@@ -708,35 +756,35 @@
     },
     "outputs": {
       "0": {
-        "name": "Style Stack List",
+        "name": "StyleStackList",
         "tooltip": "Child stacks in input order; dual pairs are adjacent, and the optional original stack keeps its weights."
       }
     }
   },
   "LoraStackLister": {
-    "display_name": "Style Stack Lister",
+    "display_name": "StyleStack Lister",
     "description": "Collects style stacks in connection order and reveals the next input automatically.",
     "inputs": {
-      "stack_1": { "name": "Style Stack 1", "tooltip": "First style stack to collect." },
-      "stack_2": { "name": "Style Stack 2", "tooltip": "Optional Style stack 2." },
-      "stack_3": { "name": "Style Stack 3", "tooltip": "Optional Style stack 3." },
-      "stack_4": { "name": "Style Stack 4", "tooltip": "Optional Style stack 4." },
-      "stack_5": { "name": "Style Stack 5", "tooltip": "Optional Style stack 5." },
-      "stack_6": { "name": "Style Stack 6", "tooltip": "Optional Style stack 6." },
-      "stack_7": { "name": "Style Stack 7", "tooltip": "Optional Style stack 7." },
-      "stack_8": { "name": "Style Stack 8", "tooltip": "Optional Style stack 8." },
-      "stack_9": { "name": "Style Stack 9", "tooltip": "Optional Style stack 9." },
-      "stack_10": { "name": "Style Stack 10", "tooltip": "Optional Style stack 10." },
-      "stack_11": { "name": "Style Stack 11", "tooltip": "Optional Style stack 11." },
-      "stack_12": { "name": "Style Stack 12", "tooltip": "Optional Style stack 12." },
-      "stack_13": { "name": "Style Stack 13", "tooltip": "Optional Style stack 13." },
-      "stack_14": { "name": "Style Stack 14", "tooltip": "Optional Style stack 14." },
-      "stack_15": { "name": "Style Stack 15", "tooltip": "Optional Style stack 15." },
-      "stack_16": { "name": "Style Stack 16", "tooltip": "Optional Style stack 16." }
+      "stack_1": { "name": "StyleStack 1", "tooltip": "First style stack to collect." },
+      "stack_2": { "name": "StyleStack 2", "tooltip": "Optional Style stack 2." },
+      "stack_3": { "name": "StyleStack 3", "tooltip": "Optional Style stack 3." },
+      "stack_4": { "name": "StyleStack 4", "tooltip": "Optional Style stack 4." },
+      "stack_5": { "name": "StyleStack 5", "tooltip": "Optional Style stack 5." },
+      "stack_6": { "name": "StyleStack 6", "tooltip": "Optional Style stack 6." },
+      "stack_7": { "name": "StyleStack 7", "tooltip": "Optional Style stack 7." },
+      "stack_8": { "name": "StyleStack 8", "tooltip": "Optional Style stack 8." },
+      "stack_9": { "name": "StyleStack 9", "tooltip": "Optional Style stack 9." },
+      "stack_10": { "name": "StyleStack 10", "tooltip": "Optional Style stack 10." },
+      "stack_11": { "name": "StyleStack 11", "tooltip": "Optional Style stack 11." },
+      "stack_12": { "name": "StyleStack 12", "tooltip": "Optional Style stack 12." },
+      "stack_13": { "name": "StyleStack 13", "tooltip": "Optional Style stack 13." },
+      "stack_14": { "name": "StyleStack 14", "tooltip": "Optional Style stack 14." },
+      "stack_15": { "name": "StyleStack 15", "tooltip": "Optional Style stack 15." },
+      "stack_16": { "name": "StyleStack 16", "tooltip": "Optional Style stack 16." }
     },
     "outputs": {
       "0": {
-        "name": "Style Stack List",
+        "name": "StyleStackList",
         "tooltip": "Style stacks preserved in input connection order."
       }
     }
@@ -749,7 +797,7 @@
       "clip": { "name": "CLIP", "tooltip": "Encodes each prompt and LoRA trigger-word combination." },
       "vae": { "name": "VAE", "tooltip": "Decodes every sampled result." },
       "latent_image": { "name": "Latent", "tooltip": "Single latent reused by every comparison cell." },
-      "lorastacks": { "name": "LoRA Stack List", "tooltip": "LoRA combinations used as the X-axis test columns." },
+      "lorastacks": { "name": "StyleStackList", "tooltip": "LoRA combinations used as the X-axis test columns." },
       "prompt_count": { "name": "Prompt Count", "tooltip": "Number of positive-prompt rows on the Y axis." },
       "prompt_prefix": { "name": "Shared Prompt Prefix", "tooltip": "Common text prepended to every positive-prompt row." },
       "positive_prompt_1": { "name": "Positive Prompt 1", "tooltip": "Positive prompt for matrix row 1." },
@@ -861,6 +909,15 @@
     },
     "outputs": { "0": { "name": "Prompt List", "tooltip": "Updated structured prompt list." } }
   },
+  "LoraTesterPromptListName": {
+    "display_name": "Prompt List Name",
+    "description": "Names prompt entries by line position: line 1 is index 0. Blank or missing lines restore automatic P01, P02, ... labels; extra lines are ignored. Names are literal text, not templates.",
+    "inputs": {
+      "prompt_list": { "name": "Prompt List", "tooltip": "Prompt list to name; prompt text, prefixes, suffixes, independent artist tags, and order are preserved." },
+      "names": { "name": "Names (One per Line)", "tooltip": "Line 1 names index 0, line 3 names index 2. Keep blank lines to reset those entries to defaults. Missing lines also reset names; extra lines have no effect. Duplicate names are allowed; no placeholder expansion." }
+    },
+    "outputs": { "0": { "name": "Prompt List", "tooltip": "Named prompt list; connect to Prompt Axis, Axis Composer, or Global Prompt Append." } }
+  },
   "LoraTesterPromptAxis": {
     "display_name": "Prompt Axis",
     "description": "Converts a structured prompt list into an XY axis.",
@@ -874,7 +931,7 @@
     "display_name": "Style Axis",
     "description": "Converts Style and artist-tag stacks into a grouped style axis with categorized detail tables.",
     "inputs": {
-      "lorastacks": { "name": "Style Stack List", "tooltip": "Style configurations to place on this axis." },
+      "lorastacks": { "name": "StyleStackList", "tooltip": "Style configurations to place on this axis." },
       "include_base": { "name": "Include BASE", "tooltip": "Adds BASE as a separate group with visible spacing before test configurations." },
       "axis_title": { "name": "Axis Heading", "tooltip": "Overall title rendered beside the axis; each row or column label comes from its source entry." },
       "show_single_style_name": { "name": "Show Single Style Name", "tooltip": "Enabled by default. Single artist: code-artist name-weight; single LoRA: code-filename prefix before whitespace, underscore, or extension-weight. Custom names take priority. Disable to restore code-weight labels; multi-source styles are unchanged." }

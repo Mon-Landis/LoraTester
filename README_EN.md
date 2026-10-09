@@ -4,15 +4,15 @@
 
 ComfyUI nodes for LoRA, artist-tag, and extensible XY parameter testing. The sampler accepts `MODEL / CLIP / VAE / LATENT` directly and handles prompt encoding, model/CLIP patching, sampling, VAE decoding, and labeled comparison-sheet composition inside the node.
 
-![Multi-prompt and Style Stack comparison matrix](previews/multi_prompt_stack_matrix.png)
+![Multi-prompt and StyleStack comparison matrix](previews/multi_prompt_stack_matrix.png)
 
 ## Highlights
 
 - Generic `XY Test Sampler`: combines any two `XY_AXIS` inputs and returns both a labeled `comparison_sheet` and a row-major `raw_images` batch.
 - Prompt axis: splits a long prompt list, applies shared text before or after every prompt, and carries independent artist tags separately.
 - Seed axis: parses an explicit seed list or deterministically generates random seeds from a source seed.
-- Style axis: builds an axis from Style Stack, combination, and list nodes, representing LoRA and artist tags together. Headers show compact `weight-code` combinations; the footer only maps codes to source information.
-- Generic axis composition: prompt lists, Style Stacks, Style Stack lists, and seed lists can all pass through `Axis Composer` to produce an orientation-neutral `XY_AXIS`.
+- Style axis: builds an axis from StyleStack, combination, and list nodes, representing LoRA and artist tags together. Headers show compact `weight-code` combinations; the footer only maps codes to source information.
+- Generic axis composition: prompt lists, StyleStacks, StyleStack lists, and seed lists can all pass through `Axis Composer` to produce an orientation-neutral `XY_AXIS`.
 - Dedicated LoRA testing: retains the specialized 1-3 LoRA weight-gradient and mixing layouts.
 - Anima support: selects artist-tag templates from model configuration and can optionally route multi-artist cells through Anima Artist Mixer.
 - Configurable output: black, white, and custom themes with background images, fonts, colors, spacing, decorators, categorized tables, and text notes.
@@ -37,11 +37,21 @@ flowchart LR
 For a horizontal style comparison:
 
 ```text
-Style Stack -> Style Stack Splitter / Style Stack Lister -> Axis Composer -> axis -> x_axis
+StyleStack -> StyleStack Splitter / StyleStack Lister -> Axis Composer -> axis -> x_axis
 Multi Prompt Input -> Global Prompt Append                    -> Axis Composer -> axis -> y_axis
 ```
 
 Every axis node exposes an output named `axis`. Axes are orientation-independent and may connect to either sampler input, `x_axis` or `y_axis`. `axis_title` is the heading for the entire axis; each row or column label comes from its own `AxisEntry.label`. `Axis Composer` can place a Style BASE entry in its own group with `include_base`, creating a visible gap before the remaining test entries. `Prompt Axis`, `Style Axis`, and `Seed Axis` remain available as typed convenience builders.
+
+### Extracting and Setting StyleStacks
+
+- `Extract StyleStack`: StyleStackList + index -> the original complete StyleStack.
+- `Set StyleStack`: StyleStackList + StyleStack + index + `Before / After / Replace` -> a new list, without mutating shared inputs.
+- Indices are **zero-based**. **-1 selects last, -2 first**, not Python negative indexing. `-1 + Before` inserts before last, `-1 + After` appends, and `-1 + Replace` replaces last.
+- Set appends in every mode for index >= list length or an empty list.
+- Extract rejects empty lists and overflow. Both nodes reject indices below -2.
+- Names, weights, triggers, artist templates and per-stack Mixer strength stay intact. Duplicates are preserved. Axis `BASE` is not a list item.
+- Compatibility: UI names are **StyleStack / StyleStackList**; internal classes, existing IDs, socket identifiers and `LORA_STACK` / `LORA_STACK_LIST` types stay unchanged. The list-name node still treats any negative index as selecting all.
 
 ### Using seed lists
 
@@ -80,16 +90,19 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\link_to_comfy.
 | `Lora Tester/XY` | `XY Test Sampler` | Samples the Cartesian product of two axes and returns a sheet plus the original image batch. |
 | `Lora Tester/XY/Prompt` | `Multi Prompt Input` | Builds a prompt list from a count control and separate input rows. |
 | `Lora Tester/XY/Prompt` | `Global Prompt Append` | Adds shared text before/after every prompt and appends independent artist tags. |
+| `Lora Tester/XY/Prompt` | `Prompt List Name` | Names entries by text line position; blank or missing lines restore default names. |
 | `Lora Tester/XY/Prompt` | `Prompt Axis` | Directly converts a prompt list into an orientation-neutral `XY_AXIS`. |
-| `Lora Tester/XY/Style` | `Style Stack` | Configures up to 16 LoRA or artist-tag style entries. |
+| `Lora Tester/XY/Style` | `StyleStack` | Configures up to 16 LoRA or artist-tag style entries. |
 | `Lora Tester/XY/Style` | `Artist Tag Text Parser` | Parses artist prompt text into a weighted style stack. |
 | `Lora Tester/XY/Style` | `Artist Tag Replacer` | Replaces exact artist matches with artists or LoRAs, using replacement or multiplied weights. |
-| `Lora Tester/XY/Style` | `Style Stack Splitter` | Produces every non-empty Style Stack combination. |
-| `Lora Tester/XY/Style` | `Style Stack Flattener` | Produces individual entries, optionally preceded by the original stack. |
-| `Lora Tester/XY/Style` | `Style Stack Name` | Sets a literal name for one stack; empty restores automatic naming. |
-| `Lora Tester/XY/Style` | `Style Stack List Name` | Names one index or all stacks, with `{i}` and backslash escaping. |
-| `Lora Tester/XY/Style` | `Style Stack Lister` | Dynamically merges up to 16 individual Style Stacks. |
-| `Lora Tester/XY/Style` | `Style Axis` | Directly converts a Style Stack list into grouped `XY_AXIS` data with detail tables. |
+| `Lora Tester/XY/Style` | `StyleStack Splitter` | Produces every non-empty StyleStack combination. |
+| `Lora Tester/XY/Style` | `StyleStack Flattener` | Produces individual entries, optionally preceded by the original stack. |
+| `Lora Tester/XY/Style` | `StyleStack Name` | Sets a literal name for one stack; empty restores automatic naming. |
+| `Lora Tester/XY/Style` | `StyleStackList Name` | Names one index or all stacks, with `{i}` and backslash escaping. |
+| `Lora Tester/XY/Style` | `Extract StyleStack` | Extracts a complete stack by index; -1 last, -2 first. |
+| `Lora Tester/XY/Style` | `Set StyleStack` | Inserts before/after or replaces; overflow and empty input append. |
+| `Lora Tester/XY/Style` | `StyleStack Lister` | Dynamically merges up to 16 individual StyleStacks. |
+| `Lora Tester/XY/Style` | `Style Axis` | Directly converts a StyleStack list into grouped `XY_AXIS` data with detail tables. |
 | `Lora Tester/XY/Seed` | `Seed List / Random Seeds` | Parses seeds or generates a deterministic random list. |
 | `Lora Tester/XY/Seed` | `Seed Axis` | Directly converts a seed list into an orientation-neutral `XY_AXIS`. |
 | `Lora Tester/XY/Axis` | `Axis Composer` | Converts any supported raw source or complete axis into a generic `axis`. |
@@ -125,7 +138,7 @@ The independent `AnimaFlow XY Test Sampler` in `Lora Tester/XY` requires [Comfyu
 - Missing or incompatible dependencies retain a workflow-compatible shell with a red dependency warning and project link. Execution is blocked, with no KSampler fallback. Install/update the dependency, restart ComfyUI and refresh the browser.
 - Flow step previews are preserved while progress advances across the entire XY queue instead of restarting per image. Progress reaches 100% after final composition; only progress bars inside the active Flow cell are redirected, without changing upstream sampling semantics.
 
-Example: `Artist Tag Text Parser -> Style Stack Flattener -> Style Axis -> AnimaFlow XY Test Sampler.x_axis`, with Prompt Axis on `y_axis`. Use an AnimaFlow Parameter Axis on either socket for Flow comparisons.
+Example: `Artist Tag Text Parser -> StyleStack Flattener -> Style Axis -> AnimaFlow XY Test Sampler.x_axis`, with Prompt Axis on `y_axis`. Use an AnimaFlow Parameter Axis on either socket for Flow comparisons.
 
 ### Axis Content Preview
 
@@ -147,38 +160,38 @@ For example: `Style Axis -> Axis Content Preview -> XY Test Sampler`. The previe
 - `Replace` uses the configured strength directly.
 - `Multiply` uses the matched entry's original strength times the configured value; `0.3 × 2` becomes `0.6`.
 - Matching is exact and case-sensitive, replaces all occurrences, and never matches ordinary LoRA triggers or artist-name substrings. No match returns the original stack.
-- The replacement picker, trigger, and strength controls reuse the same code path as `Style Stack`.
+- The replacement picker, trigger, and strength controls reuse the same code path as `StyleStack`.
 - Other entries, order, and the artist template are preserved. A multi-artist entry is split only when necessary to replace a matching artist; the other artists keep their original weight.
 
-Chain `Artist Tag Text Parser -> Artist Tag Replacer -> Style Stack Flattener -> Style Axis / Axis Composer` for individual artist comparisons. A parsed stack connected directly to an axis represents the complete artist combination.
+Chain `Artist Tag Text Parser -> Artist Tag Replacer -> StyleStack Flattener -> Style Axis / Axis Composer` for individual artist comparisons. A parsed stack connected directly to an axis represents the complete artist combination.
 
 ### Per-Stack Anima Mixer Strength
 
-`Style Stack Anima Mixer Strength` in `Lora Tester/XY/Style` accepts and returns `LORA_STACK`. Its `Mixer Strength` (0–4, default 1.0) overrides only Anima Artist Mixer's `strength`, with priority **stack override > explicit global configuration > default**. Artist weights, normalization, alignment, advanced options, and enable flags remain unchanged. Zero disables mixing for this stack.
+`StyleStack Anima Mixer Strength` in `Lora Tester/XY/Style` accepts and returns `LORA_STACK`. Its `Mixer Strength` (0–4, default 1.0) overrides only Anima Artist Mixer's `strength`, with priority **stack override > explicit global configuration > default**. Artist weights, normalization, alignment, advanced options, and enable flags remain unchanged. Zero disables mixing for this stack.
 
 - Applies only to Anima models with installed Mixer nodes, multiple artists (including independent prompt artists), and enabled Mixer routing. Other cases keep the existing native route; the node never forces Mixer activation.
 - Missing dependencies show a node warning without blocking stack output. Chained strength nodes use the last value.
 - Naming, replacement, list collection, splitting, and flattening preserve the override. Single-artist children only activate it when combined with additional independent artists. Identical style contents with different strengths remain distinct sampling configurations.
 - The value never appears in image axis labels or source tables; Axis Content Preview shows it for inspection. Native XY, AnimaFlow XY, and the legacy combination sampler share this behavior.
 
-Suggested chain: `Artist Tag Text Parser → Style Stack Anima Mixer Strength → Style Stack Lister → Style Axis → XY sampler`. Unconfigured stacks continue using global settings.
+Suggested chain: `Artist Tag Text Parser → StyleStack Anima Mixer Strength → StyleStack Lister → Style Axis → XY sampler`. Unconfigured stacks continue using global settings.
 
-### Naming Style Stacks
+### Naming StyleStacks
 
-- `Style Stack` and `Artist Tag Text Parser` accept an optional single-line `Style Name`. Empty means automatic naming: the style axis still collects sources and generates labels such as `A-0.8+B-0.3`. Custom names change display metadata only, not sampling contents or source details.
-- `Style Stack Name` accepts one `LORA_STACK` and a literal name. Empty or whitespace clears the existing name. This node does not expand `{i}`.
-- `Style Stack List Name` accepts a `LORA_STACK_LIST`, integer `index`, and name template. Indices are **zero-based**; any negative index selects all; index >= list length does nothing; empty lists pass through. Axis `BASE` is not a stack-list item, so preview numbering may differ.
+- `StyleStack` and `Artist Tag Text Parser` accept an optional single-line `Style Name`. Empty means automatic naming: the style axis still collects sources and generates labels such as `A-0.8+B-0.3`. Custom names change display metadata only, not sampling contents or source details.
+- `StyleStack Name` accepts one `LORA_STACK` and a literal name. Empty or whitespace clears the existing name. This node does not expand `{i}`.
+- `StyleStackList Name` accepts a `LORA_STACK_LIST`, integer `index`, and name template. Indices are **zero-based**; any negative index selects all; index >= list length does nothing; empty lists pass through. Axis `BASE` is not a stack-list item, so preview numbering may differ.
 - Every `{i}` inserts the original input list index: `Style-{i}` at index 2 becomes `Style-2`. `\{i}` produces literal `{i}`; `\\` produces one backslash; `\{` / `\}` produce literal braces. Expansion runs once; escaped `{i}` is not expanded again. Unknown placeholders, unknown escapes, and trailing backslashes remain literal. Expanded names are stored as plain text and do not renumber when reordered.
 - An empty template clears selected names. Duplicate names are allowed, including `BASE` on an ordinary stack without giving it baseline semantics. Names cannot contain line breaks or tabs, and naming never mutates shared input objects.
 - List collection/merge preserve names and duplicate positions. The splitter retains the original name on the complete combination; proper subsets use automatic names. Multi-entry flattening retains the optional original name and resets derived names; single-entry rules are below.
-- The advanced `Output Style Name` on `Artist Tag Replacer` is empty by default, preserving the name. Nonempty text is equivalent to naming the output afterward, even when no artist matches. It is literal, not a `{i}` template; use `Style Stack Name` to clear a name.
+- The advanced `Output Style Name` on `Artist Tag Replacer` is empty by default, preserving the name. Nonempty text is equivalent to naming the output afterward, even when no artist matches. It is literal, not a `{i}` template; use `StyleStack Name` to clear a name.
 - Style Axis, Axis Composer, Axis Content Preview, and native / AnimaFlow XY sheets use custom names. Source tables retain actual file/artist information; combined axes continue composing labels.
 - `Style Axis` and `Axis Composer` offer `Show Single Style Name`, enabled by default: a single actual artist or LoRA shows `A-wlop-0.8` or `B-foo-1.2`. LoRA `styles/foo_bar v2.safetensors` uses `foo`, stopping at the first whitespace, underscore, or extension; artist names remain intact. A single item containing multiple artists is still a combination. Custom names take priority; disabling restores `A-0.8` labels. Source codes, weights, and sampling contents stay unchanged. Existing `XY_AXIS` inputs pass through Axis Composer without relabeling.
 - Footer detail tables (style sources, seeds, etc.) use alternating rows with an approximately 8% color blend, adapting to black, white, and custom themes without changing headers or images.
 
-### Flattening a Style Stack
+### Flattening a StyleStack
 
-Connect `Style Stack` to `Style Stack Flattener`, then connect its `lora_stack_list` output to `Style Axis` or `Axis Composer`.
+Connect `StyleStack` to `StyleStack Flattener`, then connect its `lora_stack_list` output to `Style Axis` or `Axis Composer`.
 
 - `Include Original Stack` is off by default: `a:1.2,b:0.3,c:1` produces `[a:1.2]`, `[b:0.3]`, and `[c:1]`.
 - With the switch on, the output is `[a:1.2,b:0.3,c:1]`, `[a:1.2]`, `[b:0.3]`, and `[c:1]`, with the original first.
@@ -197,6 +210,8 @@ Connect `Style Stack` to `Style Stack Flattener`, then connect its `lora_stack_l
 - `@tag` in an ordinary prompt stays in the base prompt. Single-artist cells still use native encoding, unlike a production workflow that applies Mixer even to one artist. CLIP `(tag:weight)` syntax is not the same as upstream `::weight` linear injection.
 
 ## Prompts and Artist Tags
+
+`Prompt List Name` accepts and returns `LORA_TESTER_PROMPT_LIST`. Connect `Multi Prompt Input -> Prompt List Name -> Prompt Axis`, or use `Axis Composer`. Line 1 names index 0, line 3 names index 2. Blank/whitespace-only or missing lines restore the corresponding default `P01`, `P02`, ... labels, even when an entry already had a custom name. Extra lines are ignored. Names are trimmed literal text: duplicate names are allowed and placeholders/dynamic prompts are not expanded. Prompt bodies, prefixes, suffixes, independent artist tags, order, and count remain unchanged; Global Prompt Append preserves the names. Apply names before constructing the axis; image labels and Axis Content Preview share the resulting labels.
 
 Only the dedicated independent-artist field from `Global Prompt Append` enters the artist routing chain. `@tag` text in ordinary prompts and LoRA trigger words remains in the base prompt and is never extracted automatically.
 

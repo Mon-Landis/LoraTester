@@ -4,7 +4,7 @@ import math
 import os
 import random
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -44,10 +44,12 @@ class PromptEntry:
     prefix: str = ""
     suffix: str = ""
     independent_artist_tags: str = ""
+    custom_name: str | None = None
 
     def __post_init__(self) -> None:
         if not str(self.prompt).strip():
             raise ValueError("Prompt entries cannot be empty")
+        object.__setattr__(self, "custom_name", str(self.custom_name or "").strip() or None)
 
     @property
     def full_prompt(self) -> str:
@@ -75,6 +77,13 @@ class PromptList:
         if any(not isinstance(entry, PromptEntry) for entry in entries):
             raise TypeError("Prompt lists must contain PromptEntry values")
         object.__setattr__(self, "entries", entries)
+
+    def with_names(self, names: str) -> "PromptList":
+        lines = str(names).replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        return PromptList(tuple(
+            replace(entry, custom_name=lines[index] if index < len(lines) else None)
+            for index, entry in enumerate(self.entries)
+        ))
 
     @classmethod
     def parse(
@@ -134,6 +143,7 @@ class PromptList:
                     prefix=prefix,
                     suffix=suffix,
                     independent_artist_tags=combined_artists,
+                    custom_name=entry.custom_name,
                 )
             )
         return PromptList(tuple(entries))
@@ -309,7 +319,7 @@ def build_prompt_axis(prompts: PromptList, *, title: str = "PROMPT") -> XYAxis:
         raise TypeError("prompts must come from a Multi Prompt Input node")
     entries = tuple(
         AxisEntry(
-            label=f"P{index:02d}",
+            label=entry.custom_name or f"P{index:02d}",
             parameters=(AxisParameter("prompt", entry),),
             detail_label=entry.full_prompt,
         )

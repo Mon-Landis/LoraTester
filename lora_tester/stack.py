@@ -137,6 +137,50 @@ class LoraStackList:
         return cls(tuple(merged))
 
 
+STACK_INSERT_MODES = ("before", "after", "replace")
+
+
+def _stack_list_index(index: int, length: int) -> int:
+    if not isinstance(index, int) or isinstance(index, bool):
+        raise TypeError("StyleStack index must be an integer")
+    if index < -2:
+        raise ValueError("StyleStack index must be -2 (first), -1 (last), or nonnegative")
+    if index == -2:
+        return 0
+    if index == -1:
+        return max(0, length - 1)
+    return index
+
+
+def extract_style_stack(stacks: LoraStackList, index: int) -> LoraStack:
+    if not isinstance(stacks, LoraStackList):
+        raise TypeError("Extract StyleStack expects a StyleStackList")
+    position = _stack_list_index(index, len(stacks.stacks))
+    if position >= len(stacks.stacks):
+        raise IndexError(f"StyleStack index {index} is out of range for a list of length {len(stacks.stacks)}")
+    return stacks.stacks[position]
+
+
+def set_style_stack(
+    stacks: LoraStackList, stack: LoraStack, index: int, mode: str = "replace"
+) -> LoraStackList:
+    if not isinstance(stacks, LoraStackList):
+        raise TypeError("Set StyleStack expects a StyleStackList")
+    if not isinstance(stack, LoraStack):
+        raise TypeError("Set StyleStack expects a StyleStack")
+    position = _stack_list_index(index, len(stacks.stacks))
+    if mode not in STACK_INSERT_MODES:
+        raise ValueError(f"Insertion mode must be one of {', '.join(STACK_INSERT_MODES)}")
+    updated = list(stacks.stacks)
+    if position >= len(updated):
+        updated.append(stack)
+    elif mode == "replace":
+        updated[position] = stack
+    else:
+        updated.insert(position + (1 if mode == "after" else 0), stack)
+    return LoraStackList(tuple(updated))
+
+
 def rename_lora_stack(stack: LoraStack, name: str | None) -> LoraStack:
     if not isinstance(stack, LoraStack):
         raise TypeError("rename_lora_stack expects a LoraStack")
@@ -296,4 +340,5 @@ __all__ = [
     "LoraStack", "LoraStackItem", "LoraStackList", "split_lora_stack",
     "flatten_lora_stack", "FLATTEN_WEIGHT_MODES", "parse_artist_stack", "replace_stack_artist",
     "rename_lora_stack", "rename_lora_stack_list",
+    "extract_style_stack", "set_style_stack", "STACK_INSERT_MODES",
 ]
